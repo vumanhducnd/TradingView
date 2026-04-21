@@ -573,25 +573,25 @@ if barstate.islast and showVolLabel
         price40 := signalPrice * 1.40
         price80 := signalPrice * 1.80
         if close >= price80
-            profitTxt := "🎯 Đã đạt mục tiêu 3: 80% (" + f_price(price80) + ")\n" +
-                         "👉 Nên chốt phần lớn, còn lại gồng đến cuối trend"
+            profitTxt := "🎯 Đã đạt T3 (+80%) tại " + f_price(price80) + "\n" +
+                         "👉 Xuất sắc! Cân nhắc chốt toàn bộ hoặc đặt trailing stop"
         else if close >= price40
-            profitTxt := "🎯 Đã đạt mục tiêu 2: 40% (" + f_price(price40) + ")\n" +
-                         "👉 Chốt 40%, còn lại giữ tiếp mục tiêu 3 giá: " + f_price(price80)
+            profitTxt := "🎯 Đã đạt T2 (+40%) tại " + f_price(price40) + "\n" +
+                         "👉 Lãi đẹp! Có thể chốt thêm 40%, gồng phần cuối đến T3: " + f_price(price80)
         else if close >= price20
-            profitTxt := "🎯 Đã đạt mục tiêu 1: 20% (" + f_price(price20) + ")\n" +
-                         "👉 Chốt 30%, giữ tiếp mục tiêu 2 giá: "+ f_price(price40)
-        else 
-            profitTxt := "🎯 Mục tiêu ngắn hạn 1: "+ f_price(price20)              
+            profitTxt := "🎯 Đã đạt T1 (+20%) tại " + f_price(price20) + "\n" +
+                         "👉 Gợi ý chốt 30%, để phần còn lại chạy đến T2: " + f_price(price40)
+        else
+            profitTxt := "🎯 T1 nhắm đến: " + f_price(price20) + " — Có thể chốt 1/3 vị thế"              
     
-    recTxt = buySignal ? "🚀 Breakout tăng — Mua mạnh!" :
-         sellSignal ? "💥 Breakout giảm — Thoát ngay!" :
-         trend == 1  and biasNorm >= 55 and delta_vol_pct >  0 ? "📈 Xu hướng mạnh — Nắm giữ" :
-         trend == 1  and biasNorm >= 55 and delta_vol_pct <= 0 ? "👀 Xu hướng tốt — Theo dõi" :
-         trend == 1  and biasNorm <  55                        ? "⚠️ Xu hướng yếu — Thận trọng" :
-         trend == -1 and biasNorm <= 45 and delta_vol_pct <  0 ? "⛔ Xu hướng giảm — Tránh mua" :
-         trend == -1 and biasNorm <= 45 and delta_vol_pct >= 0 ? "🔍 Có hồi — Theo dõi" :
-                                                                 "⚖️ Sideway — Chờ tín hiệu"
+    recTxt = buySignal  ? "🚀 Tín hiệu bứt phá xác nhận — Thời điểm mở vị thế tốt" :
+         sellSignal  ? "⚠️ Xu hướng đảo chiều — Nên thoát hàng, bảo toàn vốn" :
+         trend == 1  and biasNorm >= 55 and delta_vol_pct >  0 ? "📈 Dòng tiền vào tốt, xu hướng ủng hộ — Tiếp tục nắm giữ" :
+         trend == 1  and biasNorm >= 55 and delta_vol_pct <= 0 ? "👀 Momentum đang chậm lại — Giữ nhưng quan sát kỹ" :
+         trend == 1  and biasNorm <  55                        ? "⚠️ Tín hiệu chưa đồng thuận — Chưa nên tăng tỷ trọng" :
+         trend == -1 and biasNorm <= 45 and delta_vol_pct <  0 ? "⛔ Áp lực bán còn chiếm ưu thế — Đứng ngoài quan sát" :
+         trend == -1 and biasNorm <= 45 and delta_vol_pct >= 0 ? "🔍 Có dấu hiệu hồi kỹ thuật — Chưa đủ xác nhận, chờ thêm" :
+                                                                 "⚖️ Thị trường tích lũy — Chờ breakout mới vào lệnh"
     spinnerIndex = math.floor(timenow / 250) % 4
     spinner =
           spinnerIndex == 0 ? "◐" :
