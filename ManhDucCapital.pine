@@ -17,7 +17,15 @@ tableSize    = input.string("normal", "Cỡ chữ bảng",                 group
 themeMode    = input.string("Light",  "Giao diện (Theme)",            group="Cài đặt chung", options=["Dark","Light"])
 showsignals  = input.bool(true,   "Hiển thị tín hiệu Mua/Bán?",      group="Cài đặt chung")
 showSR       = input.bool(false,  "Hiển thị đường Hỗ trợ/Kháng cự?", group="Cài đặt chung")
-showVolLabel = input.bool(false,   "Hiển thị Phân tích trực tiếp?",    group="Cài đặt chung")
+showVolLabel      = input.bool(false,   "Hiển thị Phân tích trực tiếp?",    group="Cài đặt chung")
+showCandlePattern = input.bool(true,    "Đọc vị nến khi gần đỉnh/đáy?",     group="Cài đặt chung",
+     tooltip="Nhận diện mẫu nến đảo chiều khi giá tiếp cận vùng hỗ trợ/kháng cự")
+nearThreshPct     = input.float(3.0,    "Ngưỡng gần đỉnh/đáy (%)",          group="Cài đặt chung",
+     minval=0.5, maxval=10.0, step=0.5,
+     tooltip="% khoảng cách từ giá đóng cửa đến hỗ trợ/kháng cự để coi là 'gần' (mặc định 3%)")
+maxCandleLabels   = input.int(3,        "Số nhãn vị nến tối đa",             group="Cài đặt chung",
+     minval=1, maxval=20,
+     tooltip="Chỉ giữ lại N nhãn vị nến gần nhất trên biểu đồ")
 
 // =========================================================
 // CT TÍN HIỆU
@@ -237,6 +245,57 @@ trend_sell_vol += close < open ? volume : 0
 
 avg_trend_vol = (trend_buy_vol + trend_sell_vol) / 2
 delta_vol_pct = avg_trend_vol == 0 ? 0.0 : (trend_buy_vol - trend_sell_vol) / avg_trend_vol * 100
+
+// =========================================================
+// VỊ NẾN TRÊN BIỂU ĐỒ Vũ Mạnh Đức 0973124824
+// =========================================================
+var array<label> candleLabels = array.new<label>()
+
+if showCandlePattern
+    _b  = math.abs(close - open)
+    _r  = high - low
+    _uw = high - math.max(close, open)
+    _dw = math.min(close, open) - low
+    _sl = trend == 1 ? up : dn
+    _ns = _r > 0 and math.abs(close - _sl) / _sl * 100 <= nearThreshPct
+
+    if _ns
+        _n = ""
+        if trend == 1
+            if _b > 0 and _dw >= 2 * _b and _uw <= 0.5 * _b
+                _n := "🔨\nHammer"
+            else if close > open and close[1] < open[1] and open <= close[1] and close >= open[1]
+                _n := "🕯️\nBull Engulf"
+            else if _r > 0 and _b / _r < 0.1 and _dw >= _uw * 1.5
+                _n := "🌅\nDoji Rồng"
+            else if _r > 0 and _b / _r < 0.15
+                _n := "〰️\nDoji"
+            else if close > open and _r > 0 and _b / _r >= 0.6
+                _n := "💚\nMarubozu↑"
+        else
+            if _b > 0 and _uw >= 2 * _b and _dw <= 0.5 * _b
+                _n := "⭐\nSao Rơi"
+            else if close < open and close[1] > open[1] and open >= close[1] and close <= open[1]
+                _n := "🕯️\nBear Engulf"
+            else if _r > 0 and _b / _r < 0.1 and _uw >= _dw * 1.5
+                _n := "🌃\nDoji Mộ"
+            else if _r > 0 and _b / _r < 0.15
+                _n := "〰️\nDoji"
+            else if close < open and _r > 0 and _b / _r >= 0.6
+                _n := "🔴\nMarubozu↓"
+
+        if _n != ""
+            _lbl = label.new(
+                 x         = bar_index,
+                 y         = trend == 1 ? low : high,
+                 text      = _n,
+                 style     = trend == 1 ? label.style_label_up : label.style_label_down,
+                 color     = trend == 1 ? color.new(color.teal, 10) : color.new(color.maroon, 10),
+                 textcolor = color.white,
+                 size      = size.small)
+            array.push(candleLabels, _lbl)
+            while array.size(candleLabels) > maxCandleLabels
+                label.delete(array.shift(candleLabels))
 
 // =========================================================
 // HỖ TRỢ / KHÁNG CỰ Vũ Mạnh Đức 0973124824
@@ -584,32 +643,82 @@ if barstate.islast and showVolLabel
         else
             profitTxt := "🎯 T1 nhắm đến: " + f_price(price20) + " — Có thể chốt 1/3 vị thế"              
     
-    recTxt = buySignal  ? "🚀 Tín hiệu bứt phá xác nhận — Thời điểm mở vị thế tốt" :
-         sellSignal  ? "⚠️ Xu hướng đảo chiều — Nên thoát hàng, bảo toàn vốn" :
-         trend == 1  and biasNorm >= 55 and delta_vol_pct >  0 ? "📈 Dòng tiền vào tốt, xu hướng ủng hộ — Tiếp tục nắm giữ" :
-         trend == 1  and biasNorm >= 55 and delta_vol_pct <= 0 ? "👀 Momentum đang chậm lại — Giữ nhưng quan sát kỹ" :
-         trend == 1  and biasNorm <  55                        ? "⚠️ Tín hiệu chưa đồng thuận — Chưa nên tăng tỷ trọng" :
-         trend == -1 and biasNorm <= 45 and delta_vol_pct <  0 ? "⛔ Áp lực bán còn chiếm ưu thế — Đứng ngoài quan sát" :
-         trend == -1 and biasNorm <= 45 and delta_vol_pct >= 0 ? "🔍 Có dấu hiệu hồi kỹ thuật — Chưa đủ xác nhận, chờ thêm" :
-                                                                 "⚖️ Thị trường tích lũy — Chờ breakout mới vào lệnh"
+    recTxt = buySignal  ? "🚀 Tín hiệu bứt phá xác nhận \n    └  Thời điểm mở vị thế tốt" :
+         sellSignal  ? "⚠️ Xu hướng đảo chiều \n    └  Nên thoát hàng, bảo toàn vốn" :
+         trend == 1  and biasNorm >= 55 and delta_vol_pct >  0 ? "📈 Dòng tiền vào tốt, xu hướng ủng hộ \n    └  Tiếp tục nắm giữ" :
+         trend == 1  and biasNorm >= 55 and delta_vol_pct <= 0 ? "👀 Momentum đang chậm lại \n    └  Giữ nhưng quan sát kỹ" :
+         trend == 1  and biasNorm <  55                        ? "⚠️ Tín hiệu chưa đồng thuận \n    └  Chưa nên tăng tỷ trọng" :
+         trend == -1 and biasNorm <= 45 and delta_vol_pct <  0 ? "⛔ Áp lực bán còn chiếm ưu thế \n    └  Đứng ngoài quan sát" :
+         trend == -1 and biasNorm <= 45 and delta_vol_pct >= 0 ? "🔍 Có dấu hiệu hồi kỹ thuật \n    └  Chưa đủ xác nhận, chờ thêm" :
+                                                                 "⚖️ Thị trường tích lũy \n    └  Chờ breakout mới vào lệnh"
+
+    // === VỊ NẾN GẦN ĐỈNH/ĐÁY ===
+    _body   = math.abs(close - open)
+    _range  = high - low
+    _upWick = high - math.max(close, open)
+    _dnWick = math.min(close, open) - low
+    _srLvl  = trend == 1 ? up : dn
+    _nearSR = _range > 0 and math.abs(close - _srLvl) / _srLvl * 100 <= nearThreshPct
+
+    candlePatternTxt = ""
+    _cp = ""
+    _cs = ""
+
+    if showCandlePattern and _nearSR
+        if trend == 1
+            if _body > 0 and _dnWick >= 2 * _body and _upWick <= 0.5 * _body
+                _cp := "🔨 Hammer"
+                _cs := "Đuôi dài dưới — khả năng bật lại từ hỗ trợ"
+            else if close > open and close[1] < open[1] and open <= close[1] and close >= open[1]
+                _cp := "🕯️ Bullish Engulfing"
+                _cs := "Nến tăng bao phủ nến giảm — đảo chiều tăng"
+            else if _range > 0 and _body / _range < 0.1 and _dnWick >= _upWick * 1.5
+                _cp := "🌅 Dragonfly Doji"
+                _cs := "Doji đuôi dài dưới — chú ý đảo chiều tăng"
+            else if _range > 0 and _body / _range < 0.15
+                _cp := "〰️ Doji"
+                _cs := "Giằng co tại hỗ trợ — chờ xác nhận"
+            else if close > open and _range > 0 and _body / _range >= 0.6
+                _cp := "💚 Marubozu Tăng"
+                _cs := "Nến tăng thân dài — tín hiệu tích cực"
+        else
+            if _body > 0 and _upWick >= 2 * _body and _dnWick <= 0.5 * _body
+                _cp := "⭐ Shooting Star"
+                _cs := "Đuôi dài trên — cảnh báo đảo chiều tại kháng cự"
+            else if close < open and close[1] > open[1] and open >= close[1] and close <= open[1]
+                _cp := "🕯️ Bearish Engulfing"
+                _cs := "Nến giảm bao phủ nến tăng — xác nhận áp lực bán"
+            else if _range > 0 and _body / _range < 0.1 and _upWick >= _dnWick * 1.5
+                _cp := "🌃 Gravestone Doji"
+                _cs := "Doji đuôi dài trên — cảnh báo đảo chiều giảm"
+            else if _range > 0 and _body / _range < 0.15
+                _cp := "〰️ Doji"
+                _cs := "Giằng co tại kháng cự — chờ xác nhận"
+            else if close < open and _range > 0 and _body / _range >= 0.6
+                _cp := "🔴 Marubozu Giảm"
+                _cs := "Nến giảm thân dài — áp lực bán lớn"
+        if _cp != ""
+            candlePatternTxt := "━━━━━━━━━━━━━━━━━━━━━━\n" +"🔥 Tín hiệu nến: " + _cp + "\n" +"   └ " + _cs
+
     spinnerIndex = math.floor(timenow / 250) % 4
     spinner =
           spinnerIndex == 0 ? "◐" :
           spinnerIndex == 1 ? "◓" :
           spinnerIndex == 2 ? "◑" : "◒"
     lblTxt = "🤖 "  + " PHÂN TÍCH & KHUYẾN NGHỊ " + spinner+ " " + syminfo.ticker + "\n" +
-             "━━━━━━━━━━━━━━━━━"                                                               + "\n" +
+             "━━━━━━━━━━━━━━━━━━━━━━"                                                               + "\n" +
              rsiTxt + "  " + macdTxt + "  " + adxTxt + "  " + obvTxt + "\n" +  emaTxt + "  " + vwapTxt    + "\n" +
-             "Mua: " + str.tostring(trend_buy_vol, format.volume) + 
+             "Mua: " + str.tostring(trend_buy_vol, format.volume) +
              " | Bán: " + str.tostring(trend_sell_vol, format.volume) +
              " | Delta: " + deltaTxt + "\n" +
              "Vol/TB20 : " + volTxt                                                                         + "\n" +
-             "━━━━━━━━━━━━━━━━━"                                                                             + "\n" +
+             "━━━━━━━━━━━━━━━━━━━━━━"                                                                             + "\n" +
              "⚡Sức mạnh: " + biasTextVN + " (" + str.tostring(math.round(biasNorm)) + "%)" + biasArrow      + "\n" + "\n" +
              (trend == 1 ? "💰 Xu hướng: Tăng" : "💸 Xu hướng: Giảm")                                        + "\n" +
              + profitTxt                                                                                      + "\n" +
              "💡 Action:  " + recTxt                                                                          + "\n" +
-             "━━━━━━━━━━━━━━━━━"
+             candlePatternTxt                                                                                  + "\n" +
+             "━━━━━━━━━━━━━━━━━━━━━━"
        
 
     lbVol := label.new(
