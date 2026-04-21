@@ -1,0 +1,644 @@
+//@version=5
+indicator("ManhDucCapital-0973124824", overlay=true, format=format.price, precision=2, max_labels_count=500, max_lines_count=500)
+// =========================================================
+// DISCLAIMER - ManhDucCapital
+// =========================================================
+// ⚠️ Chỉ báo này chỉ mang tính tham khảo
+// Không phải khuyến nghị mua bán chứng khoán
+// Không đảm bảo lợi nhuận
+// Người dùng tự chịu trách nhiệm với quyết định đầu tư
+// Kết quả quá khứ không đảm bảo hiệu suất tương lai
+// =========================================================
+// =========================================================
+// CÀI ĐẶT CHUNG Vũ Mạnh Đức 0973124824
+// =========================================================
+showTable    = input.bool(true,   "Hiển thị bảng tín hiệu?",         group="Cài đặt chung")
+tableSize    = input.string("normal", "Cỡ chữ bảng",                 group="Cài đặt chung", options=["tiny","small","normal","large","huge"])
+themeMode    = input.string("Light",  "Giao diện (Theme)",            group="Cài đặt chung", options=["Dark","Light"])
+showsignals  = input.bool(true,   "Hiển thị tín hiệu Mua/Bán?",      group="Cài đặt chung")
+showSR       = input.bool(false,  "Hiển thị đường Hỗ trợ/Kháng cự?", group="Cài đặt chung")
+showVolLabel = input.bool(false,   "Hiển thị Phân tích trực tiếp?",    group="Cài đặt chung")
+
+// =========================================================
+// CT TÍN HIỆU
+// =========================================================
+Periods           = input.int(10,    "Chu kỳ ATR",                    group="Tín hiệu")
+src               = input.source(hl2,"Nguồn giá",                     group="Tín hiệu")
+Multiplier        = input.float(3.0, "Hệ số nhân ATR", step=0.1,      group="Tín hiệu")
+changeATR         = input.bool(true, "Thay đổi phương pháp tính ATR?",group="Tín hiệu")
+useStrengthFilter = input.bool(false,"Lọc sức mạnh khi đảo chiều?",   group="Tín hiệu")
+weakThr           = input.int(40,    "Ngưỡng YẾU (<=) cho Bán",       group="Tín hiệu", minval=0, maxval=100)
+strongThr         = input.int(60,    "Ngưỡng MẠNH (>=) cho Mua",      group="Tín hiệu", minval=0, maxval=100)
+
+// =========================================================
+// BOLLINGER BAND OPTION
+// =========================================================
+showBB   = input.bool(false,  "Hiển thị Bollinger Band", group="Bollinger Band",
+     tooltip="Cách dùng Bollinger Band:\n1. Chạm band trên → xem xét bán\n2. Chạm band dưới → xem xét mua\n3. BB co hẹp → chuẩn bị breakout")
+bbLength = input.int(20,      "Chu kỳ BB",                group="Bollinger Band")
+bbMult   = input.float(2.0,   "Độ lệch chuẩn BB",         group="Bollinger Band")
+bbSrc    = input.source(close,"Nguồn BB",                 group="Bollinger Band")
+
+// =========================================================
+// CÀI ĐẶT BACKTEST Vũ Mạnh Đức 0973124824
+// =========================================================
+showHistory    = input.bool(false,  "Hiển thị bảng lịch sử giao dịch?", group="Test lịch sử")
+startTime      = input.time(timestamp("2025-01-01"), "Từ ngày",           group="Test lịch sử")
+useEndTime     = input.bool(false,  "Dùng ngày kết thúc?",               group="Test lịch sử")
+endTime        = input.time(timestamp("2028-01-01"), "Đến ngày",          group="Test lịch sử")
+showZoneLines  = input.bool(true,   "Hiển thị đường dọc vùng backtest?", group="Test lịch sử")
+initialCapital = input.float(100,   "Vốn ban đầu (triệu VNĐ)",           group="Test lịch sử", minval=1, step=10)
+compoundMode   = input.bool(true,   "Tính lãi kép (vốn xoay vòng)?",     group="Test lịch sử",
+     tooltip="BẬT = dùng toàn bộ vốn hiện tại mỗi lệnh (lãi kép)\nTẮT = luôn dùng đúng vốn ban đầu mỗi lệnh (vốn cố định)")
+maxHistoryRows = input.int(12,      "Số lệnh hiển thị",                  group="Test lịch sử", minval=5, maxval=20)
+tablePosition  = input.string("bottom_right", "Vị trí bảng lịch sử",     group="Test lịch sử",
+     options=["bottom_left","bottom_center","bottom_right"])
+entryMode      = input.string("Lý tưởng nhất", "Kiểu điểm Mua/Bán",      group="Test lịch sử",
+     options=["Lý tưởng nhất","Lý tưởng","Thực tế"],
+     tooltip="Lý tưởng nhất: Mua đáy (Low), Bán đỉnh (High) cây nến tín hiệu\nLý tưởng: Mua/Bán trung bình đỉnh-đáy (HL2) cây nến tín hiệu\nThực tế: Mua đỉnh (High), Bán đáy (Low) cây nến tín hiệu")
+
+// =========================================================
+// HÀM TIỆN ÍCH Vũ Mạnh Đức 0973124824
+// =========================================================
+f_pad(v)        => v < 10 ? "0" + str.tostring(v) : str.tostring(v)
+f_price(p)      => p < 10000 ? str.tostring(math.round(p * 100) / 100, "#.##") : str.tostring(math.round(p / 10) / 100, "#,###.##")
+f_million(v)    => str.tostring(math.round(v * 100) / 100, "#,###.##")
+f_sign(v)       => v >= 0 ? "+" : ""
+f_buyPrice(md)  => md == "Lý tưởng nhất" ? low  : md == "Lý tưởng" ? hl2  : high
+f_sellPrice(md) => md == "Lý tưởng nhất" ? high : md == "Lý tưởng" ? hl2  : low
+f_modeLabel(md) => md == "Lý tưởng nhất" ? "🏆 Lý tưởng nhất" : md == "Lý tưởng" ? "⭐ Lý tưởng" : "📊 Thực tế"
+
+// =========================================================
+// PALETTE Vũ Mạnh Đức 0973124824
+// =========================================================
+isDark   = themeMode == "Dark"
+T_BG_DRK = isDark ? color.new(#1a1a1a, 5)  : color.new(#FFFFFF, 5)
+T_BG_LGT = isDark ? color.new(#2a2a2a, 5)  : color.new(#F5F5F5, 5)
+T_BG_TOT = isDark ? color.new(#1e3a5f, 0)  : color.new(#D6E9FF, 0)
+T_HDR    = color.new(#2196F3, 0)
+T_WHT    = color.new(#FFFFFF, 0)
+T_LBL    = isDark ? color.new(#E0E0E0, 0)  : color.new(#444444, 0)
+T_VAL    = isDark ? color.new(#FFFFFF, 0)  : color.new(#111111, 0)
+T_YLW    = isDark ? color.new(#FFC107, 0)  : color.new(#B8860B, 0)
+T_GRN    = color.new(#4CAF50, 0)
+T_RED    = color.new(#F44336, 0)
+T_BRD    = color.new(#2196F3, 0)
+
+// =========================================================
+// CHỈ BÁO KỸ THUẬT Vũ Mạnh Đức 0973124824
+// =========================================================
+ema9         = ta.ema(close, 9)
+ema21        = ta.ema(close, 21)
+vwapV        = ta.vwap(hlc3)
+rsiVal       = ta.ema(ta.rsi(close, 14), 3)
+[m, s, _]    = ta.macd(close, 12, 26, 9)
+[_, _, adx]  = ta.dmi(14, 14)
+volAvg       = ta.sma(volume, 20)
+obvVal       = ta.obv
+obvEma       = ta.ema(obvVal, 10)
+stK          = ta.stoch(close, high, low, 14)
+stD          = ta.sma(stK, 3)
+stKSmooth    = ta.ema(stK, 3)
+macdHist     = m - s
+macdHistPrev = m[1] - s[1]
+
+// =========================================================
+// DUAL SCORE LOGIC (9 điểm) Vũ Mạnh Đức 0973124824
+// =========================================================
+float bScore = 0
+bScore += ema9 > ema21                             ? 1 : 0  // 1. Trend chính
+bScore += close > vwapV                            ? 1 : 0  // 2. Giá vs VWAP
+bScore += rsiVal > 52                              ? 1 : 0  // 3. RSI smooth (52 tránh noise vùng 50)
+bScore += macdHist > 0 and macdHist > macdHistPrev ? 1 : 0  // 4. MACD đang tăng tốc
+bScore += adx > 20                                 ? 1 : 0  // 5. Xu hướng đủ mạnh
+bScore += obvVal > obvEma                          ? 1 : 0  // 6. Tiền đang vào (OBV)
+bScore += stKSmooth > stD and stKSmooth < 80       ? 1 : 0  // 7. Stoch tăng, chưa overbought
+bScore += close > (open + high) / 2                ? 1 : 0  // 8. Nến đóng nửa trên
+bScore += volume > volAvg                          ? 1 : 0  // 9. Volume xác nhận
+
+float rScore = 0
+rScore += ema9 < ema21                             ? 1 : 0
+rScore += close < vwapV                            ? 1 : 0
+rScore += rsiVal < 48                              ? 1 : 0  // 48 tránh noise
+rScore += macdHist < 0 and macdHist < macdHistPrev ? 1 : 0  // MACD đang giảm tốc
+rScore += adx > 20                                 ? 1 : 0
+rScore += obvVal < obvEma                          ? 1 : 0
+rScore += stKSmooth < stD and stKSmooth > 20       ? 1 : 0  // Stoch giảm, chưa oversold
+rScore += close < (open + low) / 2                 ? 1 : 0  // Nến đóng nửa dưới
+rScore += volume > volAvg                          ? 1 : 0  // 9. Volume xác nhận
+
+float bullPct = (bScore / 9) * 100
+float bearPct = (rScore / 9) * 100
+netBias       = bullPct - bearPct
+biasNorm      = (netBias + 100) / 2
+biasNorm     := math.max(0, math.min(100, biasNorm))
+biasChange    = biasNorm - biasNorm[3]
+
+biasColor =
+     biasNorm >= 75 ? color.rgb(156, 39, 176) :  // Tím — Rất mạnh
+     biasNorm >= 55 ? color.rgb( 76, 175, 80) :  // Xanh — Mạnh
+     biasNorm >= 45 ? color.rgb(255, 193,  7) :  // Vàng — Trung bình
+     biasNorm >= 25 ? color.rgb(255,  87, 34) :  // Cam — Yếu
+                      color.rgb(244,  67, 54)     // Đỏ — Rất yếu
+
+biasTextVN =
+     biasNorm >= 75 ? "RẤT MẠNH"   :
+     biasNorm >= 55 ? "MẠNH"       :
+     biasNorm >= 45 ? "TRUNG BÌNH" :
+     biasNorm >= 25 ? "YẾU"        :
+                      "RẤT YẾU"
+
+biasArrow = biasChange > 2 ? " ↑" : biasChange < -2 ? " ↓" : " →"
+
+// =========================================================
+// SUPERTREND Vũ Mạnh Đức 0973124824
+// =========================================================
+atr  = changeATR ? ta.atr(Periods) : ta.sma(ta.tr, Periods)
+up   = src - Multiplier * atr
+dn   = src + Multiplier * atr
+
+var float up1 = na
+var float dn1 = na
+up1 := nz(up[1], up)
+up  := close[1] > up1 ? math.max(up, up1) : up
+dn1 := nz(dn[1], dn)
+dn  := close[1] < dn1 ? math.min(dn, dn1) : dn
+
+var int trend = 1
+allowFlipToLong  = not useStrengthFilter or (biasNorm >= strongThr and biasChange > 0)
+allowFlipToShort = not useStrengthFilter or (biasNorm <= weakThr   and biasChange < 0)
+trend := nz(trend[1], 1)
+trend := trend == -1 and close > dn1 and allowFlipToLong  ?  1 :
+         trend ==  1 and close < up1 and allowFlipToShort ? -1 : trend
+
+buySignal  = trend == 1  and trend[1] == -1
+sellSignal = trend == -1 and trend[1] == 1
+
+upPlot = plot(trend == 1 ? up : na, "Xu hướng tăng", color.green, 2, plot.style_linebr)
+dnPlot = plot(trend == 1 ? na : dn, "Xu hướng giảm", color.red,   2, plot.style_linebr)
+mPlot  = plot(ohlc4, "", display=display.none)
+fill(mPlot, upPlot, title="Tô màu xu hướng tăng", color=color.new(color.green, 50))
+fill(mPlot, dnPlot, title="Tô màu xu hướng giảm", color=color.new(color.red,   50))
+
+plotshape(buySignal  ? up : na, "Tín hiệu Mua", shape.triangleup,   location.belowbar, color.green, size=size.tiny)
+plotshape(sellSignal ? dn : na, "Tín hiệu Bán", shape.triangledown, location.abovebar, color.red,   size=size.tiny)
+
+if buySignal and showsignals
+    label.new(bar_index, up, "Mua\n" + f_price(f_buyPrice(entryMode)),
+         style=label.style_label_up, color=color.green, textcolor=color.white, size=size.normal)
+if sellSignal and showsignals
+    label.new(bar_index, dn, "Bán\n" + f_price(f_sellPrice(entryMode)),
+         style=label.style_label_down, color=color.red, textcolor=color.white, size=size.normal)
+
+// =========================================================
+// BOLLINGER BAND
+// =========================================================
+bbBasis     = ta.sma(bbSrc, bbLength)
+bbDev       = bbMult * ta.stdev(bbSrc, bbLength)
+bbClr       = trend == 1 ? color.green : color.red
+bbUpperPlot = plot(showBB ? bbBasis + bbDev : na, "BB Upper",  bbClr)
+bbLowerPlot = plot(showBB ? bbBasis - bbDev : na, "BB Lower",  bbClr)
+plot(showBB ? bbBasis : na, "BB Middle", color.yellow)
+fill(bbUpperPlot, bbLowerPlot, title="BB Fill", color=color.new(bbClr, 50), display=display.none)
+
+// =========================================================
+// THEO DÕI TÍN HIỆU HIỆN TẠI Vũ Mạnh Đức 0973124824
+// =========================================================
+var float  signalPrice = na
+var int    signalBar   = 0
+var int    signalCount = 0
+var string signalType  = "MUA"
+var string signalDate  = ""
+
+if buySignal or sellSignal
+    signalPrice := buySignal ? f_buyPrice(entryMode)  : f_sellPrice(entryMode)
+    signalBar   := bar_index
+    signalCount := 0
+    signalType  := buySignal ? "MUA" : "BÁN"
+    signalDate  := f_pad(dayofmonth) + "/" + f_pad(month) + "/" + str.tostring(year)
+
+if not na(signalPrice)
+    signalCount := bar_index - signalBar
+
+pnl = na(signalPrice) or signalPrice == 0 ? 0.0 :signalType == "MUA" ? (close - signalPrice) / signalPrice * 100 :(signalPrice - close) / signalPrice * 100
+
+// =========================================================
+// VOLUME TÍCH LŨY THEO TREND Vũ Mạnh Đức 0973124824
+// =========================================================
+var float trend_buy_vol  = 0.0
+var float trend_sell_vol = 0.0
+
+if ta.change(trend)
+    trend_buy_vol  := 0.0
+    trend_sell_vol := 0.0
+
+trend_buy_vol  += close > open ? volume : 0
+trend_sell_vol += close < open ? volume : 0
+
+avg_trend_vol = (trend_buy_vol + trend_sell_vol) / 2
+delta_vol_pct = avg_trend_vol == 0 ? 0.0 : (trend_buy_vol - trend_sell_vol) / avg_trend_vol * 100
+
+// =========================================================
+// HỖ TRỢ / KHÁNG CỰ Vũ Mạnh Đức 0973124824
+// =========================================================
+var line  lSR  = line.new(na, na, na, na)
+var label lbSR = label.new(na, na, "", color=color.green, textcolor=color.white, style=label.style_label_left, size=size.small)
+
+if showSR
+    srPrice = trend == 1 ? up : dn
+    srColor = trend == 1 ? color.green : color.red
+    if trend != trend[1]
+        line.delete(lSR)
+        lSR := line.new(bar_index, srPrice, bar_index + 20, srPrice,
+             color=srColor, width=1, style=line.style_dashed, extend=extend.right)
+    line.set_xy1(lSR, bar_index,      srPrice)
+    line.set_xy2(lSR, bar_index + 12, srPrice)
+    line.set_color(lSR, srColor)
+    label.set_xy(lbSR,   bar_index + 12, srPrice)
+    label.set_text(lbSR, (trend == 1 ? "HT: " : "KC: ") + f_price(srPrice))
+    label.set_color(lbSR, srColor)
+
+// =========================================================
+// 2 ĐƯỜNG DỌC VÙNG BACKTEST Vũ Mạnh Đức 0973124824
+// =========================================================
+var line  lineStart = na
+var line  lineEnd   = na
+var label lblStart  = na
+var label lblEnd    = na
+
+if showZoneLines and showHistory
+    if time == startTime or (time > startTime and time[1] < startTime)
+        line.delete(lineStart), label.delete(lblStart)
+        lineStart := line.new(bar_index, low * 0.95, bar_index, high * 1.05,
+             color=color.new(#00E676, 0), width=2, style=line.style_dashed, extend=extend.both)
+        lblStart  := label.new(bar_index, high, "▶ BẮT ĐẦU\n" + str.format_time(startTime, "dd/MM/yyyy"),
+             style=label.style_label_down, color=color.new(#00E676, 0), textcolor=color.white, size=size.small)
+    if useEndTime and (time == endTime or (time > endTime and time[1] < endTime))
+        line.delete(lineEnd), label.delete(lblEnd)
+        lineEnd := line.new(bar_index, low * 0.95, bar_index, high * 1.05,
+             color=color.new(#FF5252, 0), width=2, style=line.style_dashed, extend=extend.both)
+        lblEnd  := label.new(bar_index, high, "⏹ KẾT THÚC\n" + str.format_time(endTime, "dd/MM/yyyy"),
+             style=label.style_label_down, color=color.new(#FF5252, 0), textcolor=color.white, size=size.small)
+
+// =========================================================
+// BACKTEST Vũ Mạnh Đức 0973124824
+// =========================================================
+inBacktest = showHistory and time >= startTime and (not useEndTime or time <= endTime)
+
+var array<string> hist_buyDate   = array.new<string>()
+var array<float>  hist_buyPrice  = array.new<float>()
+var array<string> hist_sellDate  = array.new<string>()
+var array<float>  hist_sellPrice = array.new<float>()
+var array<float>  hist_pnlPct    = array.new<float>()
+var array<float>  hist_pnlAmount = array.new<float>()
+var array<int>    hist_holdDays  = array.new<int>()
+
+var float  bt_entryPrice  = na
+var int    bt_entryBar    = 0
+var string bt_entryDate   = ""
+var int    bt_totalTrades = 0
+var int    bt_winTrades   = 0
+var int    bt_lossTrades  = 0
+var float  bt_totalPnL    = 0.0
+var float  bt_capital     = initialCapital
+var float  bt_maxCapital  = initialCapital
+var float  bt_maxDrawdown = 0.0
+var int    bt_totalDays   = 0
+
+if inBacktest and buySignal and na(bt_entryPrice)
+    bt_entryPrice := f_buyPrice(entryMode)
+    bt_entryBar   := bar_index
+    bt_entryDate  := f_pad(dayofmonth) + "/" + f_pad(month) + "/" + str.tostring(year)
+
+if inBacktest and sellSignal and not na(bt_entryPrice)
+    exitPrice   = f_sellPrice(entryMode)
+    holdDays    = bar_index - bt_entryBar
+    pnlPct      = (exitPrice - bt_entryPrice) / bt_entryPrice * 100
+    pnlAmt      = (compoundMode ? bt_capital : initialCapital) * pnlPct / 100
+
+    array.push(hist_buyDate,   bt_entryDate)
+    array.push(hist_buyPrice,  bt_entryPrice)
+    array.push(hist_sellDate,  f_pad(dayofmonth) + "/" + f_pad(month) + "/" + str.tostring(year))
+    array.push(hist_sellPrice, exitPrice)
+    array.push(hist_pnlPct,    pnlPct)
+    array.push(hist_pnlAmount, pnlAmt)
+    array.push(hist_holdDays,  holdDays)
+
+    bt_capital     := bt_capital + pnlAmt
+    bt_maxCapital  := math.max(bt_maxCapital, bt_capital)
+    bt_maxDrawdown := math.min(bt_maxDrawdown, (bt_capital - bt_maxCapital) / bt_maxCapital * 100)
+    bt_totalTrades += 1
+    bt_totalPnL    += pnlPct
+    bt_totalDays   += holdDays
+    bt_winTrades   += pnlPct > 0  ? 1 : 0
+    bt_lossTrades  += pnlPct <= 0 ? 1 : 0
+    bt_entryPrice  := na
+    bt_entryBar    := 0
+    bt_entryDate   := ""
+
+bt_winRate   = bt_totalTrades > 0 ? bt_winTrades / bt_totalTrades * 100 : 0.0
+bt_avgPnL    = bt_totalTrades > 0 ? bt_totalPnL  / bt_totalTrades       : 0.0
+bt_netProfit = bt_capital - initialCapital
+bt_returnPct = initialCapital > 0 ? bt_netProfit / initialCapital * 100  : 0.0
+
+// =========================================================
+// BẢNG LỊCH SỬ GIAO DỊCH Vũ Mạnh Đức 0973124824
+// =========================================================
+tSize = tableSize == "tiny" ? size.tiny : tableSize == "small" ? size.small : tableSize == "normal" ? size.normal : tableSize == "large" ? size.large : size.huge
+
+if barstate.islast and showHistory and array.size(hist_buyDate) > 0
+    tbl_pos      = tablePosition == "bottom_right" ? position.bottom_right : tablePosition == "bottom_center" ? position.bottom_center : position.bottom_left
+    tSize_h      = tableSize == "tiny" ? size.small : tableSize == "small" ? size.normal : tableSize == "normal" ? size.large : size.huge
+    tSize_d      = tableSize == "tiny" ? size.tiny  : tableSize == "small" ? size.small  : tableSize == "normal" ? size.normal : tableSize == "large" ? size.large : size.large
+    totalTrades  = array.size(hist_buyDate)
+    displayCount = math.min(totalTrades, maxHistoryRows)
+    startIdx     = math.max(0, totalTrades - displayCount)
+
+    float disp_totalPct  = 0.0
+    float disp_totalAmt  = 0.0
+    int   disp_totalDays = 0
+    float disp_sumBuy    = 0.0
+    float disp_sumSell   = 0.0
+    for i = 0 to displayCount - 1
+        disp_totalPct  += array.get(hist_pnlPct,    startIdx + i)
+        disp_totalAmt  += array.get(hist_pnlAmount, startIdx + i)
+        disp_totalDays += array.get(hist_holdDays,  startIdx + i)
+        disp_sumBuy    += array.get(hist_buyPrice,  startIdx + i)
+        disp_sumSell   += array.get(hist_sellPrice, startIdx + i)
+
+    disp_avgBuy  = disp_sumBuy  / displayCount
+    disp_avgSell = disp_sumSell / displayCount
+    avgDaysD     = disp_totalDays / displayCount
+
+    htbl = table.new(tbl_pos, 8, 4 + displayCount + 4,
+         bgcolor=T_BG_DRK, border_width=1, border_color=T_BRD, frame_width=2, frame_color=T_BRD)
+    r = 0
+
+    // ── HEADER ───────────────────────────────────────────────
+    endLabel  = useEndTime ? " → " + str.format_time(endTime, "dd/MM/yyyy") : " → Hiện tại"
+    modeLabel = compoundMode ? "] ♻️ Xoay vốn" : " ] 📦 Vốn cố định"
+    table.cell(htbl, 0, r, "📌 " + syminfo.ticker + "  [" + str.format_time(startTime, "dd/MM/yyyy") + endLabel + modeLabel,
+         text_color=T_WHT, text_size=tSize_h, text_halign=text.align_center, bgcolor=T_HDR)
+    for i = 1 to 7
+        table.cell(htbl, i, r, "", bgcolor=T_HDR)
+    table.merge_cells(htbl, 0, r, 7, r)
+    r += 1
+
+    // ── INFO ROW ─────────────────────────────────────────────
+    table.cell(htbl, 0, r, "Hiển thị " + str.tostring(displayCount) + "/" + str.tostring(totalTrades) + " giao dịch gần nhất",
+         text_color=T_YLW, text_size=tSize_d, text_halign=text.align_center, bgcolor=T_BG_LGT)
+    for i = 1 to 7
+        table.cell(htbl, i, r, "", bgcolor=T_BG_LGT)
+    table.merge_cells(htbl, 0, r, 7, r)
+    r += 1
+
+    // ── HEADER CỘT ───────────────────────────────────────────
+    table.cell(htbl, 0, r, "#",           text_color=T_WHT, text_size=tSize_d, text_halign=text.align_center, bgcolor=T_HDR)
+    table.cell(htbl, 1, r, "NGÀY MUA",    text_color=T_WHT, text_size=tSize_d, text_halign=text.align_center, bgcolor=T_HDR)
+    table.cell(htbl, 2, r, "GIÁ MUA",     text_color=T_WHT, text_size=tSize_d, text_halign=text.align_center, bgcolor=T_HDR)
+    table.cell(htbl, 3, r, "NGÀY BÁN",    text_color=T_WHT, text_size=tSize_d, text_halign=text.align_center, bgcolor=T_HDR)
+    table.cell(htbl, 4, r, "GIÁ BÁN",     text_color=T_WHT, text_size=tSize_d, text_halign=text.align_center, bgcolor=T_HDR)
+    table.cell(htbl, 5, r, "PHIÊN GIỮ",   text_color=T_WHT, text_size=tSize_d, text_halign=text.align_center, bgcolor=T_HDR)
+    table.cell(htbl, 6, r, "TIỀN LÃI/LỖ", text_color=T_WHT, text_size=tSize_d, text_halign=text.align_center, bgcolor=T_HDR)
+    table.cell(htbl, 7, r, "KẾT QUẢ %",   text_color=T_WHT, text_size=tSize_d, text_halign=text.align_center, bgcolor=T_HDR)
+    r += 1
+
+    // ── DỮ LIỆU TỪNG LỆNH ────────────────────────────────────
+    for i = 0 to displayCount - 1
+        idx    = startIdx + i
+        pnlPct = array.get(hist_pnlPct,    idx)
+        pnlAmt = array.get(hist_pnlAmount, idx)
+        rowBg  = i % 2 == 0 ? T_BG_DRK : T_BG_LGT
+        pnlClr = pnlPct >= 0 ? T_GRN : T_RED
+        table.cell(htbl, 0, r, str.tostring(idx + 1),                                                text_color=T_LBL,  text_size=tSize_d, text_halign=text.align_center, bgcolor=rowBg)
+        table.cell(htbl, 1, r, array.get(hist_buyDate,   idx),                                       text_color=T_VAL,  text_size=tSize_d, text_halign=text.align_center, bgcolor=rowBg)
+        table.cell(htbl, 2, r, f_price(array.get(hist_buyPrice,  idx)),                              text_color=T_VAL,  text_size=tSize_d, text_halign=text.align_right,  bgcolor=rowBg)
+        table.cell(htbl, 3, r, array.get(hist_sellDate,  idx),                                       text_color=T_VAL,  text_size=tSize_d, text_halign=text.align_center, bgcolor=rowBg)
+        table.cell(htbl, 4, r, f_price(array.get(hist_sellPrice, idx)),                              text_color=T_VAL,  text_size=tSize_d, text_halign=text.align_right,  bgcolor=rowBg)
+        table.cell(htbl, 5, r, str.tostring(array.get(hist_holdDays, idx)),                          text_color=T_LBL,  text_size=tSize_d, text_halign=text.align_center, bgcolor=rowBg)
+        table.cell(htbl, 6, r, f_sign(pnlAmt) + f_million(pnlAmt) + " tr",                          text_color=pnlClr, text_size=tSize_d, text_halign=text.align_right,  bgcolor=rowBg)
+        table.cell(htbl, 7, r, f_sign(pnlPct) + str.tostring(math.round(pnlPct * 100) / 100) + "%", text_color=pnlClr, text_size=tSize_d, text_halign=text.align_center, bgcolor=rowBg)
+        r += 1
+
+    // ── HÀNG TỔNG CỘNG ───────────────────────────────────────
+    totClr = disp_totalAmt >= 0 ? T_GRN : T_RED
+    table.cell(htbl, 0, r, "TỔNG",                                                                            text_color=T_YLW,  text_size=tSize_d, text_halign=text.align_center, bgcolor=T_BG_TOT)
+    table.cell(htbl, 1, r, "-",                                                                               text_color=T_YLW,  text_size=tSize_d, text_halign=text.align_center, bgcolor=T_BG_TOT)
+    table.cell(htbl, 2, r, f_price(disp_avgBuy),                                                             text_color=T_YLW,  text_size=tSize_d, text_halign=text.align_right,  bgcolor=T_BG_TOT)
+    table.cell(htbl, 3, r, "-",                                                                               text_color=T_YLW,  text_size=tSize_d, text_halign=text.align_center, bgcolor=T_BG_TOT)
+    table.cell(htbl, 4, r, f_price(disp_avgSell),                                                            text_color=T_YLW,  text_size=tSize_d, text_halign=text.align_right,  bgcolor=T_BG_TOT)
+    table.cell(htbl, 5, r, str.tostring(math.round(avgDaysD)),                                               text_color=T_YLW,  text_size=tSize_d, text_halign=text.align_center, bgcolor=T_BG_TOT)
+    table.cell(htbl, 6, r, f_sign(disp_totalAmt) + f_million(disp_totalAmt) + " tr",                        text_color=totClr, text_size=tSize_d, text_halign=text.align_right,  bgcolor=T_BG_TOT)
+    table.cell(htbl, 7, r, f_sign(disp_totalPct) + str.tostring(math.round(disp_totalPct * 100) / 100) + "%",text_color=totClr, text_size=tSize_d, text_halign=text.align_center, bgcolor=T_BG_TOT)
+    r += 1
+
+    // ── SUMMARY ROW 1: Vốn & Lãi/Lỗ ─────────────────────────
+    finalPnlColor = bt_netProfit >= 0 ? T_GRN : T_RED
+    table.cell(htbl, 0, r, "Vốn đầu: " + f_million(initialCapital) + "tr → Vốn cuối: " + f_million(bt_capital) + " tr",
+         text_color=T_VAL, text_size=tSize_d, text_halign=text.align_left, bgcolor=T_BG_DRK)
+    for i = 1 to 2
+        table.cell(htbl, i, r, "", bgcolor=T_BG_DRK)
+    table.merge_cells(htbl, 0, r, 2, r)
+    table.cell(htbl, 3, r, "Lãi/Lỗ: " + f_sign(bt_netProfit) + f_million(bt_netProfit) + " tr | ROI: " + f_sign(bt_returnPct) + str.tostring(math.round(bt_returnPct * 100) / 100) + "%",
+         text_color=finalPnlColor, text_size=tSize_d, text_halign=text.align_left, bgcolor=T_BG_DRK)
+    for i = 4 to 7
+        table.cell(htbl, i, r, "", bgcolor=T_BG_DRK)
+    table.merge_cells(htbl, 3, r, 7, r)
+    r += 1
+
+    // ── SUMMARY ROW 2: Lệnh & Win Rate & Max DD ───────────────
+    wrClr = bt_winRate >= 50 ? T_GRN : bt_winRate >= 40 ? T_YLW : T_RED
+    table.cell(htbl, 0, r, "Có " + str.tostring(bt_totalTrades) + " giao dịch: ✅ " + str.tostring(bt_winTrades) + " thắng, ❌ " + str.tostring(bt_lossTrades) + " thua",
+         text_color=T_VAL, text_size=tSize_d, text_halign=text.align_left, bgcolor=T_BG_LGT)
+    for i = 1 to 2
+        table.cell(htbl, i, r, "", bgcolor=T_BG_LGT)
+    table.merge_cells(htbl, 0, r, 2, r)
+    table.cell(htbl, 3, r, "Win Rate: " + str.tostring(math.round(bt_winRate * 100) / 100) + "% | Avg PnL: " + f_sign(bt_avgPnL) + str.tostring(math.round(bt_avgPnL * 100) / 100) + "%",
+         text_color=wrClr, text_size=tSize_d, text_halign=text.align_left, bgcolor=T_BG_LGT)
+    for i = 4 to 6
+        table.cell(htbl, i, r, "", bgcolor=T_BG_LGT)
+    table.merge_cells(htbl, 3, r, 6, r)
+    table.cell(htbl, 7, r, "📉 Max DD: " + str.tostring(math.round(bt_maxDrawdown * 100) / 100) + "%",
+         text_color=T_RED, text_size=tSize_d, text_halign=text.align_right, bgcolor=T_BG_LGT)
+    r += 1
+
+    // ── DISCLAIMER ───────────────────────────────────────────
+    table.cell(htbl, 0, r, "⚠️ Kết quả quá khứ không đảm bảo hiệu suất tương lai",
+         text_color=T_YLW, text_size=tSize_d, text_halign=text.align_center, bgcolor=T_BG_DRK)
+    for i = 1 to 7
+        table.cell(htbl, i, r, "", bgcolor=T_BG_DRK)
+    table.merge_cells(htbl, 0, r, 7, r)
+
+// =========================================================
+// BẢNG TÍN HIỆU GÓC PHẢI Vũ Mạnh Đức 0973124824
+// =========================================================
+var table stbl = table.new(position.top_right, 2, 10,
+     bgcolor=T_BG_DRK, border_width=1, border_color=T_BRD, frame_width=2, frame_color=T_BRD)
+
+if showTable
+    srPrc  = trend == 1 ? up : dn
+    srClr  = trend == 1 ? T_GRN : T_RED
+    pnlR   = math.round(pnl * 100) / 100
+    pnlAbs = str.tostring(math.abs(pnlR)) + "%"
+    pnlTxt = signalType == "BÁN" ? (pnlR >= 0 ? "-" + pnlAbs : "+" + pnlAbs) : (pnlR >= 0 ? "+" + pnlAbs : "-" + pnlAbs)
+    pnlLbl = signalType == "MUA" ? (pnlR >= 0 ? "ĐANG LÃI" : "ĐANG LỖ") : "TRÁNH LỖ"
+    pnlClr = signalType == "BÁN" ? (pnlR >= 0 ? T_RED : T_GRN) : (pnlR >= 0 ? T_GRN : T_RED)
+
+    table.cell(stbl, 0, 0, syminfo.ticker,
+         text_color=T_WHT, text_size=size.huge, text_halign=text.align_center, bgcolor=T_HDR)
+    table.cell(stbl, 1, 0, "", bgcolor=T_HDR)
+    table.merge_cells(stbl, 0, 0, 1, 0)
+
+    table.cell(stbl, 0, 1, trend == 1 ? "▲ MUA VÀ NẮM GIỮ" : "▼ BÁN VÀ CHỜ ĐỢI",
+         text_color=trend == 1 ? T_GRN : T_RED, text_size=tSize, text_halign=text.align_center, bgcolor=T_BG_LGT)
+    table.cell(stbl, 1, 1, "", bgcolor=T_BG_LGT)
+    table.merge_cells(stbl, 0, 1, 1, 1)
+    table.cell(stbl, 0, 3, "NGÀY " + signalType, text_color=T_LBL, text_size=tSize, text_halign=text.align_left,  bgcolor=T_BG_LGT)
+    table.cell(stbl, 1, 3, signalDate,            text_color=T_VAL, text_size=tSize, text_halign=text.align_right, bgcolor=T_BG_LGT)
+
+    table.cell(stbl, 0, 4, "GIÁ " + signalType,  text_color=T_LBL, text_size=tSize, text_halign=text.align_left,  bgcolor=T_BG_DRK)
+    table.cell(stbl, 1, 4, f_price(signalPrice),  text_color=T_VAL, text_size=tSize, text_halign=text.align_right, bgcolor=T_BG_DRK)
+
+    table.cell(stbl, 0, 5, trend == 1 ? "HỖ TRỢ" : "KHÁNG CỰ", text_color=T_LBL, text_size=tSize, text_halign=text.align_left,  bgcolor=T_BG_LGT)
+    table.cell(stbl, 1, 5, f_price(srPrc),                        text_color=srClr, text_size=tSize, text_halign=text.align_right, bgcolor=T_BG_LGT)
+
+    table.cell(stbl, 0, 6, "GIỮ LỆNH",                           text_color=T_LBL, text_size=tSize, text_halign=text.align_left,  bgcolor=T_BG_DRK)
+    table.cell(stbl, 1, 6, str.tostring(signalCount) + " PHIÊN", text_color=T_VAL, text_size=tSize, text_halign=text.align_right, bgcolor=T_BG_DRK)
+
+    table.cell(stbl, 0, 7, pnlLbl, text_color=T_LBL,  text_size=tSize, text_halign=text.align_left,  bgcolor=T_BG_LGT)
+    table.cell(stbl, 1, 7, pnlTxt, text_color=pnlClr, text_size=tSize, text_halign=text.align_right, bgcolor=T_BG_LGT)
+
+// =========================================================
+// =========================================================
+var label lbStar = na
+
+if barstate.islast
+    label.delete(lbStar)
+    lbStar := label.new(
+         x         = bar_index,
+         y         = trend == 1 ? up : dn,
+         text      = "✪",
+         style     = label.style_label_center,
+         color     = color.new(color.black, 100),
+         textcolor = trend == 1 ? color.new(color.green, 0) : color.new(color.red, 0),
+         size      = size.large)
+
+// =========================================================
+// AI KHUYẾN NGHỊ GẮN VÀO SUPERTREND Vũ Mạnh Đức 0973124824
+// =========================================================
+var label lbVol = na
+
+if barstate.islast and showVolLabel
+    label.delete(lbVol)
+
+    // isBreakUp   = buySignal  and biasNorm >= 55 and delta_vol_pct >  20
+    // isBreakDown = sellSignal and biasNorm <= 45 and delta_vol_pct < -20
+    srAnchor    = trend == 1 ? up : dn
+    lblStyle = trend == 1 ? label.style_label_upper_left : label.style_label_lower_left
+
+    trendClr =
+         buySignal   ? color.new(color.purple, 10) :
+         sellSignal ? color.new(color.orange, 10) :
+         trend == 1  ? color.new(color.green,  25) :
+                       color.new(color.red,    25)
+
+    // Tóm tắt chỉ báo
+    rsiTxt  = "RSI:"  + str.tostring(math.round(rsiVal)) + (rsiVal > 52 ? "↑" : rsiVal < 48 ? "↓" : "→")
+    macdTxt = "MACD:" + (macdHist > 0 and macdHist > macdHistPrev ? "↑" : macdHist < 0 and macdHist < macdHistPrev ? "↓" : "→")
+    adxTxt  = "ADX:"  + str.tostring(math.round(adx)) + (adx > 20 ? "💪" : "😴")
+    obvTxt  = "OBV:"  + (obvVal > obvEma  ? "↑" : "↓")
+    emaTxt  = "EMA:"  + (ema9   > ema21   ? "9>21↑" : "9<21↓")
+    vwapTxt = "VWAP:" + (close  > vwapV   ? "↑" : "↓")
+
+    volRatio = volume / volAvg
+    volTxt   = volRatio >= 2.0 ? "🔥 " + str.tostring(math.round(volRatio * 10) / 10) + "x — Đột biến!" :
+               volRatio >= 1.5 ? "⚡ " + str.tostring(math.round(volRatio * 10) / 10) + "x — Cao"        :
+               volRatio >= 0.8 ?         str.tostring(math.round(volRatio * 10) / 10) + "x — Bình thường":
+                                          str.tostring(math.round(volRatio * 10) / 10) + "x — Thấp"
+
+    deltaSign = delta_vol_pct >= 0 ? "+" : ""
+    deltaTxt  = deltaSign + str.tostring(math.round(delta_vol_pct * 10) / 10) + "%"
+
+    // === RISK MANAGEMENT ===
+    target20 = 20.0
+    target40 = 40.0
+    target80 = 80.0
+
+    profitTxt = ""
+    price20 = signalPrice * 1.20
+    price40 = signalPrice * 1.40
+    price80 = signalPrice * 1.80
+    if signalType == "MUA" and not na(signalPrice) and trend == 1
+        price20 := signalPrice * 1.20
+        price40 := signalPrice * 1.40
+        price80 := signalPrice * 1.80
+        if close >= price80
+            profitTxt := "🎯 Đã đạt mục tiêu 3: 80% (" + f_price(price80) + ")\n" +
+                         "👉 Nên chốt phần lớn, còn lại gồng đến cuối trend"
+        else if close >= price40
+            profitTxt := "🎯 Đã đạt mục tiêu 2: 40% (" + f_price(price40) + ")\n" +
+                         "👉 Chốt 40%, còn lại giữ tiếp mục tiêu 3 giá: " + f_price(price80)
+        else if close >= price20
+            profitTxt := "🎯 Đã đạt mục tiêu 1: 20% (" + f_price(price20) + ")\n" +
+                         "👉 Chốt 30%, giữ tiếp mục tiêu 2 giá: "+ f_price(price40)
+        else 
+            profitTxt := "🎯 Mục tiêu ngắn hạn 1: "+ f_price(price20)              
+    
+    recTxt = buySignal ? "🚀 Breakout tăng — Mua mạnh!" :
+         sellSignal ? "💥 Breakout giảm — Thoát ngay!" :
+         trend == 1  and biasNorm >= 55 and delta_vol_pct >  0 ? "📈 Xu hướng mạnh — Nắm giữ" :
+         trend == 1  and biasNorm >= 55 and delta_vol_pct <= 0 ? "👀 Xu hướng tốt — Theo dõi" :
+         trend == 1  and biasNorm <  55                        ? "⚠️ Xu hướng yếu — Thận trọng" :
+         trend == -1 and biasNorm <= 45 and delta_vol_pct <  0 ? "⛔ Xu hướng giảm — Tránh mua" :
+         trend == -1 and biasNorm <= 45 and delta_vol_pct >= 0 ? "🔍 Có hồi — Theo dõi" :
+                                                                 "⚖️ Sideway — Chờ tín hiệu"
+    spinnerIndex = math.floor(timenow / 250) % 4
+    spinner =
+          spinnerIndex == 0 ? "◐" :
+          spinnerIndex == 1 ? "◓" :
+          spinnerIndex == 2 ? "◑" : "◒"
+    lblTxt = "🤖 "  + " PHÂN TÍCH & KHUYẾN NGHỊ " + spinner+ " " + syminfo.ticker + "\n" +
+             "━━━━━━━━━━━━━━━━━"                                                               + "\n" +
+             rsiTxt + "  " + macdTxt + "  " + adxTxt + "  " + obvTxt + "\n" +  emaTxt + "  " + vwapTxt    + "\n" +
+             "Mua: " + str.tostring(trend_buy_vol, format.volume) + 
+             " | Bán: " + str.tostring(trend_sell_vol, format.volume) +
+             " | Delta: " + deltaTxt + "\n" +
+             "Vol/TB20 : " + volTxt                                                                         + "\n" +
+             "━━━━━━━━━━━━━━━━━"                                                                             + "\n" +
+             "⚡Sức mạnh: " + biasTextVN + " (" + str.tostring(math.round(biasNorm)) + "%)" + biasArrow      + "\n" + "\n" +
+             (trend == 1 ? "💰 Xu hướng: Tăng" : "💸 Xu hướng: Giảm")                                        + "\n" +
+             + profitTxt                                                                                      + "\n" +
+             "💡 Action:  " + recTxt                                                                          + "\n" +
+             "━━━━━━━━━━━━━━━━━"
+       
+
+    lbVol := label.new(
+         x         = last_bar_index + 1,
+         y         = srAnchor,
+         text      = lblTxt,
+         style     = lblStyle,
+         color     = trendClr,
+         textcolor = color.white,
+         size      = tSize,
+         textalign = text.align_left,
+         tooltip   = "ManhDucCapital"
+         )
+// ===============================
+// DISCLAIMER TABLE
+// ===============================
+var table tbDisclaimer = table.new(position.bottom_right, 1, 1)
+
+if barstate.islast
+    table.cell(
+     tbDisclaimer, 
+     0, 
+     0, 
+     "⚠️ Tín hiệu tham khảo - Quyết định đầu tư thuộc về bạn.", 
+     text_color=color.gray,
+     text_size=size.small)
+// =========================================================
+// CẢNH BÁO Vũ Mạnh Đức 0973124824
+// =========================================================
+alertcondition(buySignal,         "Cảnh báo điểm Mua",       "Cảnh báo điểm Mua!")
+alertcondition(sellSignal,        "Cảnh báo điểm Bán",       "Cảnh báo điểm Bán!")
+alertcondition(trend != trend[1], "Cảnh báo điểm Đảo chiều", "Cảnh báo điểm Đảo chiều!")
