@@ -30,10 +30,14 @@ maxCandleLabels   = input.int(3,        "Số nhãn vị nến tối đa",      
 // =========================================================
 // CT TÍN HIỆU
 // =========================================================
-Periods           = input.int(10,    "Chu kỳ ATR",                    group="Tín hiệu")
-src               = input.source(hl2,"Nguồn giá",                     group="Tín hiệu")
-Multiplier        = input.float(3.0, "Hệ số nhân ATR", step=0.1,      group="Tín hiệu")
-changeATR         = input.bool(true, "Thay đổi phương pháp tính ATR?",group="Tín hiệu")
+tradingStyle      = input.string("Ngắn hạn", "Phong cách giao dịch",
+                     options=["Ngắn hạn", "Dài hạn", "Tùy chỉnh"],
+                     tooltip="Ngắn hạn: ATR=7, Hệ số=2 | Dài hạn: ATR=10, Hệ số=3 | Tùy chỉnh: nhập tay bên dưới",
+                     group="Tín hiệu")
+Periods           = input.int(10,    "Chu kỳ ATR (chỉ dùng khi Tùy chỉnh)",   group="Tín hiệu")
+src               = input.source(hl2,"Nguồn giá",                              group="Tín hiệu")
+Multiplier        = input.float(3.0, "Hệ số nhân ATR (chỉ dùng khi Tùy chỉnh)", step=0.1, group="Tín hiệu")
+changeATR         = input.bool(true, "Thay đổi phương pháp tính ATR?",         group="Tín hiệu")
 useStrengthFilter = input.bool(false,"Lọc sức mạnh khi đảo chiều?",   group="Tín hiệu")
 weakThr           = input.int(40,    "Ngưỡng YẾU (<=) cho Bán",       group="Tín hiệu", minval=0, maxval=100)
 strongThr         = input.int(60,    "Ngưỡng MẠNH (>=) cho Mua",      group="Tín hiệu", minval=0, maxval=100)
@@ -161,9 +165,11 @@ biasArrow = biasChange > 2 ? " ↑" : biasChange < -2 ? " ↓" : " →"
 // =========================================================
 // SUPERTREND Vũ Mạnh Đức 0973124824
 // =========================================================
-atr  = changeATR ? ta.atr(Periods) : ta.sma(ta.tr, Periods)
-up   = src - Multiplier * atr
-dn   = src + Multiplier * atr
+_atrLen  = tradingStyle == "Ngắn hạn" ? 7  : tradingStyle == "Dài hạn" ? 10 : Periods
+_atrMult = tradingStyle == "Ngắn hạn" ? 2.0 : tradingStyle == "Dài hạn" ? 3.0 : Multiplier
+atr  = changeATR ? ta.atr(_atrLen) : ta.sma(ta.tr, _atrLen)
+up   = src - _atrMult * atr
+dn   = src + _atrMult * atr
 
 var float up1 = na
 var float dn1 = na
