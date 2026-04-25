@@ -79,6 +79,10 @@ f_sign(v)       => v >= 0 ? "+" : ""
 f_buyPrice(md)  => md == "Lý tưởng nhất" ? low  : md == "Lý tưởng" ? hl2  : high
 f_sellPrice(md) => md == "Lý tưởng nhất" ? high : md == "Lý tưởng" ? hl2  : low
 f_modeLabel(md) => md == "Lý tưởng nhất" ? "🏆 Lý tưởng nhất" : md == "Lý tưởng" ? "⭐ Lý tưởng" : "📊 Thực tế"
+f_round2(v)     => math.round(v * 100) / 100
+f_pct(v)        => f_sign(v) + str.tostring(f_round2(v)) + "%"
+f_today()       => f_pad(dayofmonth) + "/" + f_pad(month) + "/" + str.tostring(year)
+f_tsize(s)      => s == "tiny" ? size.tiny : s == "small" ? size.small : s == "normal" ? size.normal : s == "large" ? size.large : size.huge
 
 // =========================================================
 // PALETTE Vũ Mạnh Đức 0973124824
@@ -229,12 +233,12 @@ if buySignal or sellSignal
     signalBar   := bar_index
     signalCount := 0
     signalType  := buySignal ? "MUA" : "BÁN"
-    signalDate  := f_pad(dayofmonth) + "/" + f_pad(month) + "/" + str.tostring(year)
+    signalDate  := f_today()
 
 if not na(signalPrice)
     signalCount := bar_index - signalBar
 
-pnl = na(signalPrice) or signalPrice == 0 ? 0.0 :signalType == "MUA" ? (close - signalPrice) / signalPrice * 100 :(signalPrice - close) / signalPrice * 100
+pnl = na(signalPrice) or signalPrice == 0 ? 0.0 : signalType == "MUA" ? (close - signalPrice) / signalPrice * 100 :(signalPrice - close) / signalPrice * 100
 
 // =========================================================
 // VOLUME TÍCH LŨY THEO TREND Vũ Mạnh Đức 0973124824
@@ -373,7 +377,7 @@ var int    bt_totalDays   = 0
 if inBacktest and buySignal and na(bt_entryPrice)
     bt_entryPrice := f_buyPrice(entryMode)
     bt_entryBar   := bar_index
-    bt_entryDate  := f_pad(dayofmonth) + "/" + f_pad(month) + "/" + str.tostring(year)
+    bt_entryDate  := f_today()
 
 if inBacktest and sellSignal and not na(bt_entryPrice)
     exitPrice   = f_sellPrice(entryMode)
@@ -383,7 +387,7 @@ if inBacktest and sellSignal and not na(bt_entryPrice)
 
     array.push(hist_buyDate,   bt_entryDate)
     array.push(hist_buyPrice,  bt_entryPrice)
-    array.push(hist_sellDate,  f_pad(dayofmonth) + "/" + f_pad(month) + "/" + str.tostring(year))
+    array.push(hist_sellDate,  f_today())
     array.push(hist_sellPrice, exitPrice)
     array.push(hist_pnlPct,    pnlPct)
     array.push(hist_pnlAmount, pnlAmt)
@@ -409,12 +413,12 @@ bt_returnPct = initialCapital > 0 ? bt_netProfit / initialCapital * 100  : 0.0
 // =========================================================
 // BẢNG LỊCH SỬ GIAO DỊCH Vũ Mạnh Đức 0973124824
 // =========================================================
-tSize = tableSize == "tiny" ? size.tiny : tableSize == "small" ? size.small : tableSize == "normal" ? size.normal : tableSize == "large" ? size.large : size.huge
+tSize = f_tsize(tableSize)
 
 if barstate.islast and showHistory and array.size(hist_buyDate) > 0
     tbl_pos      = tablePosition == "bottom_right" ? position.bottom_right : tablePosition == "bottom_center" ? position.bottom_center : position.bottom_left
     tSize_h      = tableSize == "tiny" ? size.small : tableSize == "small" ? size.normal : tableSize == "normal" ? size.large : size.huge
-    tSize_d      = tableSize == "tiny" ? size.tiny  : tableSize == "small" ? size.small  : tableSize == "normal" ? size.normal : tableSize == "large" ? size.large : size.large
+    tSize_d      = tableSize == "tiny" ? size.tiny  : tableSize == "small" ? size.small  : tableSize == "normal" ? size.normal : size.large
     totalTrades  = array.size(hist_buyDate)
     displayCount = math.min(totalTrades, maxHistoryRows)
     startIdx     = math.max(0, totalTrades - displayCount)
@@ -482,7 +486,7 @@ if barstate.islast and showHistory and array.size(hist_buyDate) > 0
         table.cell(htbl, 4, r, f_price(array.get(hist_sellPrice, idx)),                              text_color=T_VAL,  text_size=tSize_d, text_halign=text.align_right,  bgcolor=rowBg)
         table.cell(htbl, 5, r, str.tostring(array.get(hist_holdDays, idx)),                          text_color=T_LBL,  text_size=tSize_d, text_halign=text.align_center, bgcolor=rowBg)
         table.cell(htbl, 6, r, f_sign(pnlAmt) + f_million(pnlAmt) + " tr",                          text_color=pnlClr, text_size=tSize_d, text_halign=text.align_right,  bgcolor=rowBg)
-        table.cell(htbl, 7, r, f_sign(pnlPct) + str.tostring(math.round(pnlPct * 100) / 100) + "%", text_color=pnlClr, text_size=tSize_d, text_halign=text.align_center, bgcolor=rowBg)
+        table.cell(htbl, 7, r, f_pct(pnlPct),                                                       text_color=pnlClr, text_size=tSize_d, text_halign=text.align_center, bgcolor=rowBg)
         r += 1
 
     // ── HÀNG TỔNG CỘNG ───────────────────────────────────────
@@ -494,7 +498,7 @@ if barstate.islast and showHistory and array.size(hist_buyDate) > 0
     table.cell(htbl, 4, r, f_price(disp_avgSell),                                                            text_color=T_YLW,  text_size=tSize_d, text_halign=text.align_right,  bgcolor=T_BG_TOT)
     table.cell(htbl, 5, r, str.tostring(math.round(avgDaysD)),                                               text_color=T_YLW,  text_size=tSize_d, text_halign=text.align_center, bgcolor=T_BG_TOT)
     table.cell(htbl, 6, r, f_sign(disp_totalAmt) + f_million(disp_totalAmt) + " tr",                        text_color=totClr, text_size=tSize_d, text_halign=text.align_right,  bgcolor=T_BG_TOT)
-    table.cell(htbl, 7, r, f_sign(disp_totalPct) + str.tostring(math.round(disp_totalPct * 100) / 100) + "%",text_color=totClr, text_size=tSize_d, text_halign=text.align_center, bgcolor=T_BG_TOT)
+    table.cell(htbl, 7, r, f_pct(disp_totalPct),                                                          text_color=totClr, text_size=tSize_d, text_halign=text.align_center, bgcolor=T_BG_TOT)
     r += 1
 
     // ── SUMMARY ROW 1: Vốn & Lãi/Lỗ ─────────────────────────
@@ -504,7 +508,7 @@ if barstate.islast and showHistory and array.size(hist_buyDate) > 0
     for i = 1 to 2
         table.cell(htbl, i, r, "", bgcolor=T_BG_DRK)
     table.merge_cells(htbl, 0, r, 2, r)
-    table.cell(htbl, 3, r, "Lãi/Lỗ: " + f_sign(bt_netProfit) + f_million(bt_netProfit) + " tr | ROI: " + f_sign(bt_returnPct) + str.tostring(math.round(bt_returnPct * 100) / 100) + "%",
+    table.cell(htbl, 3, r, "Lãi/Lỗ: " + f_sign(bt_netProfit) + f_million(bt_netProfit) + " tr | ROI: " + f_pct(bt_returnPct),
          text_color=finalPnlColor, text_size=tSize_d, text_halign=text.align_left, bgcolor=T_BG_DRK)
     for i = 4 to 7
         table.cell(htbl, i, r, "", bgcolor=T_BG_DRK)
@@ -518,12 +522,12 @@ if barstate.islast and showHistory and array.size(hist_buyDate) > 0
     for i = 1 to 2
         table.cell(htbl, i, r, "", bgcolor=T_BG_LGT)
     table.merge_cells(htbl, 0, r, 2, r)
-    table.cell(htbl, 3, r, "Win Rate: " + str.tostring(math.round(bt_winRate * 100) / 100) + "% | Avg PnL: " + f_sign(bt_avgPnL) + str.tostring(math.round(bt_avgPnL * 100) / 100) + "%",
+    table.cell(htbl, 3, r, "Win Rate: " + str.tostring(f_round2(bt_winRate)) + "% | Avg PnL: " + f_pct(bt_avgPnL),
          text_color=wrClr, text_size=tSize_d, text_halign=text.align_left, bgcolor=T_BG_LGT)
     for i = 4 to 6
         table.cell(htbl, i, r, "", bgcolor=T_BG_LGT)
     table.merge_cells(htbl, 3, r, 6, r)
-    table.cell(htbl, 7, r, "📉 Max DD: " + str.tostring(math.round(bt_maxDrawdown * 100) / 100) + "%",
+    table.cell(htbl, 7, r, "📉 Max DD: " + str.tostring(f_round2(bt_maxDrawdown)) + "%",
          text_color=T_RED, text_size=tSize_d, text_halign=text.align_right, bgcolor=T_BG_LGT)
     r += 1
 
