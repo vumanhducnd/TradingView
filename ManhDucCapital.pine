@@ -17,7 +17,7 @@ tableSize    = input.string("normal", "Cỡ chữ bảng",                 group
 themeMode    = input.string("Light",  "Giao diện (Theme)",            group="Cài đặt chung", options=["Dark","Light"])
 showsignals  = input.bool(true,   "Hiển thị tín hiệu Mua/Bán?",      group="Cài đặt chung")
 showSR       = input.bool(false,  "Hiển thị đường Hỗ trợ/Kháng cự?", group="Cài đặt chung")
-showVolLabel      = input.bool(false,   "Hiển thị Phân tích trực tiếp?",    group="Cài đặt chung")
+showVolLabel      = input.bool(true,   "Hiển thị Phân tích trực tiếp?",    group="Cài đặt chung")
 showCandlePattern = input.bool(true,    "Đọc vị nến khi gần đỉnh/đáy?",     group="Cài đặt chung",
      tooltip="Nhận diện mẫu nến đảo chiều khi giá tiếp cận vùng hỗ trợ/kháng cự")
 nearThreshPct     = input.float(3.0,    "Ngưỡng gần đỉnh/đáy (%)",          group="Cài đặt chung",
@@ -68,6 +68,22 @@ tablePosition  = input.string("bottom_right", "Vị trí bảng lịch sử",   
 entryMode      = input.string("Lý tưởng nhất", "Kiểu điểm Mua/Bán",      group="Test lịch sử",
      options=["Lý tưởng nhất","Lý tưởng","Thực tế"],
      tooltip="Lý tưởng nhất: Mua đáy (Low), Bán đỉnh (High) cây nến tín hiệu\nLý tưởng: Mua/Bán trung bình đỉnh-đáy (HL2) cây nến tín hiệu\nThực tế: Mua đỉnh (High), Bán đáy (Low) cây nến tín hiệu")
+
+// =========================================================
+// CÀI ĐẶT TP / SL Vũ Mạnh Đức 0973124824
+// =========================================================
+showTPSL  = input.bool(false,  "Hiển thị đường TP/SL?",          group="TP / SL",
+     tooltip="Vẽ đường ngang thể hiện điểm vào lệnh, cắt lỗ và các mục tiêu chốt lời\nChỉ hiển thị khi đang có lệnh MUA (trend tăng)\nTự động xóa khi xuất hiện tín hiệu Bán")
+slAtrMult = input.float(1.5,  "SL Buffer (×ATR)",               group="TP / SL", minval=0.3, maxval=5.0,  step=0.1,
+     tooltip="SL đặt dưới Pivot Low một khoảng = slMult × ATR\nGiá trị lớn hơn = SL rộng hơn, ít bị quét hơn\nVí dụ: 1.5 × ATR dưới pivot low gần nhất")
+pivotLen  = input.int(10,     "Độ dài Pivot (bars)",             group="TP / SL", minval=3, maxval=50,
+     tooltip="Số nến dùng để xác định Pivot Low làm vùng SL\nLớn hơn = pivot xa hơn, SL ổn định hơn")
+tp1R      = input.float(1.0,  "TP1 (R-multiple)",                group="TP / SL", minval=0.5, maxval=10.0, step=0.1,
+     tooltip="TP1 = Vào lệnh + Risk × R1\nRisk = khoảng cách từ entry đến SL (tự tính theo ATR + pivot)")
+tp2R      = input.float(2.0,  "TP2 (R-multiple)",                group="TP / SL", minval=0.5, maxval=10.0, step=0.1,
+     tooltip="TP2 = Vào lệnh + Risk × R2\nGợi ý chốt thêm 30–40% vị thế khi chạm")
+tp3R      = input.float(3.0,  "TP3 (R-multiple)",                group="TP / SL", minval=0.5, maxval=10.0, step=0.1,
+     tooltip="TP3 = Vào lệnh + Risk × R3\nGợi ý gồng phần còn lại đến mục tiêu xa nhất")
 
 // =========================================================
 // HÀM TIỆN ÍCH Vũ Mạnh Đức 0973124824
@@ -191,6 +207,16 @@ trend := trend == -1 and close > dn1 and allowFlipToLong  ?  1 :
 
 buySignal  = trend == 1  and trend[1] == -1
 sellSignal = trend == -1 and trend[1] == 1
+
+// ── Pivot High/Low để tính SL động ───────────────────────
+_phRaw = ta.pivothigh(high, pivotLen, pivotLen)
+_plRaw = ta.pivotlow(low,  pivotLen, pivotLen)
+var float lastPivotHigh = na
+var float lastPivotLow  = na
+if not na(_phRaw)
+    lastPivotHigh := _phRaw
+if not na(_plRaw)
+    lastPivotLow := _plRaw
 
 upPlot = plot(trend == 1 ? up : na, "Xu hướng tăng", color.green, 2, plot.style_linebr)
 dnPlot = plot(trend == 1 ? na : dn, "Xu hướng giảm", color.red,   2, plot.style_linebr)
@@ -318,6 +344,98 @@ if showCandlePattern
             array.push(candleLabels, _lbl)
             while array.size(candleLabels) > maxCandleLabels
                 label.delete(array.shift(candleLabels))
+
+// =========================================================
+// TP / SL LINES Vũ Mạnh Đức 0973124824
+// =========================================================
+var line  lnEntry = na
+var line  lnSL    = na
+var line  lnTP1   = na
+var line  lnTP2   = na
+var line  lnTP3   = na
+var label lbEntry = na
+var label lbSL    = na
+var label lbTP1   = na
+var label lbTP2   = na
+var label lbTP3   = na
+
+// Lưu giá trị tại thời điểm buySignal để label không bị tính lại sai
+var float saved_ep  = na
+var float saved_sl  = na
+var float saved_tp1 = na
+var float saved_tp2 = na
+var float saved_tp3 = na
+
+_tpslOn = showTPSL and signalType == "MUA" and not na(signalPrice) and trend == 1
+
+if sellSignal
+    line.delete(lnEntry),  line.delete(lnSL),  line.delete(lnTP1),  line.delete(lnTP2),  line.delete(lnTP3)
+    label.delete(lbEntry), label.delete(lbSL), label.delete(lbTP1), label.delete(lbTP2), label.delete(lbTP3)
+    saved_ep  := na
+    saved_sl  := na
+    saved_tp1 := na
+    saved_tp2 := na
+    saved_tp3 := na
+
+if buySignal and showTPSL
+    _ep     = signalPrice
+    _slBase = not na(lastPivotLow) ? lastPivotLow : low
+    _sl     = math.min(_slBase - slAtrMult * atr, _ep - slAtrMult * atr)
+    _risk   = math.max(_ep - _sl, atr * 0.1)
+    _tp1    = _ep + _risk * tp1R
+    _tp2    = _ep + _risk * tp2R
+    _tp3    = _ep + _risk * tp3R
+    saved_ep  := _ep
+    saved_sl  := _sl
+    saved_tp1 := _tp1
+    saved_tp2 := _tp2
+    saved_tp3 := _tp3
+    line.delete(lnEntry)
+    lnEntry := line.new(bar_index, _ep,  bar_index + 1, _ep,  color=color.new(#FFC107, 0), width=1, style=line.style_dotted, extend=extend.right)
+    line.delete(lnSL)
+    lnSL    := line.new(bar_index, _sl,  bar_index + 1, _sl,  color=color.new(#F44336, 0), width=1, style=line.style_dashed, extend=extend.right)
+    line.delete(lnTP1)
+    lnTP1   := line.new(bar_index, _tp1, bar_index + 1, _tp1, color=color.new(#8BC34A, 0), width=1, style=line.style_dashed, extend=extend.right)
+    line.delete(lnTP2)
+    lnTP2   := line.new(bar_index, _tp2, bar_index + 1, _tp2, color=color.new(#4CAF50, 0), width=1, style=line.style_dashed, extend=extend.right)
+    line.delete(lnTP3)
+    lnTP3   := line.new(bar_index, _tp3, bar_index + 1, _tp3, color=color.new(#009688, 0), width=1, style=line.style_dashed, extend=extend.right)
+
+if barstate.islast and _tpslOn and not na(saved_ep)
+    _ep        = saved_ep
+    _sl        = saved_sl
+    _tp1       = saved_tp1
+    _tp2       = saved_tp2
+    _tp3       = saved_tp3
+    _slPctStr  = str.tostring(math.round((_ep - _sl) / _ep * 100 * 10) / 10)
+    _tp1PctStr = str.tostring(math.round((_tp1 - _ep) / _ep * 100 * 10) / 10)
+    _tp2PctStr = str.tostring(math.round((_tp2 - _ep) / _ep * 100 * 10) / 10)
+    _tp3PctStr = str.tostring(math.round((_tp3 - _ep) / _ep * 100 * 10) / 10)
+
+    label.delete(lbEntry)
+    lbEntry := label.new(bar_index + 2, _ep,
+         "📌 Vào:  " + f_price(_ep),
+         style=label.style_label_left, color=color.new(#FFC107, 0), textcolor=color.black, size=size.small)
+
+    label.delete(lbSL)
+    lbSL := label.new(bar_index + 2, _sl,
+         "🛑 SL:    " + f_price(_sl) + "   -" + _slPctStr + "%",
+         style=label.style_label_left, color=color.new(#F44336, 0), textcolor=color.white, size=size.small)
+
+    label.delete(lbTP1)
+    lbTP1 := label.new(bar_index + 2, _tp1,
+         "🎯 T1:   " + f_price(_tp1) + "   +" + _tp1PctStr + "%   RR 1:" + str.tostring(tp1R),
+         style=label.style_label_left, color=color.new(#8BC34A, 0), textcolor=color.black, size=size.small)
+
+    label.delete(lbTP2)
+    lbTP2 := label.new(bar_index + 2, _tp2,
+         "🎯 T2:   " + f_price(_tp2) + "   +" + _tp2PctStr + "%   RR 1:" + str.tostring(tp2R),
+         style=label.style_label_left, color=color.new(#4CAF50, 0), textcolor=color.white, size=size.small)
+
+    label.delete(lbTP3)
+    lbTP3 := label.new(bar_index + 2, _tp3,
+         "🎯 T3:   " + f_price(_tp3) + "   +" + _tp3PctStr + "%   RR 1:" + str.tostring(tp3R),
+         style=label.style_label_left, color=color.new(#009688, 0), textcolor=color.white, size=size.small)
 
 // =========================================================
 // HỖ TRỢ / KHÁNG CỰ Vũ Mạnh Đức 0973124824
