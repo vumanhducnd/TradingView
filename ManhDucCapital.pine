@@ -270,29 +270,40 @@ if showCandlePattern
     _ns = _r > 0 and math.abs(close - _sl) / _sl * 100 <= nearThreshPct
 
     if _ns
-        _n = ""
+        _n  = ""
+        _tt = ""
         if trend == 1
             if _b > 0 and _dw >= 2 * _b and _uw <= 0.5 * _b
-                _n := "🔨\nHammer"
+                _n  := "🔨\nHammer"
+                _tt := "🔨 HAMMER (Búa)\nĐuôi dài dưới ≥ 2× thân nến — phe mua đã phản công mạnh tại vùng hỗ trợ.\nÝ nghĩa: Tín hiệu đảo chiều tăng tiềm năng.\nXác nhận: Nến tiếp theo đóng cửa cao hơn nến Hammer."
             else if close > open and close[1] < open[1] and open <= close[1] and close >= open[1]
-                _n := "🕯️\nBull Engulf"
+                _n  := "🕯️\nBull Engulf"
+                _tt := "🕯️ BULLISH ENGULFING (Nến Nhấn Chìm Tăng)\nNến tăng bao trùm toàn bộ thân nến giảm trước — lực mua vượt trội.\nÝ nghĩa: Đảo chiều tăng mạnh tại vùng hỗ trợ.\nXác nhận: Khối lượng cao hơn nến trước."
             else if _r > 0 and _b / _r < 0.1 and _dw >= _uw * 1.5
-                _n := "🌅\nDoji Rồng"
+                _n  := "🌅\nDoji Rồng"
+                _tt := "🌅 DRAGONFLY DOJI (Doji Chuồn Chuồn)\nGiá mở = đóng cửa, đuôi dài dưới — phe bán thất bại giữ giá thấp.\nÝ nghĩa: Cảnh báo đảo chiều tăng tại hỗ trợ.\nXác nhận: Nến xanh mạnh tiếp theo là tín hiệu tốt."
             else if _r > 0 and _b / _r < 0.15
-                _n := "〰️\nDoji"
+                _n  := "〰️\nDoji"
+                _tt := "〰️ DOJI\nGiá mở và đóng cửa gần bằng nhau — thị trường giằng co tại hỗ trợ.\nÝ nghĩa: Do dự, chờ xác nhận chiều hướng.\nXác nhận: Nến tiếp theo quyết định xu hướng."
             else if close > open and _r > 0 and _b / _r >= 0.6
-                _n := "💚\nMarubozu↑"
+                _n  := "💚\nMarubozu↑"
+                _tt := "💚 MARUBOZU TĂNG\nThân nến dài, gần như không có đuôi — phe mua kiểm soát hoàn toàn.\nÝ nghĩa: Lực mua quyết đoán, xu hướng tăng có thể tiếp diễn.\nXác nhận: Khối lượng cao là dấu hiệu bứt phá."
         else
             if _b > 0 and _uw >= 2 * _b and _dw <= 0.5 * _b
-                _n := "⭐\nSao Rơi"
+                _n  := "⭐\nSao Rơi"
+                _tt := "⭐ SHOOTING STAR (Sao Băng)\nĐuôi dài trên ≥ 2× thân nến — phe mua thất bại giữ giá cao tại kháng cự.\nÝ nghĩa: Tín hiệu đảo chiều giảm tiềm năng.\nXác nhận: Nến tiếp theo đóng cửa thấp hơn xác nhận tín hiệu."
             else if close < open and close[1] > open[1] and open >= close[1] and close <= open[1]
-                _n := "🕯️\nBear Engulf"
+                _n  := "🕯️\nBear Engulf"
+                _tt := "🕯️ BEARISH ENGULFING (Nến Nhấn Chìm Giảm)\nNến giảm bao trùm toàn bộ thân nến tăng trước — áp lực bán áp đảo.\nÝ nghĩa: Đảo chiều giảm mạnh tại vùng kháng cự.\nXác nhận: Khối lượng cao hơn nến trước là cảnh báo rõ ràng."
             else if _r > 0 and _b / _r < 0.1 and _uw >= _dw * 1.5
-                _n := "🌃\nDoji Mộ"
+                _n  := "🌃\nDoji Mộ"
+                _tt := "🌃 GRAVESTONE DOJI (Doji Bia Mộ)\nGiá mở = đóng cửa, đuôi dài trên — phe mua thất bại giữ đỉnh giá.\nÝ nghĩa: Cảnh báo đảo chiều giảm mạnh tại kháng cự.\nXác nhận: Nến đỏ tiếp theo là tín hiệu bán mạnh."
             else if _r > 0 and _b / _r < 0.15
-                _n := "〰️\nDoji"
+                _n  := "〰️\nDoji"
+                _tt := "〰️ DOJI\nGiá mở và đóng cửa gần bằng nhau — thị trường giằng co tại kháng cự.\nÝ nghĩa: Do dự, phe mua/bán cân bằng — thường báo hiệu đảo chiều.\nXác nhận: Nến tiếp theo quyết định xu hướng."
             else if close < open and _r > 0 and _b / _r >= 0.6
-                _n := "🔴\nMarubozu↓"
+                _n  := "🔴\nMarubozu↓"
+                _tt := "🔴 MARUBOZU GIẢM\nThân nến dài, gần như không có đuôi — phe bán kiểm soát hoàn toàn.\nÝ nghĩa: Áp lực bán lớn, xu hướng giảm có thể tiếp diễn.\nXác nhận: Khối lượng cao là tín hiệu xả hàng mạnh."
 
         if _n != ""
             _lbl = label.new(
@@ -302,7 +313,8 @@ if showCandlePattern
                  style     = trend == 1 ? label.style_label_up : label.style_label_down,
                  color     = trend == 1 ? color.new(color.teal, 10) : color.new(color.maroon, 10),
                  textcolor = color.white,
-                 size      = size.small)
+                 size      = size.small,
+                 tooltip   = _tt)
             array.push(candleLabels, _lbl)
             while array.size(candleLabels) > maxCandleLabels
                 label.delete(array.shift(candleLabels))
