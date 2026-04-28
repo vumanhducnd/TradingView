@@ -299,12 +299,21 @@ if showCandlePattern
         _n  = ""
         _tt = ""
         if trend == 1
-            if _b > 0 and _dw >= 2 * _b and _uw <= 0.5 * _b
+            if close[2] < open[2] and math.abs(close[1] - open[1]) <= math.abs(close[2] - open[2]) * 0.5 and close > open and close > (open[2] + close[2]) / 2
+                _n  := "🌟\nSao Mai"
+                _tt := "🌟 MORNING STAR (Sao Mai)\n3 nến: giảm mạnh → nến nhỏ → tăng mạnh vượt giữa thân nến đầu — đảo chiều tăng cực mạnh.\nÝ nghĩa: Phe mua chiếm quyền kiểm soát sau khi phe bán kiệt sức.\nXác nhận: Khối lượng nến thứ 3 cao hơn là tín hiệu mạnh."
+            else if _b > 0 and _dw >= 2 * _b and _uw <= 0.5 * _b
                 _n  := "🔨\nHammer"
                 _tt := "🔨 HAMMER (Búa)\nĐuôi dài dưới ≥ 2× thân nến — phe mua đã phản công mạnh tại vùng hỗ trợ.\nÝ nghĩa: Tín hiệu đảo chiều tăng tiềm năng.\nXác nhận: Nến tiếp theo đóng cửa cao hơn nến Hammer."
+            else if _b > 0 and _uw >= 2 * _b and _dw <= 0.5 * _b
+                _n  := "🔃\nBúa Ngược"
+                _tt := "🔃 INVERTED HAMMER (Búa Ngược)\nĐuôi dài trên ≥ 2× thân, xuất hiện tại đáy/hỗ trợ — phe mua cố phục hồi.\nÝ nghĩa: Tín hiệu đảo chiều tăng tiềm năng.\nXác nhận: Nến xanh tiếp theo xác nhận sức mua quay trở lại."
             else if close > open and close[1] < open[1] and open <= close[1] and close >= open[1]
                 _n  := "🕯️\nBull Engulf"
                 _tt := "🕯️ BULLISH ENGULFING (Nến Nhấn Chìm Tăng)\nNến tăng bao trùm toàn bộ thân nến giảm trước — lực mua vượt trội.\nÝ nghĩa: Đảo chiều tăng mạnh tại vùng hỗ trợ.\nXác nhận: Khối lượng cao hơn nến trước."
+            else if close > open and close[1] < open[1] and open < close[1] and close > (open[1] + close[1]) / 2 and close < open[1]
+                _n  := "🌤️\nĐường Xuyên"
+                _tt := "🌤️ PIERCING LINE (Đường Xuyên)\nNến tăng mở thấp hơn thân nến giảm trước, đóng cửa vượt giữa thân nến giảm — phe mua phản công.\nÝ nghĩa: Tín hiệu đảo chiều tăng tại vùng hỗ trợ.\nXác nhận: Khối lượng cao và nến tăng tiếp theo."
             else if _r > 0 and _b / _r < 0.1 and _dw >= _uw * 1.5
                 _n  := "🌅\nDoji Rồng"
                 _tt := "🌅 DRAGONFLY DOJI (Doji Chuồn Chuồn)\nGiá mở = đóng cửa, đuôi dài dưới — phe bán thất bại giữ giá thấp.\nÝ nghĩa: Cảnh báo đảo chiều tăng tại hỗ trợ.\nXác nhận: Nến xanh mạnh tiếp theo là tín hiệu tốt."
@@ -315,12 +324,21 @@ if showCandlePattern
                 _n  := "💚\nMarubozu↑"
                 _tt := "💚 MARUBOZU TĂNG\nThân nến dài, gần như không có đuôi — phe mua kiểm soát hoàn toàn.\nÝ nghĩa: Lực mua quyết đoán, xu hướng tăng có thể tiếp diễn.\nXác nhận: Khối lượng cao là dấu hiệu bứt phá."
         else
-            if _b > 0 and _uw >= 2 * _b and _dw <= 0.5 * _b
+            if close[2] > open[2] and math.abs(close[1] - open[1]) <= math.abs(close[2] - open[2]) * 0.5 and close < open and close < (open[2] + close[2]) / 2
+                _n  := "🌆\nSao Hôm"
+                _tt := "🌆 EVENING STAR (Sao Hôm)\n3 nến: tăng mạnh → nến nhỏ → giảm mạnh dưới giữa thân nến đầu — đảo chiều giảm cực mạnh.\nÝ nghĩa: Phe bán chiếm quyền kiểm soát sau khi phe mua kiệt sức.\nXác nhận: Khối lượng nến thứ 3 cao là tín hiệu bán mạnh."
+            else if _b > 0 and _uw >= 2 * _b and _dw <= 0.5 * _b
                 _n  := "⭐\nSao Rơi"
                 _tt := "⭐ SHOOTING STAR (Sao Băng)\nĐuôi dài trên ≥ 2× thân nến — phe mua thất bại giữ giá cao tại kháng cự.\nÝ nghĩa: Tín hiệu đảo chiều giảm tiềm năng.\nXác nhận: Nến tiếp theo đóng cửa thấp hơn xác nhận tín hiệu."
+            else if _b > 0 and _dw >= 2 * _b and _uw <= 0.5 * _b
+                _n  := "🪝\nNgười Treo"
+                _tt := "🪝 HANGING MAN (Người Treo Cổ)\nĐuôi dài dưới ≥ 2× thân, xuất hiện tại đỉnh/kháng cự — dấu hiệu phe bán đang thăm dò.\nÝ nghĩa: Cảnh báo đảo chiều giảm tiềm năng.\nXác nhận: Nến đỏ tiếp theo xác nhận áp lực bán."
             else if close < open and close[1] > open[1] and open >= close[1] and close <= open[1]
                 _n  := "🕯️\nBear Engulf"
                 _tt := "🕯️ BEARISH ENGULFING (Nến Nhấn Chìm Giảm)\nNến giảm bao trùm toàn bộ thân nến tăng trước — áp lực bán áp đảo.\nÝ nghĩa: Đảo chiều giảm mạnh tại vùng kháng cự.\nXác nhận: Khối lượng cao hơn nến trước là cảnh báo rõ ràng."
+            else if close < open and close[1] > open[1] and open > close[1] and close < (open[1] + close[1]) / 2 and close > open[1]
+                _n  := "🌧️\nMây Đen"
+                _tt := "🌧️ DARK CLOUD COVER (Mây Đen Bao Phủ)\nNến giảm mở cao hơn thân nến tăng trước, đóng cửa dưới giữa thân nến tăng — phe bán áp đảo.\nÝ nghĩa: Tín hiệu đảo chiều giảm tại vùng kháng cự.\nXác nhận: Khối lượng cao và nến đỏ tiếp theo."
             else if _r > 0 and _b / _r < 0.1 and _uw >= _dw * 1.5
                 _n  := "🌃\nDoji Mộ"
                 _tt := "🌃 GRAVESTONE DOJI (Doji Bia Mộ)\nGiá mở = đóng cửa, đuôi dài trên — phe mua thất bại giữ đỉnh giá.\nÝ nghĩa: Cảnh báo đảo chiều giảm mạnh tại kháng cự.\nXác nhận: Nến đỏ tiếp theo là tín hiệu bán mạnh."
@@ -806,12 +824,21 @@ if barstate.islast and showVolLabel
 
     if showCandlePattern and _nearSR
         if trend == 1
-            if _body > 0 and _dnWick >= 2 * _body and _upWick <= 0.5 * _body
+            if close[2] < open[2] and math.abs(close[1] - open[1]) <= math.abs(close[2] - open[2]) * 0.5 and close > open and close > (open[2] + close[2]) / 2
+                _cp := "🌟 Morning Star"
+                _cs := "3 nến đảo chiều tăng — phe mua kiểm soát sau phe bán kiệt sức"
+            else if _body > 0 and _dnWick >= 2 * _body and _upWick <= 0.5 * _body
                 _cp := "🔨 Hammer"
                 _cs := "Đuôi dài dưới — khả năng bật lại từ hỗ trợ"
+            else if _body > 0 and _upWick >= 2 * _body and _dnWick <= 0.5 * _body
+                _cp := "🔃 Inverted Hammer"
+                _cs := "Đuôi dài trên tại đáy — phe mua đang thăm dò phục hồi"
             else if close > open and close[1] < open[1] and open <= close[1] and close >= open[1]
                 _cp := "🕯️ Bullish Engulfing"
                 _cs := "Nến tăng bao phủ nến giảm — đảo chiều tăng"
+            else if close > open and close[1] < open[1] and open < close[1] and close > (open[1] + close[1]) / 2 and close < open[1]
+                _cp := "🌤️ Piercing Line"
+                _cs := "Nến tăng xuyên giữa nến giảm trước — tín hiệu đảo chiều tăng"
             else if _range > 0 and _body / _range < 0.1 and _dnWick >= _upWick * 1.5
                 _cp := "🌅 Dragonfly Doji"
                 _cs := "Doji đuôi dài dưới — chú ý đảo chiều tăng"
@@ -822,12 +849,21 @@ if barstate.islast and showVolLabel
                 _cp := "💚 Marubozu Tăng"
                 _cs := "Nến tăng thân dài — tín hiệu tích cực"
         else
-            if _body > 0 and _upWick >= 2 * _body and _dnWick <= 0.5 * _body
+            if close[2] > open[2] and math.abs(close[1] - open[1]) <= math.abs(close[2] - open[2]) * 0.5 and close < open and close < (open[2] + close[2]) / 2
+                _cp := "🌆 Evening Star"
+                _cs := "3 nến đảo chiều giảm — phe bán kiểm soát sau phe mua kiệt sức"
+            else if _body > 0 and _upWick >= 2 * _body and _dnWick <= 0.5 * _body
                 _cp := "⭐ Shooting Star"
                 _cs := "Đuôi dài trên — cảnh báo đảo chiều tại kháng cự"
+            else if _body > 0 and _dnWick >= 2 * _body and _upWick <= 0.5 * _body
+                _cp := "🪝 Hanging Man"
+                _cs := "Đuôi dài dưới tại đỉnh — phe bán đang thăm dò"
             else if close < open and close[1] > open[1] and open >= close[1] and close <= open[1]
                 _cp := "🕯️ Bearish Engulfing"
                 _cs := "Nến giảm bao phủ nến tăng — xác nhận áp lực bán"
+            else if close < open and close[1] > open[1] and open > close[1] and close < (open[1] + close[1]) / 2 and close > open[1]
+                _cp := "🌧️ Dark Cloud Cover"
+                _cs := "Nến giảm xuyên giữa nến tăng trước — tín hiệu đảo chiều giảm"
             else if _range > 0 and _body / _range < 0.1 and _upWick >= _dnWick * 1.5
                 _cp := "🌃 Gravestone Doji"
                 _cs := "Doji đuôi dài trên — cảnh báo đảo chiều giảm"
