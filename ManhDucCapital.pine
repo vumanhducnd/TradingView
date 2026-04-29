@@ -288,14 +288,16 @@ delta_vol_pct = avg_trend_vol == 0 ? 0.0 : (trend_buy_vol - trend_sell_vol) / av
 var array<label> candleLabels = array.new<label>()
 
 if showCandlePattern
-    _b  = math.abs(close - open)
-    _r  = high - low
-    _uw = high - math.max(close, open)
-    _dw = math.min(close, open) - low
-    _sl = trend == 1 ? up : dn
-    _ns = _r > 0 and math.abs(close - _sl) / _sl * 100 <= nearThreshPct
+    _b    = math.abs(close - open)
+    _r    = high - low
+    _uw   = high - math.max(close, open)
+    _dw   = math.min(close, open) - low
+    _sl   = trend == 1 ? up : dn
+    _ns   = _r > 0 and math.abs(close - _sl) / _sl * 100 <= nearThreshPct
+    _minR = _r >= 0.5 * atr
+    _volC = volume > volAvg
 
-    if _ns
+    if _ns and _minR
         _n  = ""
         _tt = ""
         if trend == 1
@@ -320,6 +322,15 @@ if showCandlePattern
             else if _r > 0 and _b / _r < 0.15
                 _n  := "〰️\nDoji"
                 _tt := "〰️ DOJI\nGiá mở và đóng cửa gần bằng nhau — thị trường giằng co tại hỗ trợ.\nÝ nghĩa: Do dự, chờ xác nhận chiều hướng.\nXác nhận: Nến tiếp theo quyết định xu hướng."
+            else if close > open and close[1] > open[1] and close[2] > open[2] and close > close[1] and close[1] > close[2] and open < close[1] and open[1] < close[2]
+                _n  := "🪖\n3 Lính"
+                _tt := "🪖 THREE WHITE SOLDIERS (Ba Chiến Binh)\n3 nến xanh liên tiếp, mỗi nến mở trong thân nến trước và đóng cao dần — lực mua bền vững.\nÝ nghĩa: Xu hướng tăng mạnh, phe mua kiên định từng phiên.\nXác nhận: Nến thứ 3 có khối lượng cao nhất là tín hiệu mạnh nhất."
+            else if close[1] < open[1] and close > open and math.abs(low - low[1]) / low[1] * 100 < 0.3
+                _n  := "🔧\nKẹp Đáy"
+                _tt := "🔧 TWEEZER BOTTOM (Kẹp Đáy)\n2 nến có đáy gần bằng nhau: đỏ → xanh — vùng hỗ trợ được kiểm tra 2 lần mà không bị phá.\nÝ nghĩa: Phe bán thất bại phá đáy, phe mua phòng thủ vững.\nXác nhận: Nến xanh tiếp theo xác nhận tín hiệu bật."
+            else if high < high[1] and low > low[1]
+                _n  := "📦\nInside Bar"
+                _tt := "📦 INSIDE BAR (Nến Nằm Trong)\nToàn bộ biên độ nến nằm trong nến trước — thị trường tích lũy tại hỗ trợ.\nÝ nghĩa: Áp lực giảm suy yếu — chuẩn bị bứt phá tăng.\nXác nhận: Breakout lên trên đỉnh nến mẹ là tín hiệu mua."
             else if close > open and _r > 0 and _b / _r >= 0.6
                 _n  := "💚\nMarubozu↑"
                 _tt := "💚 MARUBOZU TĂNG\nThân nến dài, gần như không có đuôi — phe mua kiểm soát hoàn toàn.\nÝ nghĩa: Lực mua quyết đoán, xu hướng tăng có thể tiếp diễn.\nXác nhận: Khối lượng cao là dấu hiệu bứt phá."
@@ -345,6 +356,15 @@ if showCandlePattern
             else if _r > 0 and _b / _r < 0.15
                 _n  := "〰️\nDoji"
                 _tt := "〰️ DOJI\nGiá mở và đóng cửa gần bằng nhau — thị trường giằng co tại kháng cự.\nÝ nghĩa: Do dự, phe mua/bán cân bằng — thường báo hiệu đảo chiều.\nXác nhận: Nến tiếp theo quyết định xu hướng."
+            else if close < open and close[1] < open[1] and close[2] < open[2] and close < close[1] and close[1] < close[2] and open > close[1] and open[1] > close[2]
+                _n  := "🪽\n3 Quạ Đen"
+                _tt := "🪽 THREE BLACK CROWS (Ba Con Quạ)\n3 nến đỏ liên tiếp, mỗi nến mở trong thân nến trước và đóng thấp dần — áp lực bán bền vững.\nÝ nghĩa: Xu hướng giảm mạnh, phe bán kiên định từng phiên.\nXác nhận: Nến thứ 3 có khối lượng cao nhất là nguy hiểm nhất."
+            else if close[1] > open[1] and close < open and math.abs(high - high[1]) / high[1] * 100 < 0.3
+                _n  := "🔧\nKẹp Đỉnh"
+                _tt := "🔧 TWEEZER TOP (Kẹp Đỉnh)\n2 nến có đỉnh gần bằng nhau: xanh → đỏ — vùng kháng cự được kiểm tra 2 lần mà không vượt qua.\nÝ nghĩa: Phe mua thất bại vượt đỉnh, phe bán phòng thủ vững.\nXác nhận: Nến đỏ tiếp theo xác nhận tín hiệu bán."
+            else if high < high[1] and low > low[1]
+                _n  := "📦\nInside Bar"
+                _tt := "📦 INSIDE BAR (Nến Nằm Trong)\nToàn bộ biên độ nến nằm trong nến trước — thị trường tích lũy tại kháng cự.\nÝ nghĩa: Áp lực mua suy yếu — chuẩn bị bứt phá giảm.\nXác nhận: Breakout xuống dưới đáy nến mẹ là tín hiệu bán."
             else if close < open and _r > 0 and _b / _r >= 0.6
                 _n  := "🔴\nMarubozu↓"
                 _tt := "🔴 MARUBOZU GIẢM\nThân nến dài, gần như không có đuôi — phe bán kiểm soát hoàn toàn.\nÝ nghĩa: Áp lực bán lớn, xu hướng giảm có thể tiếp diễn.\nXác nhận: Khối lượng cao là tín hiệu xả hàng mạnh."
@@ -845,6 +865,15 @@ if barstate.islast and showVolLabel
             else if _range > 0 and _body / _range < 0.15
                 _cp := "〰️ Doji"
                 _cs := "Giằng co tại hỗ trợ — chờ xác nhận"
+            else if close > open and close[1] > open[1] and close[2] > open[2] and close > close[1] and close[1] > close[2] and open < close[1] and open[1] < close[2]
+                _cp := "🪖 Three White Soldiers"
+                _cs := "3 nến xanh liên tiếp đóng dần cao hơn — lực mua bền vững"
+            else if close[1] < open[1] and close > open and math.abs(low - low[1]) / low[1] * 100 < 0.3
+                _cp := "🔧 Tweezer Bottom"
+                _cs := "Đáy hai nến gần bằng nhau — hỗ trợ giữ vững, khả năng bật"
+            else if high < high[1] and low > low[1]
+                _cp := "📦 Inside Bar"
+                _cs := "Nến nằm trong nến trước tại hỗ trợ — chờ breakout tăng"
             else if close > open and _range > 0 and _body / _range >= 0.6
                 _cp := "💚 Marubozu Tăng"
                 _cs := "Nến tăng thân dài — tín hiệu tích cực"
@@ -870,6 +899,15 @@ if barstate.islast and showVolLabel
             else if _range > 0 and _body / _range < 0.15
                 _cp := "〰️ Doji"
                 _cs := "Giằng co tại kháng cự — chờ xác nhận"
+            else if close < open and close[1] < open[1] and close[2] < open[2] and close < close[1] and close[1] < close[2] and open > close[1] and open[1] > close[2]
+                _cp := "🪽 Three Black Crows"
+                _cs := "3 nến đỏ liên tiếp đóng dần thấp hơn — áp lực bán bền vững"
+            else if close[1] > open[1] and close < open and math.abs(high - high[1]) / high[1] * 100 < 0.3
+                _cp := "🔧 Tweezer Top"
+                _cs := "Đỉnh hai nến gần bằng nhau — kháng cự giữ vững, khả năng đảo chiều"
+            else if high < high[1] and low > low[1]
+                _cp := "📦 Inside Bar"
+                _cs := "Nến nằm trong nến trước tại kháng cự — chờ breakout giảm"
             else if close < open and _range > 0 and _body / _range >= 0.6
                 _cp := "🔴 Marubozu Giảm"
                 _cs := "Nến giảm thân dài — áp lực bán lớn"
