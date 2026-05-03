@@ -539,6 +539,7 @@ var array<float>  hist_entryPx   = array.new<float>()
 var array<string> hist_exitDate  = array.new<string>()
 var array<float>  hist_exitPx    = array.new<float>()
 var array<float>  hist_pnlPct    = array.new<float>()
+var array<float>  hist_maxPct    = array.new<float>()
 var array<int>    hist_holdBars  = array.new<int>()
 
 var float  bt_entryPx     = na
@@ -549,6 +550,16 @@ var int    bt_totalTrades = 0
 var int    bt_winTrades   = 0
 var int    bt_lossTrades  = 0
 var float  bt_totalPnL    = 0.0
+var float  bt_maxFav      = na
+
+// Track max favorable excursion for current open position (runs before signal logic)
+if inBacktest and not na(bt_entryPx) and bt_dir != ""
+    if bt_dir == "LONG"
+        _mf = (high - bt_entryPx) / bt_entryPx * 100
+        bt_maxFav := na(bt_maxFav) ? _mf : math.max(bt_maxFav, _mf)
+    else
+        _mf = (bt_entryPx - low) / bt_entryPx * 100
+        bt_maxFav := na(bt_maxFav) ? _mf : math.max(bt_maxFav, _mf)
 
 // buySignal: đóng SHORT đang mở (nếu có) → mở LONG
 if inBacktest and buySignal
@@ -561,6 +572,7 @@ if inBacktest and buySignal
         array.push(hist_exitDate,  f_today())
         array.push(hist_exitPx,    _ex)
         array.push(hist_pnlPct,    _pct)
+        array.push(hist_maxPct,    nz(bt_maxFav, 0.0))
         array.push(hist_holdBars,  bar_index - bt_entryBar)
         bt_totalTrades += 1
         bt_totalPnL    += _pct
@@ -570,6 +582,7 @@ if inBacktest and buySignal
     bt_entryBar  := bar_index
     bt_entryDate := f_today()
     bt_dir       := "LONG"
+    bt_maxFav    := na
 
 // sellSignal: đóng LONG đang mở (nếu có) → mở SHORT
 if inBacktest and sellSignal
@@ -582,6 +595,7 @@ if inBacktest and sellSignal
         array.push(hist_exitDate,  f_today())
         array.push(hist_exitPx,    _ex)
         array.push(hist_pnlPct,    _pct)
+        array.push(hist_maxPct,    nz(bt_maxFav, 0.0))
         array.push(hist_holdBars,  bar_index - bt_entryBar)
         bt_totalTrades += 1
         bt_totalPnL    += _pct
@@ -591,6 +605,7 @@ if inBacktest and sellSignal
     bt_entryBar  := bar_index
     bt_entryDate := f_today()
     bt_dir       := "SHORT"
+    bt_maxFav    := na
 
 bt_winRate = bt_totalTrades > 0 ? bt_winTrades / bt_totalTrades * 100 : 0.0
 bt_avgPnL  = bt_totalTrades > 0 ? bt_totalPnL  / bt_totalTrades       : 0.0
@@ -618,6 +633,7 @@ if barstate.islast and showHistory and array.size(hist_dir) > 0
     int   disp_totalBars = 0
     float disp_sumEntry  = 0.0
     float disp_sumExit   = 0.0
+    float disp_sumMaxPct = 0.0
     int   disp_wins      = 0
     for i = 0 to displayCount - 1
         idx            = array.get(filteredIdxs, startFilt + i)
@@ -626,13 +642,16 @@ if barstate.islast and showHistory and array.size(hist_dir) > 0
         disp_totalBars += array.get(hist_holdBars, idx)
         disp_sumEntry  += array.get(hist_entryPx,  idx)
         disp_sumExit   += array.get(hist_exitPx,   idx)
+        disp_sumMaxPct += array.get(hist_maxPct,   idx)
         disp_wins      += _p > 0 ? 1 : 0
 
     disp_avgEntry = disp_sumEntry / displayCount
     disp_avgExit  = disp_sumExit  / displayCount
     disp_avgBars  = disp_totalBars / displayCount
 
-    htbl = table.new(tbl_pos, 6, 4 + displayCount + 2,
+    disp_avgMaxPct = displayCount > 0 ? disp_sumMaxPct / displayCount : 0.0
+
+    htbl = table.new(tbl_pos, 7, 4 + displayCount + 2,
          bgcolor=T_BG_DRK, border_width=1, border_color=T_BRD, frame_width=2, frame_color=T_BRD)
     r = 0
 
@@ -640,27 +659,28 @@ if barstate.islast and showHistory and array.size(hist_dir) > 0
     endLabel  = useEndTime ? " → " + str.format_time(endTime, "dd/MM/yyyy") : " → Hiện tại"
     table.cell(htbl, 0, r, "📌 " + syminfo.ticker + "  [" + str.format_time(startTime, "dd/MM/yyyy") + endLabel + "]",
          text_color=T_WHT, text_size=tSize_h, text_halign=text.align_center, bgcolor=T_HDR)
-    for i = 1 to 5
+    for i = 1 to 6
         table.cell(htbl, i, r, "", bgcolor=T_HDR)
-    table.merge_cells(htbl, 0, r, 5, r)
+    table.merge_cells(htbl, 0, r, 6, r)
     r += 1
 
     // ── INFO ROW ─────────────────────────────────────────────
     filterLabel = dirFilter == "Tất cả" ? "" : " — Lọc: " + dirFilter
     table.cell(htbl, 0, r, "Hiển thị " + str.tostring(displayCount) + "/" + str.tostring(filteredTotal) + " lệnh" + filterLabel,
          text_color=T_YLW, text_size=tSize_d, text_halign=text.align_center, bgcolor=T_BG_LGT)
-    for i = 1 to 5
+    for i = 1 to 6
         table.cell(htbl, i, r, "", bgcolor=T_BG_LGT)
-    table.merge_cells(htbl, 0, r, 5, r)
+    table.merge_cells(htbl, 0, r, 6, r)
     r += 1
 
     // ── HEADER CỘT ───────────────────────────────────────────
     table.cell(htbl, 0, r, "#",             text_color=T_WHT, text_size=tSize_d, text_halign=text.align_center, bgcolor=T_HDR)
     table.cell(htbl, 1, r, "HƯỚNG",         text_color=T_WHT, text_size=tSize_d, text_halign=text.align_center, bgcolor=T_HDR)
-    table.cell(htbl, 2, r, "NGÀY\nVào→Thoát", text_color=T_WHT, text_size=tSize_d, text_halign=text.align_center, bgcolor=T_HDR)
-    table.cell(htbl, 3, r, "GIÁ\nVào→Thoát",  text_color=T_WHT, text_size=tSize_d, text_halign=text.align_center, bgcolor=T_HDR)
-    table.cell(htbl, 4, r, "PHIÊN",         text_color=T_WHT, text_size=tSize_d, text_halign=text.align_center, bgcolor=T_HDR)
+    table.cell(htbl, 2, r, "NGÀY\nVào/Thoát", text_color=T_WHT, text_size=tSize_d, text_halign=text.align_center, bgcolor=T_HDR)
+    table.cell(htbl, 3, r, "GIÁ\nVào/Thoát",  text_color=T_WHT, text_size=tSize_d, text_halign=text.align_center, bgcolor=T_HDR)
+    table.cell(htbl, 4, r, "NẾN",         text_color=T_WHT, text_size=tSize_d, text_halign=text.align_center, bgcolor=T_HDR)
     table.cell(htbl, 5, r, "%",              text_color=T_WHT, text_size=tSize_d, text_halign=text.align_center, bgcolor=T_HDR)
+    table.cell(htbl, 6, r, "MAX %",          text_color=T_WHT, text_size=tSize_d, text_halign=text.align_center, bgcolor=T_HDR)
     r += 1
 
     // ── DỮ LIỆU TỪNG LỆNH ────────────────────────────────────
@@ -680,6 +700,7 @@ if barstate.islast and showHistory and array.size(hist_dir) > 0
         table.cell(htbl, 3, r, _priceTxt,             text_color=T_VAL,  text_size=tSize_d, text_halign=text.align_right,  bgcolor=rowBg)
         table.cell(htbl, 4, r, str.tostring(array.get(hist_holdBars, idx)), text_color=T_LBL, text_size=tSize_d, text_halign=text.align_center, bgcolor=rowBg)
         table.cell(htbl, 5, r, f_pct(_pct),           text_color=pnlClr, text_size=tSize_d, text_halign=text.align_center, bgcolor=rowBg)
+        table.cell(htbl, 6, r, "+" + str.tostring(f_round2(array.get(hist_maxPct, idx))) + "%", text_color=T_YLW, text_size=tSize_d, text_halign=text.align_center, bgcolor=rowBg)
         r += 1
 
     // ── HÀNG TỔNG CỘNG ───────────────────────────────────────
@@ -692,15 +713,16 @@ if barstate.islast and showHistory and array.size(hist_dir) > 0
     table.cell(htbl, 3, r, avgPxTxt,                             text_color=T_YLW,  text_size=tSize_d, text_halign=text.align_right,  bgcolor=T_BG_TOT)
     table.cell(htbl, 4, r, str.tostring(math.round(disp_avgBars)), text_color=T_YLW, text_size=tSize_d, text_halign=text.align_center, bgcolor=T_BG_TOT)
     table.cell(htbl, 5, r, f_pct(disp_avgPct),                   text_color=totClr, text_size=tSize_d, text_halign=text.align_center, bgcolor=T_BG_TOT)
+    table.cell(htbl, 6, r, "+" + str.tostring(f_round2(disp_avgMaxPct)) + "%", text_color=T_YLW, text_size=tSize_d, text_halign=text.align_center, bgcolor=T_BG_TOT)
     r += 1
 
     // ── SUMMARY ──────────────────────────────────────────────
     wrClr = bt_winRate >= 50 ? T_GRN : bt_winRate >= 40 ? T_YLW : T_RED
     table.cell(htbl, 0, r, "✅ " + str.tostring(bt_winTrades) + " thắng  ❌ " + str.tostring(bt_lossTrades) + " thua  |  Win Rate: " + str.tostring(f_round2(bt_winRate)) + "%  |  Avg PnL: " + f_pct(bt_avgPnL),
          text_color=wrClr, text_size=tSize_d, text_halign=text.align_center, bgcolor=T_BG_LGT)
-    for i = 1 to 5
+    for i = 1 to 6
         table.cell(htbl, i, r, "", bgcolor=T_BG_LGT)
-    table.merge_cells(htbl, 0, r, 5, r)
+    table.merge_cells(htbl, 0, r, 6, r)
 
 
 // =========================================================
