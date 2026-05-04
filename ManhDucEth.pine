@@ -252,11 +252,10 @@ if sellSignal and showsignals
 // =========================================================
 bbBasis     = ta.sma(bbSrc, bbLength)
 bbDev       = bbMult * ta.stdev(bbSrc, bbLength)
-bbClr       = trend == 1 ? color.green : color.red
-bbUpperPlot = plot(showBB ? bbBasis + bbDev : na, "BB Upper",  bbClr)
-bbLowerPlot = plot(showBB ? bbBasis - bbDev : na, "BB Lower",  bbClr)
-plot(showBB ? bbBasis : na, "BB Middle", color.yellow)
-fill(bbUpperPlot, bbLowerPlot, title="BB Fill", color=color.new(bbClr, 50), display=display.none)
+bbUpperPlot = plot(showBB ? bbBasis + bbDev : na, "BB Upper",  color = trend == 1 ? color.green : color.red)
+bbLowerPlot = plot(showBB ? bbBasis - bbDev : na, "BB Lower", color = trend == 1 ? color.green : color.red)
+plot(showBB ? bbBasis : na, "BB Middle", color = color.new(color.yellow,0))
+fill(bbUpperPlot, bbLowerPlot, title="BB Fill", color = trend == 1 ? color.new(color.green, 50) : color.new(color.red, 50),display=display.none)
 
 // =========================================================
 // THEO DÕI TÍN HIỆU HIỆN TẠI Vũ Mạnh Đức 0973124824
