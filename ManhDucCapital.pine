@@ -52,6 +52,13 @@ bbMult   = input.float(2.0,   "Độ lệch chuẩn BB",         group="Bollinge
 bbSrc    = input.source(close,"Nguồn BB",                 group="Bollinger Band")
 
 // =========================================================
+// EMA
+// =========================================================
+ema1Period = input.int(50,  "EMA 1", group="EMA", minval=1, inline="e1")
+ema2Period = input.int(100, "EMA 2", group="EMA", minval=1, inline="e2")
+ema3Period = input.int(200, "EMA 3", group="EMA", minval=1, inline="e3")
+
+// =========================================================
 // CÀI ĐẶT BACKTEST Vũ Mạnh Đức 0973124824
 // =========================================================
 showHistory    = input.bool(false,  "Hiển thị bảng lịch sử giao dịch?", group="Test lịch sử")
@@ -133,6 +140,9 @@ stD          = ta.sma(stK, 3)
 stKSmooth    = ta.ema(stK, 3)
 macdHist     = m - s
 macdHistPrev = m[1] - s[1]
+emaLine1     = ta.ema(close, ema1Period)
+emaLine2     = ta.ema(close, ema2Period)
+emaLine3     = ta.ema(close, ema3Period)
 
 // =========================================================
 // DUAL SCORE LOGIC (9 điểm) Vũ Mạnh Đức 0973124824
@@ -225,6 +235,9 @@ dnPlot = plot(trend == 1 ? na : dn, "Xu hướng giảm", color.red,   2, plot.s
 mPlot  = plot(ohlc4, "", display=display.none)
 fill(mPlot, upPlot, title="Tô màu xu hướng tăng", color=color.new(color.green, 50))
 fill(mPlot, dnPlot, title="Tô màu xu hướng giảm", color=color.new(color.red,   50))
+plot(emaLine1, "EMA 1", color=color.new(#FF9800, 0), linewidth=2, display=display.none)
+plot(emaLine2, "EMA 2", color=color.new(#26C6DA, 0), linewidth=3, display=display.none)
+plot(emaLine3, "EMA 3", color=color.new(#9C27B0, 0), linewidth=4, display=display.none)
 
 plotshape(buySignal  ? up : na, "Tín hiệu Mua", shape.triangleup,   location.belowbar, color.green, size=size.tiny)
 plotshape(sellSignal ? dn : na, "Tín hiệu Bán", shape.triangledown, location.abovebar, color.red,   size=size.tiny)

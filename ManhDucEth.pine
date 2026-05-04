@@ -44,14 +44,8 @@ strongThr         = input.int(60,    "Ngưỡng MẠNH (>=) cho Mua",      group
 // EMA
 // =========================================================
 ema1Period = input.int(50,  "EMA 1", group="EMA", minval=1, inline="e1")
-ema1Color  = input.color(color.new(#FF9800, 0), "", group="EMA", inline="e1")
-ema1Show   = input.bool(true,  "Hiển thị", group="EMA", inline="e1")
 ema2Period = input.int(100, "EMA 2", group="EMA", minval=1, inline="e2")
-ema2Color  = input.color(color.new(#26C6DA, 0), "", group="EMA", inline="e2")
-ema2Show   = input.bool(false, "Hiển thị", group="EMA", inline="e2")
 ema3Period = input.int(200, "EMA 3", group="EMA", minval=1, inline="e3")
-ema3Color  = input.color(color.new(#9C27B0, 0), "", group="EMA", inline="e3")
-ema3Show   = input.bool(false, "Hiển thị", group="EMA", inline="e3")
 
 // =========================================================
 // BOLLINGER BAND OPTION
@@ -233,9 +227,9 @@ dnPlot = plot(trend == 1 ? na : dn, "Xu hướng giảm", color.red,   2, plot.s
 mPlot  = plot(ohlc4, "", display=display.none)
 fill(mPlot, upPlot, title="Tô màu xu hướng tăng", color=color.new(color.green, 50))
 fill(mPlot, dnPlot, title="Tô màu xu hướng giảm", color=color.new(color.red,   50))
-plot(ema1Show ? emaLine1 : na, "EMA 1", color=ema1Color, linewidth=1)
-plot(ema2Show ? emaLine2 : na, "EMA 2", color=ema2Color, linewidth=1)
-plot(ema3Show ? emaLine3 : na, "EMA 3", color=ema3Color, linewidth=1)
+plot( emaLine1, "EMA 1", color=color.new(#FF9800, 0), linewidth=2)
+plot( emaLine2, "EMA 2", color=color.new(#26C6DA, 0), linewidth=3,display=display.none)
+plot( emaLine3, "EMA 3", color=color.new(#9C27B0, 0), linewidth=4,display=display.none)
 
 plotshape(buySignal  ? up : na, "Tín hiệu Mua", shape.triangleup,   location.belowbar, color.green, size=size.tiny)
 plotshape(sellSignal ? dn : na, "Tín hiệu Bán", shape.triangledown, location.abovebar, color.red,   size=size.tiny)
