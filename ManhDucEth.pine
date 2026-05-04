@@ -670,7 +670,9 @@ if barstate.islast and showHistory and array.size(hist_dir) > 0
 
     disp_avgMaxPct = displayCount > 0 ? disp_sumMaxPct / displayCount : 0.0
 
-    htbl = table.new(tbl_pos, 7, 4 + displayCount + 2,
+    hasCurrent = inBacktest and bt_dir != "" and not na(bt_entryPx) and (dirFilter == "Tất cả" or bt_dir == dirFilter)
+
+    htbl = table.new(tbl_pos, 7, 4 + displayCount + 2 + (hasCurrent ? 1 : 0),
          bgcolor=T_BG_DRK, border_width=1, border_color=T_BRD, frame_width=2, frame_color=T_BRD)
     r = 0
 
@@ -720,6 +722,24 @@ if barstate.islast and showHistory and array.size(hist_dir) > 0
         table.cell(htbl, 4, r, str.tostring(array.get(hist_holdBars, idx)), text_color=T_LBL, text_size=tSize_d, text_halign=text.align_center, bgcolor=rowBg)
         table.cell(htbl, 5, r, f_pct(_pct),           text_color=pnlClr, text_size=tSize_d, text_halign=text.align_center, bgcolor=rowBg)
         table.cell(htbl, 6, r, "+" + str.tostring(f_round2(array.get(hist_maxPct, idx))) + "%", text_color=T_YLW, text_size=tSize_d, text_halign=text.align_center, bgcolor=rowBg)
+        r += 1
+
+    // ── LỆNH ĐANG MỞ ─────────────────────────────────────────
+    if hasCurrent
+        _curPnl     = bt_dir == "LONG" ? (close - bt_entryPx) / bt_entryPx * 100 : (bt_entryPx - close) / bt_entryPx * 100
+        _curMax     = nz(bt_maxFav, 0.0)
+        _curBars    = bar_index - bt_entryBar
+        _curDirClr  = bt_dir == "LONG" ? T_GRN : T_RED
+        _curPnlClr  = _curPnl >= 0 ? T_GRN : T_RED
+        _curDateTxt = bt_entryDate + "\nĐang mở"
+        _curPxTxt   = f_price(bt_entryPx) + "\n" + f_price(close)
+        table.cell(htbl, 0, r, "📌",                                            text_color=T_YLW,      text_size=tSize_d, text_halign=text.align_center, bgcolor=T_BG_LGT)
+        table.cell(htbl, 1, r, bt_dir + " 🔄",                                  text_color=_curDirClr, text_size=tSize_d, text_halign=text.align_center, bgcolor=T_BG_LGT)
+        table.cell(htbl, 2, r, _curDateTxt,                                     text_color=T_VAL,      text_size=tSize_d, text_halign=text.align_center, bgcolor=T_BG_LGT)
+        table.cell(htbl, 3, r, _curPxTxt,                                       text_color=T_VAL,      text_size=tSize_d, text_halign=text.align_right,  bgcolor=T_BG_LGT)
+        table.cell(htbl, 4, r, str.tostring(_curBars),                          text_color=T_LBL,      text_size=tSize_d, text_halign=text.align_center, bgcolor=T_BG_LGT)
+        table.cell(htbl, 5, r, f_pct(_curPnl),                                  text_color=_curPnlClr, text_size=tSize_d, text_halign=text.align_center, bgcolor=T_BG_LGT)
+        table.cell(htbl, 6, r, "+" + str.tostring(f_round2(_curMax)) + "%",    text_color=T_YLW,      text_size=tSize_d, text_halign=text.align_center, bgcolor=T_BG_LGT)
         r += 1
 
     // ── HÀNG TỔNG CỘNG ───────────────────────────────────────
