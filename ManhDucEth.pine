@@ -39,6 +39,9 @@ changeATR         = input.bool(true, "Thay đổi phương pháp tính ATR?",   
 useStrengthFilter = input.bool(false,"Lọc sức mạnh khi đảo chiều?",   group="Tín hiệu")
 weakThr           = input.int(40,    "Ngưỡng YẾU (<=) cho Bán",       group="Tín hiệu", minval=0, maxval=100)
 strongThr         = input.int(60,    "Ngưỡng MẠNH (>=) cho Mua",      group="Tín hiệu", minval=0, maxval=100)
+showST2           = input.bool(true, "Hiển thị SuperTrend khung lớn?", group="Tín hiệu")
+st2Period         = input.int(14,    "ST Lớn: Chu kỳ ATR",             group="Tín hiệu", minval=1)
+st2Mult           = input.float(4.0, "ST Lớn: Hệ số nhân",             group="Tín hiệu", step=0.1)
 
 // =========================================================
 // EMA
@@ -222,11 +225,29 @@ if not na(_phRaw)
 if not na(_plRaw)
     lastPivotLow := _plRaw
 
+// ── SuperTrend Lớn (khung tham chiếu) ────────────────────
+atr2  = changeATR ? ta.atr(st2Period) : ta.sma(ta.tr, st2Period)
+up2   = src - st2Mult * atr2
+dn2   = src + st2Mult * atr2
+var float up2p = na
+var float dn2p = na
+up2p := nz(up2[1], up2)
+up2  := close[1] > up2p ? math.max(up2, up2p) : up2
+dn2p := nz(dn2[1], dn2)
+dn2  := close[1] < dn2p ? math.min(dn2, dn2p) : dn2
+var int trend2 = 1
+trend2 := nz(trend2[1], 1)
+trend2 := trend2 == -1 and close > dn2p ? 1 : trend2 == 1 and close < up2p ? -1 : trend2
+
 upPlot = plot(trend == 1 ? up : na, "Xu hướng tăng", color.green, 2, plot.style_linebr)
 dnPlot = plot(trend == 1 ? na : dn, "Xu hướng giảm", color.red,   2, plot.style_linebr)
 mPlot  = plot(ohlc4, "", display=display.none)
 fill(mPlot, upPlot, title="Tô màu xu hướng tăng", color=color.new(color.green, 50))
 fill(mPlot, dnPlot, title="Tô màu xu hướng giảm", color=color.new(color.red,   50))
+
+plot(showST2 and trend2 == 1  ? up2 : na, "ST Lớn tăng", color.new(#00BCD4, 0), 2, plot.style_linebr)
+plot(showST2 and trend2 == -1 ? dn2 : na, "ST Lớn giảm", color.new(#da05f7, 0), 2, plot.style_linebr)
+
 plot( emaLine1, "EMA 1", color=color.new(#FF9800, 0), linewidth=2)
 plot( emaLine2, "EMA 2", color=color.new(#26C6DA, 0), linewidth=3,display=display.none)
 plot( emaLine3, "EMA 3", color=color.new(#9C27B0, 0), linewidth=4,display=display.none)
