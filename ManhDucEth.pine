@@ -78,22 +78,14 @@ entryMode      = input.string("Lý tưởng nhất", "Kiểu điểm Mua/Bán", 
 // =========================================================
 // CÀI ĐẶT TP / SL Vũ Mạnh Đức 0973124824
 // =========================================================
-showTPSL  = input.bool(true,  "Hiển thị đường TP/SL?",          group="TP / SL",
-     tooltip="Vẽ đường ngang thể hiện điểm vào lệnh, cắt lỗ và các mục tiêu chốt lời\nChỉ hiển thị khi đang có lệnh MUA (trend tăng)\nTự động xóa khi xuất hiện tín hiệu Bán")
-slAtrMult = input.float(1.5,  "SL Buffer (×ATR)",               group="TP / SL", minval=0.3, maxval=5.0,  step=0.1,
-     tooltip="SL đặt dưới Pivot Low một khoảng = slMult × ATR\nGiá trị lớn hơn = SL rộng hơn, ít bị quét hơn\nVí dụ: 1.5 × ATR dưới pivot low gần nhất")
-pivotLen  = input.int(10,     "Độ dài Pivot (bars)",             group="TP / SL", minval=3, maxval=50,
-     tooltip="Số nến dùng để xác định Pivot Low làm vùng SL\nLớn hơn = pivot xa hơn, SL ổn định hơn")
-tp1R      = input.float(1.0,  "TP1 (R-multiple)",                group="TP / SL", minval=0.5, maxval=10.0, step=0.1,
-     tooltip="TP1 = Vào lệnh + Risk × R1\nRisk = khoảng cách từ entry đến SL (tự tính theo ATR + pivot)")
-tp2R      = input.float(2.0,  "TP2 (R-multiple)",                group="TP / SL", minval=0.5, maxval=10.0, step=0.1,
-     tooltip="TP2 = Vào lệnh + Risk × R2\nGợi ý chốt thêm 30–40% vị thế khi chạm")
-tp3R      = input.float(3.0,  "TP3 (R-multiple)",                group="TP / SL", minval=0.5, maxval=10.0, step=0.1,
-     tooltip="TP3 = Vào lệnh + Risk × R3\nGợi ý gồng phần còn lại đến mục tiêu xa nhất")
-autoTPSL     = input.bool(false, "Tự động TP/SL từ lịch sử?",    group="TP / SL",
-     tooltip="Tự động tính SL/TP từ % lỗ/lãi trung bình của N lệnh gần nhất trong backtest\nFallback sang ATR+pivot nếu chưa đủ ≥ 3 lệnh cùng hướng")
-autoLookback = input.int(20,    "Số lệnh tham chiếu (Auto TP/SL)", group="TP / SL", minval=5, maxval=50,
-     tooltip="Số lệnh gần nhất dùng để tính SL/TP tự động (chỉ tính lệnh cùng hướng)")
+showTPSL      = input.bool(true,  "Hiển thị đường TP/SL?",              group="TP / SL",
+     tooltip="Vẽ đường ngang thể hiện điểm vào lệnh, cắt lỗ và các mục tiêu chốt lời\nSL bám theo đường hỗ trợ/kháng cự SuperTrend + buffer ATR\nTP tính theo % trung bình của N lệnh cùng chiều gần nhất")
+slPct         = input.float(0.3,  "SL Buffer (%)",                        group="TP / SL", minval=0.1, maxval=10.0, step=0.1,
+     tooltip="Buffer bảo vệ SL tính theo % từ đường S/R\nLONG SL = đường hỗ trợ − slPct%\nSHORT SL = đường kháng cự + slPct%\nVí dụ: 1.0 → SL cách S/R 1%")
+autoLookback  = input.int(20,     "Số lệnh tham chiếu TP",              group="TP / SL", minval=3, maxval=50,
+     tooltip="Lấy trung bình % của tối đa N lệnh cùng chiều gần nhất để tính TP\nTP1 = 75% avgPct | TP2 = avgPct | TP3 = 150% avgPct")
+tpFallbackPct = input.float(3.0,  "% TP dự phòng (chưa đủ lịch sử)",   group="TP / SL", minval=1.0, maxval=30.0, step=0.5,
+     tooltip="Dùng khi chưa có đủ 3 lệnh cùng chiều trong lịch sử backtest\nVí dụ: 5.0 → TP2 = entry ± 5%")
 
 // =========================================================
 // HÀM TIỆN ÍCH Vũ Mạnh Đức 0973124824
@@ -214,16 +206,6 @@ trend := trend == -1 and close > dn1 and allowFlipToLong  ?  1 :
 
 buySignal  = trend == 1  and trend[1] == -1
 sellSignal = trend == -1 and trend[1] == 1
-
-// ── Pivot High/Low để tính SL động ───────────────────────
-_phRaw = ta.pivothigh(high, pivotLen, pivotLen)
-_plRaw = ta.pivotlow(low,  pivotLen, pivotLen)
-var float lastPivotHigh = na
-var float lastPivotLow  = na
-if not na(_phRaw)
-    lastPivotHigh := _phRaw
-if not na(_plRaw)
-    lastPivotLow := _plRaw
 
 // ── SuperTrend Lớn (khung tham chiếu) ────────────────────
 atr2  = changeATR ? ta.atr(st2Period) : ta.sma(ta.tr, st2Period)
@@ -396,6 +378,18 @@ if showCandlePattern
                 label.delete(array.shift(candleLabels))
 
 // =========================================================
+// KHAI BÁO MẢNG BACKTEST (cần trước TP/SL) Vũ Mạnh Đức 0973124824
+// =========================================================
+var array<string> hist_dir       = array.new<string>()
+var array<string> hist_entryDate = array.new<string>()
+var array<float>  hist_entryPx   = array.new<float>()
+var array<string> hist_exitDate  = array.new<string>()
+var array<float>  hist_exitPx    = array.new<float>()
+var array<float>  hist_pnlPct    = array.new<float>()
+var array<float>  hist_maxPct    = array.new<float>()
+var array<int>    hist_holdBars  = array.new<int>()
+
+// =========================================================
 // TP / SL LINES Vũ Mạnh Đức 0973124824
 // =========================================================
 var line  lnEntry = na
@@ -431,13 +425,28 @@ if buySignal or sellSignal
 
 // ── LONG TPSL ────────────────────────────────────────────
 if buySignal and showTPSL
-    _ep     = signalPrice
-    _slBase = not na(lastPivotLow) ? lastPivotLow : low
-    _sl     = math.min(_slBase - slAtrMult * atr, _ep - slAtrMult * atr)
-    _risk   = math.max(_ep - _sl, atr * 0.1)
-    _tp1    = _ep + _risk * tp1R
-    _tp2    = _ep + _risk * tp2R
-    _tp3    = _ep + _risk * tp3R
+    _ep = signalPrice
+    _sl = up * (1 - slPct / 100)  // đường hỗ trợ SuperTrend - slPct%
+
+    // Tính avg% và avgMax% từ lịch sử LONG gần nhất
+    _lCount  = 0
+    _lSum    = 0.0
+    _lMaxSum = 0.0
+    _hSize   = array.size(hist_dir)
+    if _hSize > 0
+        for _j = 0 to _hSize - 1
+            _i = _hSize - 1 - _j
+            if _lCount >= autoLookback
+                break
+            if array.get(hist_dir, _i) == "LONG"
+                _lSum    += array.get(hist_pnlPct, _i)
+                _lMaxSum += array.get(hist_maxPct, _i)
+                _lCount  += 1
+    _avgPct    = _lCount >= 3 ? _lSum    / _lCount : tpFallbackPct
+    _avgMaxPct = _lCount >= 3 ? _lMaxSum / _lCount : tpFallbackPct * 1.5
+    _tp1       = _ep * (1 + _avgPct    * 0.75 / 100)
+    _tp2       = _ep * (1 + _avgPct           / 100)
+    _tp3       = _ep * (1 + _avgMaxPct         / 100)
     saved_ep     := _ep
     saved_sl     := _sl
     saved_tp1    := _tp1
@@ -452,13 +461,28 @@ if buySignal and showTPSL
 
 // ── SHORT TPSL ───────────────────────────────────────────
 if sellSignal and showTPSL
-    _ep     = signalPrice
-    _slBase = not na(lastPivotHigh) ? lastPivotHigh : high
-    _sl     = math.max(_slBase + slAtrMult * atr, _ep + slAtrMult * atr)
-    _risk   = math.max(_sl - _ep, atr * 0.1)
-    _tp1    = _ep - _risk * tp1R
-    _tp2    = _ep - _risk * tp2R
-    _tp3    = _ep - _risk * tp3R
+    _ep = signalPrice
+    _sl = dn * (1 + slPct / 100)  // đường kháng cự SuperTrend + slPct%
+
+    // Tính avg% và avgMax% từ lịch sử SHORT gần nhất
+    _sCount  = 0
+    _sSum    = 0.0
+    _sMaxSum = 0.0
+    _hSize   = array.size(hist_dir)
+    if _hSize > 0
+        for _j = 0 to _hSize - 1
+            _i = _hSize - 1 - _j
+            if _sCount >= autoLookback
+                break
+            if array.get(hist_dir, _i) == "SHORT"
+                _sSum    += array.get(hist_pnlPct, _i)
+                _sMaxSum += array.get(hist_maxPct, _i)
+                _sCount  += 1
+    _avgPct    = _sCount >= 3 ? _sSum    / _sCount : tpFallbackPct
+    _avgMaxPct = _sCount >= 3 ? _sMaxSum / _sCount : tpFallbackPct * 1.5
+    _tp1       = _ep * (1 - _avgPct    * 0.75 / 100)
+    _tp2       = _ep * (1 - _avgPct           / 100)
+    _tp3       = _ep * (1 - _avgMaxPct         / 100)
     saved_ep     := _ep
     saved_sl     := _sl
     saved_tp1    := _tp1
@@ -506,17 +530,17 @@ if barstate.islast and _tpslOn and not na(saved_ep)
 
     label.delete(lbTP1)
     lbTP1 := label.new(bar_index + 32, _tp1,
-         "🎯 T1:   " + f_price(_tp1) + "   " + _tpSign + _tp1PctStr + "%   RR 1:" + str.tostring(tp1R),
+         "🎯 T1:   " + f_price(_tp1) + "   " + _tpSign + _tp1PctStr + "%   (×0.75 TB)",
          style=label.style_label_left, color=_tp1Clr, textcolor=_tp1Txt, size=size.small)
 
     label.delete(lbTP2)
     lbTP2 := label.new(bar_index + 32, _tp2,
-         "🎯 T2:   " + f_price(_tp2) + "   " + _tpSign + _tp2PctStr + "%   RR 1:" + str.tostring(tp2R),
+         "🎯 T2:   " + f_price(_tp2) + "   " + _tpSign + _tp2PctStr + "%   (×1.00 TB)",
          style=label.style_label_left, color=_tp2Clr, textcolor=color.white, size=size.small)
 
     label.delete(lbTP3)
     lbTP3 := label.new(bar_index + 32, _tp3,
-         "🎯 T3:   " + f_price(_tp3) + "   " + _tpSign + _tp3PctStr + "%   RR 1:" + str.tostring(tp3R),
+         "🎯 T3:   " + f_price(_tp3) + "   " + _tpSign + _tp3PctStr + "%   (MAX% TB)",
          style=label.style_label_left, color=_tp3Clr, textcolor=color.white, size=size.small)
 
 // =========================================================
@@ -565,15 +589,6 @@ if showZoneLines and showHistory
 // BACKTEST Vũ Mạnh Đức 0973124824
 // =========================================================
 inBacktest = showHistory and time >= startTime and (not useEndTime or time <= endTime)
-
-var array<string> hist_dir       = array.new<string>()
-var array<string> hist_entryDate = array.new<string>()
-var array<float>  hist_entryPx   = array.new<float>()
-var array<string> hist_exitDate  = array.new<string>()
-var array<float>  hist_exitPx    = array.new<float>()
-var array<float>  hist_pnlPct    = array.new<float>()
-var array<float>  hist_maxPct    = array.new<float>()
-var array<int>    hist_holdBars  = array.new<int>()
 
 var float  bt_entryPx     = na
 var int    bt_entryBar    = 0
