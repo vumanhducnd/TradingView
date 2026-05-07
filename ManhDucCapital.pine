@@ -372,7 +372,7 @@ if showCandlePattern
             else if close > open and _r > 0 and _b / _r >= 0.6
                 _n  := "💚\nMarubozu↑"
                 _tt := "💚 MARUBOZU TĂNG\nThân nến dài, gần như không có đuôi — phe mua kiểm soát hoàn toàn.\nÝ nghĩa: Lực mua quyết đoán, xu hướng tăng có thể tiếp diễn.\nXác nhận: Khối lượng cao là dấu hiệu bứt phá."
-        else
+        else if not isSuperStock
             if close[2] > open[2] and math.abs(close[1] - open[1]) <= math.abs(close[2] - open[2]) * 0.5 and close < open and close < (open[2] + close[2]) / 2
                 _n  := "🌆\nSao Hôm"
                 _tt := "🌆 EVENING STAR (Sao Hôm)\n3 nến: tăng mạnh → nến nhỏ → giảm mạnh dưới giữa thân nến đầu — đảo chiều giảm cực mạnh.\nÝ nghĩa: Phe bán chiếm quyền kiểm soát sau khi phe mua kiệt sức.\nXác nhận: Khối lượng nến thứ 3 cao là tín hiệu bán mạnh."
@@ -936,7 +936,7 @@ if barstate.islast and showVolLabel
             else if close > open and _range > 0 and _body / _range >= 0.6
                 _cp := "💚 Marubozu Tăng"
                 _cs := "Nến tăng thân dài — tín hiệu tích cực"
-        else
+        else if not isSuperStock
             if close[2] > open[2] and math.abs(close[1] - open[1]) <= math.abs(close[2] - open[2]) * 0.5 and close < open and close < (open[2] + close[2]) / 2
                 _cp := "🌆 Evening Star"
                 _cs := "3 nến đảo chiều giảm — phe bán kiểm soát sau phe mua kiệt sức"
@@ -972,7 +972,7 @@ if barstate.islast and showVolLabel
                 _cs := "Nến giảm thân dài — áp lực bán lớn"
         if _cp != ""
             candlePatternTxt := "━━━━━━━━━━━━━━━━━━━━━━\n" +"🔥 Tín hiệu nến: " + _cp + "\n" +"   └ " + _cs
-    if isSuperStock
+    if isSuperStock and trend == 1
         _ssQuote = buySignal ? "💎 Bứt phá đỉnh mới — Cơ hội vàng!\n   └ 'Great stocks make new highs, not new lows' — Minervini" :
                                "💎 Cổ phiếu liên tục lập đỉnh cao mới\n   └ 'Buy high, sell higher' — Mark Minervini"
         candlePatternTxt := candlePatternTxt + (candlePatternTxt != "" ? "\n" : "━━━━━━━━━━━━━━━━━━━━━━\n") + _ssQuote
