@@ -19,6 +19,9 @@ showsignals  = input.bool(true,   "Hiển thị tín hiệu Mua/Bán?",      gro
 showSR       = input.bool(false,  "Hiển thị đường Hỗ trợ/Kháng cự?", group="Cài đặt chung")
 showVolLabel      = input.bool(true,   "Hiển thị Phân tích trực tiếp?",    group="Cài đặt chung")
 showSuperStock    = input.bool(false,   "Hiển thị nền & ký hiệu Siêu cổ phiếu?", group="Cài đặt chung")
+ssLiqThresh       = input.float(50,     "Thanh khoản tối thiểu Siêu CP (tỷ/ngày)", group="Cài đặt chung",
+     minval=1, step=10,
+     tooltip="Cổ phiếu cần thanh khoản bình quân 20 phiên ≥ ngưỡng này mới được xét là Siêu Cổ Phiếu\nMặc định 50 tỷ/ngày — phù hợp lọc cổ phiếu lái/tay to thao túng")
 showCandlePattern = input.bool(true,    "Đọc vị nến khi gần đỉnh/đáy?",     group="Cài đặt chung",
      tooltip="Nhận diện mẫu nến đảo chiều khi giá tiếp cận vùng hỗ trợ/kháng cự")
 nearThreshPct     = input.float(3.0,    "Ngưỡng gần đỉnh/đáy (%)",          group="Cài đặt chung",
@@ -158,8 +161,10 @@ _ss4         = _ss_ema50 > _ss_ema200                    // EMA50 > EMA200
 _ss5         = close > _ss_ema50                         // Giá > EMA50
 _ss6         = adx > 25                                  // Xu hướng đủ mạnh
 _ss7         = volAvg > ta.sma(volume, 60)               // Volume đang tăng
+_ss_avgValue = ta.sma(close * volume, 20)
+_ss_liquid   = _ss_avgValue >= ssLiqThresh * 1000000000
 superScore   = (_ss1 ? 1 : 0) + (_ss2 ? 1 : 0) + (_ss3 ? 1 : 0) + (_ss4 ? 1 : 0) + (_ss5 ? 1 : 0) + (_ss6 ? 1 : 0) + (_ss7 ? 1 : 0)
-isSuperStock = superScore >= 5
+isSuperStock = _ss_liquid and superScore >= 5
 bgcolor(showSuperStock and isSuperStock ? color.new(#FFD700, 88) : na, title="Nền Siêu cổ phiếu")
 plotshape(showSuperStock and isSuperStock, "💎 Siêu cổ phiếu", shape.diamond, location.top, color.new(#FFD700, 0), size=size.tiny)
 
@@ -782,7 +787,11 @@ if showTable
 
     _ssBadgeBg = isSuperStock ? color.new(#B8860B, 10) : (isDark ? color.new(#2a2a2a, 0) : color.new(#DDDDDD, 0))
     _ssBadgeTc = isSuperStock ? color.new(#FFFFFF, 0) : color.new(#888888, 0)
+    _ssLiqBil    = _ss_avgValue / 1000000000
+    _ssLiqTxt    = (_ss_liquid ? "✅" : "❌") + " Thanh khoản: " + str.tostring(_ssLiqBil, "#.#") + " tỷ/ngày (cần ≥" + str.tostring(ssLiqThresh, "#") + " tỷ)"
     _ssTooltip = "TIÊU CHÍ SIÊU CỔ PHIẾU (cần ≥5/7)\n" +
+         _ssLiqTxt                                                                        + "\n" +
+         "──────────────────────\n" +
          (_ss1 ? "✅" : "❌") + " Giá > EMA200\n" +
          (_ss2 ? "✅" : "❌") + " EMA200 đang tăng\n" +
          (_ss3 ? "✅" : "❌") + " Gần/phá đỉnh 52 tuần (≥90%)\n" +
@@ -871,9 +880,7 @@ if barstate.islast and showVolLabel
         else
             profitTxt := "🎯 T1 nhắm đến: " + f_price(price20) + " — Có thể chốt 1/3 vị thế"              
     
-    recTxt = isSuperStock and buySignal  ? "💎 Bứt phá đỉnh mới — Cơ hội vàng!\n    └  'Great stocks make new highs, not new lows' — Minervini" :
-         isSuperStock and trend == 1  ? "💎 Cổ phiếu liên tục lập đỉnh cao mới\n    └  'Buy high, sell higher' — Mark Minervini" :
-         buySignal  ? "🚀 Tín hiệu bứt phá xác nhận \n    └  Thời điểm mở vị thế tốt" :
+    recTxt = buySignal  ? "🚀 Tín hiệu bứt phá xác nhận \n    └  Thời điểm mở vị thế tốt" :
          sellSignal  ? "⚠️ Xu hướng đảo chiều \n    └  Nên thoát hàng, bảo toàn vốn" :
          trend == 1  and biasNorm >= 55 and delta_vol_pct >  0 ? "📈 Dòng tiền vào tốt, xu hướng ủng hộ \n    └  Tiếp tục nắm giữ" :
          trend == 1  and biasNorm >= 55 and delta_vol_pct <= 0 ? "👀 Momentum đang chậm lại \n    └  Giữ nhưng quan sát kỹ" :
@@ -965,6 +972,10 @@ if barstate.islast and showVolLabel
                 _cs := "Nến giảm thân dài — áp lực bán lớn"
         if _cp != ""
             candlePatternTxt := "━━━━━━━━━━━━━━━━━━━━━━\n" +"🔥 Tín hiệu nến: " + _cp + "\n" +"   └ " + _cs
+    if isSuperStock
+        _ssQuote = buySignal ? "💎 Bứt phá đỉnh mới — Cơ hội vàng!\n   └ 'Great stocks make new highs, not new lows' — Minervini" :
+                               "💎 Cổ phiếu liên tục lập đỉnh cao mới\n   └ 'Buy high, sell higher' — Mark Minervini"
+        candlePatternTxt := candlePatternTxt + (candlePatternTxt != "" ? "\n" : "━━━━━━━━━━━━━━━━━━━━━━\n") + _ssQuote
 
     spinnerIndex = math.floor(timenow / 250) % 4
     spinner =
@@ -972,7 +983,7 @@ if barstate.islast and showVolLabel
           spinnerIndex == 1 ? "◓" :
           spinnerIndex == 2 ? "◑" : "◒"
     superStockHdr = isSuperStock ?
-         "💎 SIÊU CỔ PHIẾU (Mark Minervini) — " + str.tostring(superScore) + "/7 tiêu chí\n" +
+         "💎 SIÊU CỔ PHIẾU — " + str.tostring(superScore) + "/7 tiêu chí\n" +
          "━━━━━━━━━━━━━━━━━━━━━━\n" : ""
     lblTxt = superStockHdr +
              "🤖 "  + " PHÂN TÍCH & KHUYẾN NGHỊ " + spinner+ " " + syminfo.ticker + "\n" +
@@ -982,6 +993,7 @@ if barstate.islast and showVolLabel
              " | Bán: " + str.tostring(trend_sell_vol, format.volume) +
              " | Delta: " + deltaTxt + "\n" +
              "Vol/TB20 : " + volTxt                                                                         + "\n" +
+             "Thanh khoản: " + str.tostring(_ss_avgValue / 1000000000, "#.##") + " tỷ/ngày" + "\n" +
              "━━━━━━━━━━━━━━━━━━━━━━"                                                                             + "\n" +
              "⚡Sức mạnh: " + biasTextVN + " (" + str.tostring(math.round(biasNorm)) + "%)" + biasArrow      + "\n" + "\n" +
              (trend == 1 ? "💰 Xu hướng: Tăng" : "💸 Xu hướng: Giảm")                                        + "\n" +
