@@ -145,6 +145,20 @@ emaLine2     = ta.ema(close, ema2Period)
 emaLine3     = ta.ema(close, ema3Period)
 
 // =========================================================
+// SIÊU CỔ PHIẾU (SUPER STOCK) Vũ Mạnh Đức 0973124824
+// =========================================================
+_high52w     = ta.highest(close, 252)
+_ss1         = close > emaLine3                          // Giá > EMA200
+_ss2         = emaLine3 > emaLine3[20]                   // EMA200 đang tăng
+_ss3         = not na(_high52w) and close >= _high52w * 0.90  // Gần/phá đỉnh 52 tuần
+_ss4         = emaLine1 > emaLine3                       // EMA50 > EMA200
+_ss5         = close > emaLine1                          // Giá > EMA50
+_ss6         = adx > 25                                  // Xu hướng đủ mạnh
+_ss7         = volAvg > ta.sma(volume, 60)               // Volume đang tăng
+superScore   = (_ss1 ? 1 : 0) + (_ss2 ? 1 : 0) + (_ss3 ? 1 : 0) + (_ss4 ? 1 : 0) + (_ss5 ? 1 : 0) + (_ss6 ? 1 : 0) + (_ss7 ? 1 : 0)
+isSuperStock = superScore >= 5
+
+// =========================================================
 // DUAL SCORE LOGIC (9 điểm) Vũ Mạnh Đức 0973124824
 // =========================================================
 float bScore = 0
@@ -735,9 +749,11 @@ if showTable
     pnlLbl = signalType == "MUA" ? (pnlR >= 0 ? "ĐANG LÃI" : "ĐANG LỖ") : "TRÁNH LỖ"
     pnlClr = signalType == "BÁN" ? (pnlR >= 0 ? T_RED : T_GRN) : (pnlR >= 0 ? T_GRN : T_RED)
 
-    table.cell(stbl, 0, 0, syminfo.ticker,
-         text_color=T_WHT, text_size=size.huge, text_halign=text.align_center, bgcolor=T_HDR)
-    table.cell(stbl, 1, 0, "", bgcolor=T_HDR)
+    _ssHdrBg = isSuperStock ? color.new(#FFD700, 0) : T_HDR
+    _ssHdrTc = isSuperStock ? color.new(#000000, 0) : T_WHT
+    table.cell(stbl, 0, 0, isSuperStock ? "💎 " + syminfo.ticker : syminfo.ticker,
+         text_color=_ssHdrTc, text_size=size.huge, text_halign=text.align_center, bgcolor=_ssHdrBg)
+    table.cell(stbl, 1, 0, "", bgcolor=_ssHdrBg)
     table.merge_cells(stbl, 0, 0, 1, 0)
 
     table.cell(stbl, 0, 1, trend == 1 ? "▲ MUA VÀ NẮM GIỮ" : "▼ BÁN VÀ CHỜ ĐỢI",
@@ -759,6 +775,21 @@ if showTable
     table.cell(stbl, 0, 7, pnlLbl, text_color=T_LBL,  text_size=tSize, text_halign=text.align_left,  bgcolor=T_BG_LGT)
     table.cell(stbl, 1, 7, pnlTxt, text_color=pnlClr, text_size=tSize, text_halign=text.align_right, bgcolor=T_BG_LGT)
 
+    _ssBadgeBg = isSuperStock ? color.new(#FFD700, 0) : (isDark ? color.new(#2a2a2a, 0) : color.new(#DDDDDD, 0))
+    _ssBadgeTc = isSuperStock ? color.new(#000000, 0) : color.new(#888888, 0)
+    _ssTooltip = "TIÊU CHÍ SIÊU CỔ PHIẾU (cần ≥5/7)\n" +
+         (_ss1 ? "✅" : "❌") + " Giá > EMA200\n" +
+         (_ss2 ? "✅" : "❌") + " EMA200 đang tăng\n" +
+         (_ss3 ? "✅" : "❌") + " Gần/phá đỉnh 52 tuần (≥90%)\n" +
+         (_ss4 ? "✅" : "❌") + " EMA50 > EMA200 (Golden Align)\n" +
+         (_ss5 ? "✅" : "❌") + " Giá > EMA50\n" +
+         (_ss6 ? "✅" : "❌") + " ADX > 25 (xu hướng mạnh)\n" +
+         (_ss7 ? "✅" : "❌") + " Volume đang nở rộng"
+    table.cell(stbl, 0, 8, isSuperStock ? "💎 SIÊU CỔ PHIẾU" : "◯ Cổ phiếu thường",
+         text_color=_ssBadgeTc, text_size=tSize, text_halign=text.align_left, bgcolor=_ssBadgeBg, tooltip=_ssTooltip)
+    table.cell(stbl, 1, 8, str.tostring(superScore) + "/7",
+         text_color=_ssBadgeTc, text_size=tSize, text_halign=text.align_right, bgcolor=_ssBadgeBg, tooltip=_ssTooltip)
+
 // =========================================================
 // =========================================================
 var label lbStar = na
@@ -768,10 +799,10 @@ if barstate.islast
     lbStar := label.new(
          x         = bar_index,
          y         = trend == 1 ? up : dn,
-         text      = "✪",
+         text      = isSuperStock ? "💎" : "✪",
          style     = label.style_label_center,
          color     = color.new(color.black, 100),
-         textcolor = trend == 1 ? color.new(color.green, 0) : color.new(color.red, 0),
+         textcolor = isSuperStock ? color.new(#FFD700, 0) : (trend == 1 ? color.new(color.green, 0) : color.new(color.red, 0)),
          size      = size.large)
 
 // =========================================================
@@ -787,11 +818,11 @@ if barstate.islast and showVolLabel
     srAnchor    = trend == 1 ? up : dn
     lblStyle = trend == 1 ? label.style_label_upper_left : label.style_label_lower_left
 
-    trendClr =
-         buySignal   ? color.new(color.purple, 10) :
+    trendClr = isSuperStock and trend == 1 ? color.new(#B8860B, 10) :
+         buySignal  ? color.new(color.purple, 10) :
          sellSignal ? color.new(color.orange, 10) :
-         trend == 1  ? color.new(color.green,  25) :
-                       color.new(color.red,    25)
+         trend == 1 ? color.new(color.green,  25) :
+                      color.new(color.red,    25)
 
     // Tóm tắt chỉ báo
     rsiTxt  = "RSI:"  + str.tostring(math.round(rsiVal)) + (rsiVal > 52 ? "↑" : rsiVal < 48 ? "↓" : "→")
@@ -933,7 +964,11 @@ if barstate.islast and showVolLabel
           spinnerIndex == 0 ? "◐" :
           spinnerIndex == 1 ? "◓" :
           spinnerIndex == 2 ? "◑" : "◒"
-    lblTxt = "🤖 "  + " PHÂN TÍCH & KHUYẾN NGHỊ " + spinner+ " " + syminfo.ticker + "\n" +
+    superStockHdr = isSuperStock ?
+         "💎 SIÊU CỔ PHIẾU — " + str.tostring(superScore) + "/7 tiêu chí\n" +
+         "━━━━━━━━━━━━━━━━━━━━━━\n" : ""
+    lblTxt = superStockHdr +
+             "🤖 "  + " PHÂN TÍCH & KHUYẾN NGHỊ " + spinner+ " " + syminfo.ticker + "\n" +
              "━━━━━━━━━━━━━━━━━━━━━━"                                                               + "\n" +
              rsiTxt + "  " + macdTxt + "  " + adxTxt + "  " + obvTxt + "\n" +  emaTxt + "  " + vwapTxt    + "\n" +
              "Mua: " + str.tostring(trend_buy_vol, format.volume) +
