@@ -1,4 +1,4 @@
-//@version=5
+//@version=6
 indicator("ManhDucCapital-0973124824", overlay=true, format=format.price, precision=2, max_labels_count=500, max_lines_count=500)
 // =========================================================
 // DISCLAIMER - ManhDucCapital
@@ -148,12 +148,14 @@ emaLine3     = ta.ema(close, ema3Period)
 // =========================================================
 // SIÊU CỔ PHIẾU (SUPER STOCK) Vũ Mạnh Đức 0973124824
 // =========================================================
+_ss_ema50    = ta.ema(close, 50)
+_ss_ema200   = ta.ema(close, 200)
 _high52w     = ta.highest(close, 252)
-_ss1         = close > emaLine3                          // Giá > EMA200
-_ss2         = emaLine3 > emaLine3[20]                   // EMA200 đang tăng
+_ss1         = close > _ss_ema200                        // Giá > EMA200
+_ss2         = _ss_ema200 > _ss_ema200[20]               // EMA200 đang tăng
 _ss3         = not na(_high52w) and close >= _high52w * 0.90  // Gần/phá đỉnh 52 tuần
-_ss4         = emaLine1 > emaLine3                       // EMA50 > EMA200
-_ss5         = close > emaLine1                          // Giá > EMA50
+_ss4         = _ss_ema50 > _ss_ema200                    // EMA50 > EMA200
+_ss5         = close > _ss_ema50                         // Giá > EMA50
 _ss6         = adx > 25                                  // Xu hướng đủ mạnh
 _ss7         = volAvg > ta.sma(volume, 60)               // Volume đang tăng
 superScore   = (_ss1 ? 1 : 0) + (_ss2 ? 1 : 0) + (_ss3 ? 1 : 0) + (_ss4 ? 1 : 0) + (_ss5 ? 1 : 0) + (_ss6 ? 1 : 0) + (_ss7 ? 1 : 0)
@@ -303,7 +305,7 @@ pnl = na(signalPrice) or signalPrice == 0 ? 0.0 : signalType == "MUA" ? (close -
 var float trend_buy_vol  = 0.0
 var float trend_sell_vol = 0.0
 
-if ta.change(trend)
+if ta.change(trend) != 0
     trend_buy_vol  := 0.0
     trend_sell_vol := 0.0
 
@@ -869,7 +871,9 @@ if barstate.islast and showVolLabel
         else
             profitTxt := "🎯 T1 nhắm đến: " + f_price(price20) + " — Có thể chốt 1/3 vị thế"              
     
-    recTxt = buySignal  ? "🚀 Tín hiệu bứt phá xác nhận \n    └  Thời điểm mở vị thế tốt" :
+    recTxt = isSuperStock and buySignal  ? "💎 Bứt phá đỉnh mới — Cơ hội vàng!\n    └  'Great stocks make new highs, not new lows' — Minervini" :
+         isSuperStock and trend == 1  ? "💎 Cổ phiếu liên tục lập đỉnh cao mới\n    └  'Buy high, sell higher' — Mark Minervini" :
+         buySignal  ? "🚀 Tín hiệu bứt phá xác nhận \n    └  Thời điểm mở vị thế tốt" :
          sellSignal  ? "⚠️ Xu hướng đảo chiều \n    └  Nên thoát hàng, bảo toàn vốn" :
          trend == 1  and biasNorm >= 55 and delta_vol_pct >  0 ? "📈 Dòng tiền vào tốt, xu hướng ủng hộ \n    └  Tiếp tục nắm giữ" :
          trend == 1  and biasNorm >= 55 and delta_vol_pct <= 0 ? "👀 Momentum đang chậm lại \n    └  Giữ nhưng quan sát kỹ" :
@@ -968,7 +972,7 @@ if barstate.islast and showVolLabel
           spinnerIndex == 1 ? "◓" :
           spinnerIndex == 2 ? "◑" : "◒"
     superStockHdr = isSuperStock ?
-         "💎 SIÊU CỔ PHIẾU — " + str.tostring(superScore) + "/7 tiêu chí\n" +
+         "💎 SIÊU CỔ PHIẾU (Mark Minervini) — " + str.tostring(superScore) + "/7 tiêu chí\n" +
          "━━━━━━━━━━━━━━━━━━━━━━\n" : ""
     lblTxt = superStockHdr +
              "🤖 "  + " PHÂN TÍCH & KHUYẾN NGHỊ " + spinner+ " " + syminfo.ticker + "\n" +
