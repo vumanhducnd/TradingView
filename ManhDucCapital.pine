@@ -18,6 +18,7 @@ themeMode    = input.string("Light",  "Giao diện (Theme)",            group="C
 showsignals  = input.bool(true,   "Hiển thị tín hiệu Mua/Bán?",      group="Cài đặt chung")
 showSR       = input.bool(false,  "Hiển thị đường Hỗ trợ/Kháng cự?", group="Cài đặt chung")
 showVolLabel      = input.bool(true,   "Hiển thị Phân tích trực tiếp?",    group="Cài đặt chung")
+showSuperStock    = input.bool(false,   "Hiển thị nền & ký hiệu Siêu cổ phiếu?", group="Cài đặt chung")
 showCandlePattern = input.bool(true,    "Đọc vị nến khi gần đỉnh/đáy?",     group="Cài đặt chung",
      tooltip="Nhận diện mẫu nến đảo chiều khi giá tiếp cận vùng hỗ trợ/kháng cự")
 nearThreshPct     = input.float(3.0,    "Ngưỡng gần đỉnh/đáy (%)",          group="Cài đặt chung",
@@ -157,6 +158,8 @@ _ss6         = adx > 25                                  // Xu hướng đủ m�
 _ss7         = volAvg > ta.sma(volume, 60)               // Volume đang tăng
 superScore   = (_ss1 ? 1 : 0) + (_ss2 ? 1 : 0) + (_ss3 ? 1 : 0) + (_ss4 ? 1 : 0) + (_ss5 ? 1 : 0) + (_ss6 ? 1 : 0) + (_ss7 ? 1 : 0)
 isSuperStock = superScore >= 5
+bgcolor(showSuperStock and isSuperStock ? color.new(#FFD700, 88) : na, title="Nền Siêu cổ phiếu")
+plotshape(showSuperStock and isSuperStock, "💎 Siêu cổ phiếu", shape.diamond, location.top, color.new(#FFD700, 0), size=size.tiny)
 
 // =========================================================
 // DUAL SCORE LOGIC (9 điểm) Vũ Mạnh Đức 0973124824
@@ -749,8 +752,8 @@ if showTable
     pnlLbl = signalType == "MUA" ? (pnlR >= 0 ? "ĐANG LÃI" : "ĐANG LỖ") : "TRÁNH LỖ"
     pnlClr = signalType == "BÁN" ? (pnlR >= 0 ? T_RED : T_GRN) : (pnlR >= 0 ? T_GRN : T_RED)
 
-    _ssHdrBg = isSuperStock ? color.new(#FFD700, 0) : T_HDR
-    _ssHdrTc = isSuperStock ? color.new(#000000, 0) : T_WHT
+    _ssHdrBg = isSuperStock ? color.new(#B8860B, 0) : T_HDR
+    _ssHdrTc = isSuperStock ? color.new(#FFFFFF, 0) : T_WHT
     table.cell(stbl, 0, 0, isSuperStock ? "💎 " + syminfo.ticker : syminfo.ticker,
          text_color=_ssHdrTc, text_size=size.huge, text_halign=text.align_center, bgcolor=_ssHdrBg)
     table.cell(stbl, 1, 0, "", bgcolor=_ssHdrBg)
@@ -775,8 +778,8 @@ if showTable
     table.cell(stbl, 0, 7, pnlLbl, text_color=T_LBL,  text_size=tSize, text_halign=text.align_left,  bgcolor=T_BG_LGT)
     table.cell(stbl, 1, 7, pnlTxt, text_color=pnlClr, text_size=tSize, text_halign=text.align_right, bgcolor=T_BG_LGT)
 
-    _ssBadgeBg = isSuperStock ? color.new(#FFD700, 0) : (isDark ? color.new(#2a2a2a, 0) : color.new(#DDDDDD, 0))
-    _ssBadgeTc = isSuperStock ? color.new(#000000, 0) : color.new(#888888, 0)
+    _ssBadgeBg = isSuperStock ? color.new(#B8860B, 10) : (isDark ? color.new(#2a2a2a, 0) : color.new(#DDDDDD, 0))
+    _ssBadgeTc = isSuperStock ? color.new(#FFFFFF, 0) : color.new(#888888, 0)
     _ssTooltip = "TIÊU CHÍ SIÊU CỔ PHIẾU (cần ≥5/7)\n" +
          (_ss1 ? "✅" : "❌") + " Giá > EMA200\n" +
          (_ss2 ? "✅" : "❌") + " EMA200 đang tăng\n" +
