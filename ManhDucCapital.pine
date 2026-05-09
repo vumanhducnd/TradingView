@@ -81,6 +81,13 @@ entryMode      = input.string("Lý tưởng nhất", "Kiểu điểm Mua/Bán", 
      tooltip="Lý tưởng nhất: Mua đáy (Low), Bán đỉnh (High) cây nến tín hiệu\nLý tưởng: Mua/Bán trung bình đỉnh-đáy (HL2) cây nến tín hiệu\nThực tế: Mua đỉnh (High), Bán đáy (Low) cây nến tín hiệu")
 
 // =========================================================
+// XEM LẠI TÍN HIỆU THEO THỜI GIAN Vũ Mạnh Đức 0973124824
+// =========================================================
+showTimeCursor = input.bool(false, "Xem lại tín hiệu theo thời gian?", group="Xem lại lịch sử",
+     tooltip="BẬT tính năng này, kéo 'Thời điểm muốn xem' đến bất kỳ ngày nào\nBảng tín hiệu góc phải sẽ hiển thị lại thông tin lệnh + lãi/lỗ tại thời điểm đó\nĐường vàng đứt đoạn đánh dấu mốc thời gian đã chọn trên biểu đồ")
+cursorTime     = input.time(timestamp("2025-06-01"), "Thời điểm muốn xem", group="Xem lại lịch sử")
+
+// =========================================================
 // CÀI ĐẶT TP / SL Vũ Mạnh Đức 0973124824
 // =========================================================
 showTPSL  = input.bool(false,  "Hiển thị đường TP/SL?",          group="TP / SL",
@@ -303,6 +310,30 @@ if not na(signalPrice)
     signalCount := bar_index - signalBar
 
 pnl = na(signalPrice) or signalPrice == 0 ? 0.0 : signalType == "MUA" ? (close - signalPrice) / signalPrice * 100 :(signalPrice - close) / signalPrice * 100
+
+// =========================================================
+// THEO DÕI TÍN HIỆU TẠI CON TRỎ THỜI GIAN Vũ Mạnh Đức 0973124824
+// =========================================================
+var float  tc_entryPrice = na
+var string tc_type       = "MUA"
+var string tc_date       = ""
+var int    tc_entryBar   = 0
+var int    tc_cursorBar  = na
+var float  tc_closeRef   = na
+var int    tc_holdCount  = 0
+
+if showTimeCursor
+    if time <= cursorTime
+        if buySignal or sellSignal
+            tc_entryPrice := buySignal ? f_buyPrice(entryMode) : f_sellPrice(entryMode)
+            tc_type       := buySignal ? "MUA" : "BÁN"
+            tc_date       := f_today()
+            tc_entryBar   := bar_index
+        if not na(tc_entryPrice)
+            tc_holdCount  := bar_index - tc_entryBar
+        tc_closeRef := close
+    if time == cursorTime or (time > cursorTime and time[1] < cursorTime)
+        tc_cursorBar := bar_index
 
 // =========================================================
 // VOLUME TÍCH LŨY THEO TREND Vũ Mạnh Đức 0973124824
@@ -803,6 +834,70 @@ if showTable
          text_color=_ssBadgeTc, text_size=tSize, text_halign=text.align_left, bgcolor=_ssBadgeBg, tooltip=_ssTooltip)
     table.cell(stbl, 1, 8, str.tostring(superScore) + "/7",
          text_color=_ssBadgeTc, text_size=tSize, text_halign=text.align_right, bgcolor=_ssBadgeBg, tooltip=_ssTooltip)
+
+// =========================================================
+// CON TRỎ THỜI GIAN Vũ Mạnh Đức 0973124824
+// =========================================================
+var line  lnTC = na
+var label lbTC = na
+
+if barstate.islast and showTimeCursor
+    line.delete(lnTC)
+    label.delete(lbTC)
+    if not na(tc_entryPrice) and not na(tc_cursorBar) and not na(tc_closeRef)
+        _tc_pnl    = tc_entryPrice == 0 ? 0.0 :
+             tc_type == "MUA" ? (tc_closeRef - tc_entryPrice) / tc_entryPrice * 100 :
+             (tc_entryPrice - tc_closeRef) / tc_entryPrice * 100
+        _tc_pnlR   = math.round(_tc_pnl * 100) / 100
+        _tc_pnlAbs = str.tostring(math.abs(_tc_pnlR)) + "%"
+        _tc_pnlTxt = tc_type == "BÁN" ? (_tc_pnlR >= 0 ? "-" + _tc_pnlAbs : "+" + _tc_pnlAbs) :
+             (_tc_pnlR >= 0 ? "+" + _tc_pnlAbs : "-" + _tc_pnlAbs)
+        _tc_pnlLbl = tc_type == "MUA" ? (_tc_pnlR >= 0 ? "✅ ĐANG LÃI" : "❌ ĐANG LỖ") : "📊 TRÁNH LỖ"
+        _tc_bgClr  = _tc_pnlR >= 0 ? color.new(#4CAF50, 15) : color.new(#F44336, 15)
+
+        lnTC := line.new(tc_cursorBar, low * 0.96, tc_cursorBar, high * 1.04,
+             color=color.new(#FFC107, 0), width=2, style=line.style_dashed, extend=extend.both)
+
+        _tc_txt = "📅 Tại: " + str.format_time(cursorTime, "dd/MM/yyyy")   + "\n" +
+             "━━━━━━━━━━━━━━━━━━━━━━"                                        + "\n" +
+             "Lệnh : " + tc_type                                              + "\n" +
+             "Ngày : " + tc_date                                              + "\n" +
+             "Giá  : " + f_price(tc_entryPrice)                              + "\n" +
+             "Đóng : " + f_price(tc_closeRef)                                + "\n" +
+             "Giữ  : " + str.tostring(tc_holdCount) + " phiên"               + "\n" +
+             "━━━━━━━━━━━━━━━━━━━━━━"                                        + "\n" +
+             _tc_pnlLbl + " " + _tc_pnlTxt
+        lbTC := label.new(
+             x         = tc_cursorBar,
+             y         = tc_closeRef,
+             text      = _tc_txt,
+             style     = tc_cursorBar > last_bar_index / 2 ? label.style_label_upper_left : label.style_label_upper_right,
+             color     = _tc_bgClr,
+             textcolor = color.white,
+             size      = tSize,
+             textalign = text.align_left)
+
+        // Ghi đè bảng tín hiệu góc phải với dữ liệu tại thời điểm con trỏ
+        if showTable
+            _tc_pnlClr = tc_type == "BÁN" ? (_tc_pnlR >= 0 ? T_RED : T_GRN) : (_tc_pnlR >= 0 ? T_GRN : T_RED)
+            _tc_pnlLblShort = tc_type == "MUA" ? (_tc_pnlR >= 0 ? "ĐANG LÃI" : "ĐANG LỖ") : "TRÁNH LỖ"
+            table.cell(stbl, 0, 0, "📅 " + syminfo.ticker,
+                 text_color=T_WHT, text_size=size.huge, text_halign=text.align_center, bgcolor=color.new(#FFC107, 0))
+            table.cell(stbl, 1, 0, "", bgcolor=color.new(#FFC107, 0))
+            table.merge_cells(stbl, 0, 0, 1, 0)
+            table.cell(stbl, 0, 2, "📅 XEM LẠI  " + str.format_time(cursorTime, "dd/MM/yyyy"),
+                 text_color=color.new(#FFC107, 0), text_size=tSize, text_halign=text.align_center, bgcolor=T_BG_LGT)
+            table.cell(stbl, 1, 2, "", bgcolor=T_BG_LGT)
+            table.merge_cells(stbl, 0, 2, 1, 2)
+            table.cell(stbl, 0, 3, "NGÀY " + tc_type,       text_color=T_LBL,      text_size=tSize, text_halign=text.align_left,  bgcolor=T_BG_LGT)
+            table.cell(stbl, 1, 3, tc_date,                  text_color=T_VAL,      text_size=tSize, text_halign=text.align_right, bgcolor=T_BG_LGT)
+            table.cell(stbl, 0, 4, "GIÁ " + tc_type,        text_color=T_LBL,      text_size=tSize, text_halign=text.align_left,  bgcolor=T_BG_DRK)
+            table.cell(stbl, 1, 4, f_price(tc_entryPrice),   text_color=T_VAL,      text_size=tSize, text_halign=text.align_right, bgcolor=T_BG_DRK)
+            table.cell(stbl, 0, 6, "GIỮ LỆNH",              text_color=T_LBL,      text_size=tSize, text_halign=text.align_left,  bgcolor=T_BG_DRK)
+            table.cell(stbl, 1, 6, str.tostring(tc_holdCount) + " PHIÊN",
+                 text_color=T_VAL, text_size=tSize, text_halign=text.align_right, bgcolor=T_BG_DRK)
+            table.cell(stbl, 0, 7, _tc_pnlLblShort,          text_color=T_LBL,      text_size=tSize, text_halign=text.align_left,  bgcolor=T_BG_LGT)
+            table.cell(stbl, 1, 7, _tc_pnlTxt,               text_color=_tc_pnlClr, text_size=tSize, text_halign=text.align_right, bgcolor=T_BG_LGT)
 
 // =========================================================
 // =========================================================
