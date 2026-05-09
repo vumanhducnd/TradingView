@@ -1,0 +1,104 @@
+import logging
+import ssl
+import sys
+import urllib3
+from datetime import date, datetime
+
+# Bypass SSL certificate verification on Windows (local dev only)
+# GitHub Actions (Linux) không bị ảnh hưởng vì dùng Linux cert store
+ssl._create_default_https_context = ssl._create_unverified_context
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# Patch requests.Session để mọi thư viện dùng requests đều bỏ qua SSL
+try:
+    import requests
+    _orig_request = requests.Session.request
+    def _no_verify_request(self, method, url, **kwargs):
+        kwargs.setdefault("verify", False)
+        return _orig_request(self, method, url, **kwargs)
+    requests.Session.request = _no_verify_request
+except Exception:
+    pass
+
+
+def setup_logging(level: int = logging.INFO) -> logging.Logger:
+    logger = logging.getLogger("scanner")
+    if not logger.handlers:
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setFormatter(logging.Formatter(
+            "%(asctime)s [%(levelname)s] %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S"
+        ))
+        logger.addHandler(handler)
+    logger.setLevel(level)
+    return logger
+
+
+logger = setup_logging()
+
+
+# Vietnamese public holidays (fixed dates, update each year)
+VN_HOLIDAYS_2025 = {
+    date(2025, 1, 1),   # Tết Dương lịch
+    date(2025, 1, 27),  # Tết Nguyên Đán (nghỉ bù)
+    date(2025, 1, 28),  # Tết Nguyên Đán
+    date(2025, 1, 29),  # Tết Nguyên Đán
+    date(2025, 1, 30),  # Tết Nguyên Đán
+    date(2025, 1, 31),  # Tết Nguyên Đán
+    date(2025, 4, 7),   # Giỗ Tổ Hùng Vương
+    date(2025, 4, 30),  # Giải phóng miền Nam
+    date(2025, 5, 1),   # Quốc tế Lao động
+    date(2025, 9, 2),   # Quốc khánh
+    date(2025, 9, 3),   # Quốc khánh (nghỉ bù)
+}
+
+VN_HOLIDAYS_2026 = {
+    date(2026, 1, 1),
+    date(2026, 2, 16),
+    date(2026, 2, 17),
+    date(2026, 2, 18),
+    date(2026, 2, 19),
+    date(2026, 2, 20),
+    date(2026, 4, 27),
+    date(2026, 4, 30),
+    date(2026, 5, 1),
+    date(2026, 9, 2),
+}
+
+VN_HOLIDAYS = VN_HOLIDAYS_2025 | VN_HOLIDAYS_2026
+
+
+def is_trading_day(d: date | None = None) -> bool:
+    if d is None:
+        d = date.today()
+    if d.weekday() >= 5:  # Saturday=5, Sunday=6
+        return False
+    return d not in VN_HOLIDAYS
+
+
+def today_str() -> str:
+    return date.today().strftime("%Y-%m-%d")
+
+
+def fmt_price(price: float) -> str:
+    """Format VND price: 25500 → '25,500', 255.5 → '255.50'"""
+    if price >= 1000:
+        return f"{price:,.0f}"
+    return f"{price:.2f}"
+
+
+def fmt_pct(value: float) -> str:
+    sign = "+" if value > 0 else ""
+    return f"{sign}{value:.1f}%"
+
+
+def bias_label(bias_norm: float) -> str:
+    if bias_norm >= 70:
+        return "RẤT MẠNH"
+    if bias_norm >= 55:
+        return "MẠNH"
+    if bias_norm >= 45:
+        return "TRUNG TÍNH"
+    if bias_norm >= 30:
+        return "YẾU"
+    return "RẤT YẾU"

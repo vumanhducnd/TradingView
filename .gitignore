@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.eggs/
+
+# Môi trường
+.env
+.venv/
+venv/
+env/
+
+# IDE
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Database (không push lên GitHub)
+data/backtest/*.db
+*.sqlite
+
+# Reports & Data (file lớn, không push)
+reports/*.xlsx
+data/signals/*.csv
+data/backtest/*.csv
+
+# Logs
+*.log
+
+# Test files tạm
+test_one.py

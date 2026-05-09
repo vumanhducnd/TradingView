@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C \"c:\\\\DucVM\\\\PROJECT\\\\TradingView\" log --oneline -10)",
+      "Bash(python -c ' *)",
+      "Bash(python -c \"from scanner.telegram_bot import send_message; result = send_message\\('Test OK - ManhDucCapital Scanner'\\); print\\('Result:', result\\)\")",
+      "Bash(python -c \"import vnstock; print\\(vnstock.__version__\\)\")",
+      "Bash(pip install *)",
+      "Bash(docker compose *)",
+      "Bash(Start-Sleep -Seconds 8)",
+      "Bash(docker exec *)"
+    ]
+  }
+}

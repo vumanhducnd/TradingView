@@ -1,0 +1,101 @@
+ticker,close,trend,supertrend,bias_norm,bias_label,buy_signal,sell_signal,b_score,r_score,atr,volume,bull_ema,bull_vwap,bull_rsi,bull_macd,bull_adx,bull_obv,bull_stoch,bull_candle,bull_vol
+VIX,18.6,1,16.767324708886314,88.9,RẤT MẠNH,True,False,8,1,0.7390036961915791,79495300.0,True,True,True,True,False,True,True,True,True
+HTN,8.0,-1,8.7095466798042,50.0,TRUNG TÍNH,False,True,4,4,0.32227333990210044,160300.0,True,False,True,False,True,True,False,False,False
+BAF,35.6,-1,36.42423320848789,44.4,YẾU,False,True,3,4,0.4871166042439456,1691100.0,True,True,False,False,False,False,False,True,False
+LCG,9.62,-1,10.134248676774046,16.7,RẤT YẾU,False,True,1,7,0.22962433838702298,3057500.0,False,False,False,False,False,False,False,False,True
+BID,42.4,1,39.85218580303818,88.9,RẤT MẠNH,False,False,9,2,0.9864070984809101,23775900.0,True,True,True,True,True,True,True,True,True
+MSB,13.5,1,12.629592060562596,88.9,RẤT MẠNH,False,False,9,2,0.34770396971870215,35803500.0,True,True,True,True,True,True,True,True,True
+HAG,16.55,1,15.91721235436756,83.3,RẤT MẠNH,False,False,6,0,0.35857088566813616,4311500.0,True,True,True,False,False,True,True,True,False
+NAF,49.95,1,48.46214539793731,83.3,RẤT MẠNH,False,False,6,0,0.9760083388219412,578800.0,True,True,True,False,False,True,True,True,False
+VHM,164.0,1,142.69079617804707,83.3,RẤT MẠNH,False,False,8,2,8.804601910976478,7042400.0,True,True,True,True,True,True,False,True,True
+VPI,61.5,1,58.513287477775705,83.3,RẤT MẠNH,False,False,7,1,1.7057287241989039,10003100.0,True,True,True,False,False,True,True,True,True
+GEX,33.5,1,29.35763473169843,77.8,RẤT MẠNH,False,False,8,3,1.4586826341507844,30870900.0,True,True,True,True,True,True,False,True,True
+GMD,80.7,1,76.04375540597995,77.8,RẤT MẠNH,False,False,7,2,1.8781222970100244,1915800.0,True,True,True,True,False,True,False,True,True
+HPG,27.85,-1,28.539964636994135,77.8,RẤT MẠNH,False,False,5,0,0.48240869036549966,20678200.0,True,True,False,False,False,True,True,True,False
+QNS,47.4,1,45.93589546268972,77.8,RẤT MẠNH,False,False,8,3,0.657052268655139,388800.0,True,True,True,True,True,True,False,True,True
+VIC,226.0,1,199.44527831545128,77.8,RẤT MẠNH,False,False,6,1,12.066309293378023,3703600.0,True,True,True,False,True,True,False,True,False
+CTG,36.2,1,34.96224624383309,72.2,RẤT MẠNH,False,False,7,3,0.6688768780834519,18248400.0,True,False,True,True,True,True,True,False,True
+PAN,32.75,1,31.003917741665436,72.2,RẤT MẠNH,False,False,5,1,0.9090352535719542,606600.0,True,True,True,True,False,True,False,False,False
+PTB,50.3,1,48.57070463751452,72.2,RẤT MẠNH,False,False,5,1,0.8411265839223481,59600.0,True,True,True,False,False,True,False,True,False
+SGN,53.6,1,52.196914486351154,72.2,RẤT MẠNH,False,False,6,2,1.5486045034754063,2800.0,True,True,True,False,True,False,True,True,False
+TCB,33.85,1,33.20261941959096,72.2,RẤT MẠNH,False,False,6,2,0.6979531843006076,10525100.0,True,True,True,False,True,True,False,True,False
+VCB,60.7,1,58.77777774511506,72.2,RẤT MẠNH,False,False,7,3,1.2626426180939148,9970000.0,True,False,True,True,True,True,True,False,True
+DHC,36.9,1,35.2409431352213,66.7,MẠNH,False,False,5,2,0.8920284323893485,184900.0,True,False,True,True,False,True,True,False,False
+DXG,15.45,1,14.714546922903496,66.7,MẠNH,False,False,4,1,0.5208553077711511,9818800.0,True,True,True,False,False,True,False,False,False
+HCM,27.95,1,26.232995314352497,66.7,MẠNH,False,False,5,2,1.0644305795632156,13995800.0,True,True,True,False,True,True,False,False,False
+HDB,27.35,1,26.353007736264733,66.7,MẠNH,False,False,5,2,0.5359961318676342,10899600.0,True,False,True,True,False,True,True,False,False
+KOS,38.6,-1,38.66112143600439,66.7,MẠNH,False,False,6,3,0.9634039833308542,492300.0,False,True,False,False,True,True,True,True,True
+NVL,17.2,-1,19.091453106441246,66.7,MẠNH,False,False,7,4,1.1957265532206236,41026000.0,True,True,True,False,True,False,True,True,True
+KDC,47.9,1,42.85177810641068,61.1,MẠNH,False,False,6,4,2.299110946794663,989800.0,False,True,False,True,True,True,False,True,True
+LPB,51.8,1,48.26186307094113,61.1,MẠNH,False,False,6,4,1.8440684645294372,1675800.0,True,False,True,True,True,True,False,False,True
+NCT,92.5,-1,94.3021872203668,61.1,MẠNH,False,False,5,3,0.9760936101834036,19200.0,True,True,False,False,True,False,True,False,True
+PNJ,70.1,-1,72.19116917937991,61.1,MẠNH,False,False,4,2,2.055939698547719,986700.0,False,True,False,False,False,True,True,True,False
+SHB,14.25,-1,14.70914536537726,61.1,MẠNH,False,False,4,2,0.29207268268863,65804100.0,False,True,False,False,False,True,True,True,False
+STB,73.5,1,68.1970923538187,61.1,MẠNH,False,False,5,3,2.676453823090643,4750300.0,True,False,True,True,True,True,False,False,False
+EVF,13.35,-1,13.809345566497356,55.6,MẠNH,False,False,3,2,0.381514055923366,2928300.0,False,True,False,False,False,True,True,False,False
+GVR,35.7,1,33.23248425338363,55.6,MẠNH,False,False,3,2,1.4539353199784435,3718400.0,True,False,True,False,False,True,False,False,False
+MSN,80.2,1,76.95686341825119,55.6,MẠNH,False,False,6,5,2.1215682908744076,8819100.0,True,False,True,True,True,True,False,False,True
+PGS,50.0,-1,51.36678277357806,55.6,MẠNH,False,False,3,2,1.5607362668992129,30.0,True,False,False,False,True,True,False,False,False
+VGC,44.3,-1,45.31836126261766,55.6,MẠNH,False,False,4,3,1.389432295416044,879800.0,False,True,False,False,False,True,True,False,True
+VPB,27.95,1,26.82476989281823,55.6,MẠNH,False,False,5,4,0.6376150535908857,15747600.0,True,False,True,True,False,True,False,False,True
+VRE,35.9,1,32.68076685683532,55.6,MẠNH,False,False,4,3,1.7368142042134356,8119600.0,True,False,True,False,True,True,False,False,False
+DPR,41.6,1,40.00574326668122,50.0,TRUNG TÍNH,False,False,4,4,1.0296814571366197,419200.0,True,False,True,False,True,True,False,False,False
+HNG,7.3,1,6.724239560868165,50.0,TRUNG TÍNH,False,False,4,4,0.3967544739136435,4273000.0,True,False,True,False,True,True,False,False,False
+HSG,12.45,1,12.096098929531276,50.0,TRUNG TÍNH,False,False,3,3,0.2945290302008811,2752600.0,True,False,True,False,False,True,False,False,False
+MWG,84.6,1,82.9151748393307,50.0,TRUNG TÍNH,False,False,3,3,1.822067926001131,4605300.0,True,False,True,False,False,True,False,False,False
+OCB,11.25,-1,11.573505972916092,50.0,TRUNG TÍNH,False,False,3,3,0.19638994923448308,3697200.0,False,False,False,False,False,True,True,False,True
+PHR,63.9,1,61.855754883607645,50.0,TRUNG TÍNH,False,False,3,3,1.5546764784538725,217600.0,True,False,True,False,False,True,False,False,False
+POW,14.0,1,13.4431936374685,50.0,TRUNG TÍNH,False,False,4,4,0.4422027267992136,22764900.0,True,False,True,False,False,True,False,False,True
+DIG,14.45,1,13.841847854485193,44.4,YẾU,False,False,2,3,0.4814796294433964,8140500.0,True,False,True,False,False,False,False,False,False
+HAH,56.5,1,54.61203866434367,44.4,YẾU,False,False,2,3,1.3519834295669964,525400.0,True,False,True,False,False,False,False,False,False
+MBB,26.15,-1,26.68170955814234,44.4,YẾU,False,False,3,4,0.37791437982324405,22204000.0,False,False,False,False,False,True,True,False,True
+OGC,3.01,-1,3.173359181080313,44.4,YẾU,False,False,2,3,0.0766795905401564,253100.0,True,False,False,False,False,True,False,False,False
+VHC,60.5,1,60.15729875216378,44.4,YẾU,False,False,3,4,1.6963356843614945,1348400.0,True,False,False,False,False,False,True,False,True
+VJC,176.2,1,172.27196420491623,44.4,YẾU,False,False,4,5,5.847033557377709,1363900.0,True,False,True,False,True,True,False,False,False
+KDH,24.25,-1,25.36079757600663,38.9,YẾU,False,False,2,4,0.5553987880033142,5359000.0,False,False,False,False,False,False,True,False,True
+MML,32.3,-1,32.78132274123952,38.9,YẾU,False,False,3,5,0.9049062858713353,47100.0,False,False,False,True,True,False,False,False,True
+PDR,16.35,1,15.744804047086928,38.9,YẾU,False,False,2,4,0.4950839798198882,7123300.0,True,False,True,False,False,False,False,False,False
+PGC,13.5,-1,13.836335359037347,38.9,YẾU,False,False,1,3,0.16816767951867365,32800.0,False,False,False,False,False,False,True,False,False
+PGI,19.5,-1,19.876175711060654,38.9,YẾU,False,False,3,5,0.5278111004107706,1500.0,False,False,False,False,True,True,True,False,False
+SAB,46.25,1,45.46761535520931,38.9,YẾU,False,False,4,6,1.1768074441234277,886100.0,True,False,True,False,True,False,False,False,True
+SBT,20.4,-1,20.724147953305604,38.9,YẾU,False,False,3,5,0.21397271754083366,358000.0,False,True,False,True,True,False,False,False,False
+TDC,11.0,-1,11.218360628489302,38.9,YẾU,False,False,3,5,0.1651549469164218,64000.0,False,True,False,True,True,False,False,False,False
+VTP,66.0,-1,69.49990896850827,38.9,YẾU,False,False,1,3,1.7749544842541296,340100.0,False,True,False,False,False,False,False,False,False
+AGR,14.65,1,14.354397739470164,33.3,YẾU,False,False,1,4,0.2720587815203032,226200.0,False,False,False,True,False,False,False,False,False
+BSR,25.95,1,24.1428305298819,33.3,YẾU,False,False,1,4,1.257735723716854,10019900.0,False,False,False,True,False,False,False,False,False
+CMG,27.75,-1,28.767521077873823,33.3,YẾU,False,False,3,6,0.5700941003217868,136000.0,False,False,False,True,True,True,False,False,False
+EIB,22.15,-1,22.819065059032756,33.3,YẾU,False,False,1,4,0.6151866658178946,10698700.0,False,False,False,False,False,True,False,False,False
+KBC,33.6,1,32.94224439417295,33.3,YẾU,False,False,3,6,0.9110122633650392,2893800.0,True,False,True,False,True,False,False,False,False
+MPC,15.9,-1,16.653063840607714,33.3,YẾU,False,False,1,4,0.37653192030385735,17000.0,False,False,False,False,False,False,True,False,False
+PGV,23.9,-1,24.84834419796665,33.3,YẾU,False,False,2,5,0.6259110023064566,3200.0,False,False,False,True,False,False,True,False,False
+PVT,22.1,1,21.374491977980668,33.3,YẾU,False,False,1,4,1.0705947835989373,3949600.0,True,False,False,False,False,False,False,False,False
+SJS,56.7,-1,60.26408304187792,33.3,YẾU,False,False,3,6,1.6070415209389617,32800.0,True,False,True,False,True,False,False,False,False
+SSI,28.3,-1,28.641719535378904,33.3,YẾU,False,False,1,4,0.616926267699481,14968800.0,False,False,False,True,False,False,False,False,False
+TCH,16.95,1,16.436113987889286,33.3,YẾU,False,False,1,4,0.7146866671676364,8575100.0,True,False,False,False,False,False,False,False,False
+CII,18.45,1,18.246299410708893,27.8,RẤT YẾU,False,False,1,5,0.7301347725930134,12520800.0,True,False,False,False,False,False,False,False,False
+FPT,71.9,-1,75.87291023333547,27.8,RẤT YẾU,False,False,3,7,1.6364551166677432,13444300.0,False,False,False,False,True,False,True,False,True
+PGD,23.3,-1,25.13303229552132,27.8,RẤT YẾU,False,False,2,6,0.8915161477606591,78500.0,False,False,False,False,False,False,True,False,True
+VCI,25.95,-1,27.246576318948048,27.8,RẤT YẾU,False,False,0,4,0.7149569750623594,6295800.0,False,False,False,False,False,False,False,False,False
+BVH,66.0,-1,71.79576915955022,22.2,RẤT YẾU,False,False,3,8,2.4978845797751084,1406600.0,False,False,False,False,True,False,True,False,True
+CTD,76.8,-1,85.59645221210548,22.2,RẤT YẾU,False,False,3,8,3.9482261060527395,4977700.0,True,False,False,False,True,False,False,False,True
+DPM,25.85,-1,27.645004816081745,22.2,RẤT YẾU,False,False,1,6,0.8350024080408724,2547400.0,False,False,False,False,True,False,False,False,False
+HDG,25.1,-1,26.77671192987688,22.2,RẤT YẾU,False,False,2,7,0.7383559649384388,2618500.0,False,False,False,False,True,False,False,False,True
+REE,61.0,-1,64.17468423292425,22.2,RẤT YẾU,False,False,0,5,1.4111084937272775,832300.0,False,False,False,False,False,False,False,False,False
+TPB,16.0,1,15.811193425143395,22.2,RẤT YẾU,False,False,1,6,0.28083992524243306,12442900.0,False,False,False,False,False,False,False,False,True
+ACB,22.85,-1,23.574856781925078,16.7,RẤT YẾU,False,False,1,7,0.3757566543670795,15734200.0,False,False,False,False,False,False,False,False,True
+ANV,23.3,-1,24.708802944773076,16.7,RẤT YẾU,False,False,0,6,0.6419014723865378,408500.0,False,False,False,False,False,False,False,False,False
+BCM,53.0,-1,55.20717630549134,16.7,RẤT YẾU,False,False,0,6,1.0535881527456679,344200.0,False,False,False,False,False,False,False,False,False
+DBC,22.5,-1,23.38068590446233,16.7,RẤT YẾU,False,False,0,6,0.4226754802492733,2068300.0,False,False,False,False,False,False,False,False,False
+DCM,40.2,-1,44.0389549810846,16.7,RẤT YẾU,False,False,0,6,1.6569774905423027,3395000.0,False,False,False,False,False,False,False,False,False
+DGC,52.2,-1,56.45170082431398,16.7,RẤT YẾU,False,False,1,7,1.9920807260230593,4582900.0,False,False,False,False,False,False,False,False,True
+DRC,12.65,-1,13.267944782200008,16.7,RẤT YẾU,False,False,1,7,0.26198593038967294,153300.0,False,False,False,False,True,False,False,False,False
+GAS,74.7,-1,79.89833121665285,16.7,RẤT YẾU,False,False,1,7,2.9747552668737023,1415100.0,False,False,False,False,True,False,False,False,False
+IJC,10.05,-1,10.463349888276591,16.7,RẤT YẾU,False,False,0,6,0.19417494413829609,1428800.0,False,False,False,False,False,False,False,False,False
+NLG,26.5,-1,28.466115262445687,16.7,RẤT YẾU,False,False,1,7,0.8705576312228427,3100700.0,False,False,False,False,False,False,False,False,True
+NT2,23.0,-1,24.98585698934285,16.7,RẤT YẾU,False,False,2,8,0.7304284946714258,3272800.0,False,False,False,False,True,False,False,False,True
+PLX,37.6,-1,39.97020951748346,16.7,RẤT YẾU,False,False,1,7,1.4735422504894218,1959300.0,False,False,False,False,True,False,False,False,False
+PVD,30.8,-1,33.235066711909255,16.7,RẤT YẾU,False,False,1,7,1.4125410012445416,3297300.0,False,False,False,False,True,False,False,False,False
+SZC,26.7,-1,28.100090190886625,16.7,RẤT YẾU,False,False,1,7,0.6125450954433135,937100.0,False,False,False,False,False,False,False,False,True
+VNM,60.9,-1,63.013514239743444,16.7,RẤT YẾU,False,False,0,6,1.0162085652836492,2787000.0,False,False,False,False,False,False,False,False,False
+LHG,28.05,-1,28.697475811246175,11.1,RẤT YẾU,False,False,1,8,0.34007578803862365,91100.0,False,False,False,False,False,False,False,False,True
+VIB,16.05,-1,16.59320302343899,11.1,RẤT YẾU,False,False,0,7,0.2713292318700024,3838800.0,False,False,False,False,False,False,False,False,False
