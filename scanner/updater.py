@@ -131,39 +131,57 @@ def run_full_pipeline(force: bool = False) -> None:
 
 
 def run_scan_only() -> None:
-    """Chỉ chạy scan từ DB — bỏ qua bước fetch OHLCV (dùng khi OHLCV đã được sync riêng)."""
+    """Scan dual (ngắn hạn + dài hạn) từ DB — giống test_one.py."""
     from scanner.data_fetcher import load_all_from_db
-    from scanner.scanner import get_current_signals, run_scan
+    from scanner.scanner import get_current_signals, run_scan_dual
+    from scanner.database import load_scan_results, load_scan_dates
+    from scanner.telegram_bot import send_daily_report
 
-    logger.info("=== Bat dau scan-only ===")
+    logger.info("=== Bat dau scan-only (dual mode) ===")
+
+    # Nếu không phải ngày giao dịch → load kết quả cũ từ DB, gửi lại
+    if not is_trading_day():
+        dates = load_scan_dates()
+        if dates:
+            logger.info(f"Nghi giao dich — load ket qua {dates[0]} tu DB")
+            results = load_scan_results(dates[0])
+            if not results.empty:
+                signals = get_current_signals(results)
+                send_daily_report(results, signals)
+                buy_n  = len(signals.get("buy",  []))
+                sell_n = len(signals.get("sell", []))
+                logger.info(f"=== Xong (cache): {buy_n} MUA, {sell_n} BAN ===")
+                return
+
     logger.info("Buoc 1/4: Load OHLCV tu DB...")
     ticker_data = load_all_from_db()
     if not ticker_data:
         logger.error("Khong load duoc data tu DB")
         return
 
-    logger.info(f"Buoc 2/4: Tinh indicators cho {len(ticker_data)} tickers...")
-    results = run_scan(ticker_data=ticker_data)
+    logger.info(f"Buoc 2/4: Tinh SuperTrend ngan han + dai han cho {len(ticker_data)} tickers...")
+    results = run_scan_dual(ticker_data=ticker_data)
     if results.empty:
-        logger.error("Scan không có kết quả")
+        logger.error("Scan khong co ket qua")
         return
 
     signals = get_current_signals(results)
+    buy_n   = len(signals.get("buy",  []))
+    sell_n  = len(signals.get("sell", []))
+    both_n  = len(signals.get("both_buy", [])) + len(signals.get("both_sell", []))
+    logger.info(f"  {len(results)} ma | MUA={buy_n} | BAN={sell_n} | DONG THUAN={both_n}")
 
     logger.info("Buoc 3/4: Luu ket qua vao DB...")
     save_scan_results(results)
     save_signals(results)
 
-    logger.info("Buoc 4/4: Gui Telegram...")
+    logger.info("Buoc 4/4: Gui Telegram + Excel...")
     try:
-        from scanner.telegram_bot import send_daily_report
         send_daily_report(results, signals)
     except Exception as e:
         logger.warning(f"Telegram failed: {e}")
 
-    buy_n = len(signals.get("buy", []))
-    sell_n = len(signals.get("sell", []))
-    logger.info(f"=== Scan-only xong: {buy_n} MUA, {sell_n} BAN ===")
+    logger.info(f"=== Scan-only xong: {buy_n} MUA, {sell_n} BAN, {both_n} DONG THUAN ===")
 
 
 def _fetch_latest(ticker: str, start: date, end: date):
