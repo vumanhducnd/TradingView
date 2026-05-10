@@ -29,12 +29,9 @@ jobs:
       - name: Run scanner
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          DB_HOST:     ${{ secrets.DB_HOST }}
-          DB_PORT:     ${{ secrets.DB_PORT }}
-          DB_NAME:     ${{ secrets.DB_NAME }}
-          DB_USER:     ${{ secrets.DB_USER }}
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
+          DATABASE_URL:       ${{ secrets.DATABASE_URL }}
+          VNSTOCK_API_KEY:    ${{ secrets.VNSTOCK_API_KEY }}
         run: python -m scanner.updater
 
       - name: Commit and push results
