@@ -221,8 +221,11 @@ def save_scan_results(df: pd.DataFrame, scan_date: date | None = None) -> None:
 
     def _v(row, col, cast=None):
         v = row.get(col)
-        if v is None or (isinstance(v, float) and v != v):  # NaN check
-            return None
+        try:
+            if v is None or pd.isna(v):  # handles None, float NaN, NaT
+                return None
+        except (TypeError, ValueError):
+            pass
         try:
             return cast(v) if cast else v
         except Exception:
