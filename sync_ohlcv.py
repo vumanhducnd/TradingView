@@ -39,6 +39,10 @@ def sync_via_price_board(tickers: list[str], today: date) -> dict[str, int]:
         if df is None or df.empty:
             continue
 
+        # Flatten MultiIndex columns nếu có (price_board trả về MultiIndex)
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = ["_".join(str(c) for c in col if c).strip("_") for col in df.columns]
+
         # Normalize columns — price_board trả về tên cột khác nhau tùy source
         col_map = {}
         for col in df.columns:
@@ -59,7 +63,8 @@ def sync_via_price_board(tickers: list[str], today: date) -> dict[str, int]:
         required = {"ticker", "open", "high", "low", "close", "volume"}
         missing = required - set(df.columns)
         if missing:
-            logger.warning(f"price_board thieu cot: {missing}. Co: {list(df.columns)}")
+            logger.warning(f"price_board thieu cot: {missing}")
+            logger.warning(f"Cac cot co san: {list(df.columns)}")
             continue
 
         df["date"] = today
