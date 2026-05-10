@@ -4,7 +4,14 @@ on:
   schedule:
     # 8:30 AM UTC = 3:30 PM ICT (GMT+7), weekdays only
     - cron: '30 8 * * 1-5'
-  workflow_dispatch:  # allow manual trigger for testing
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Force scan (bo qua kiem tra ngay nghi)'
+        required: false
+        default: 'true'
+        type: choice
+        options: ['true', 'false']
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -36,7 +43,12 @@ jobs:
           TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
           DATABASE_URL:       ${{ secrets.DATABASE_URL }}
           VNSTOCK_API_KEY:    ${{ secrets.VNSTOCK_API_KEY }}
-        run: python -m scanner.updater --scan-only
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.force }}" = "true" ]; then
+            python -m scanner.updater --scan-only --force
+          else
+            python -m scanner.updater --scan-only
+          fi
 
       - name: Commit and push results
         run: |
