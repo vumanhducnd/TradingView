@@ -20,18 +20,24 @@ from scanner.utils import logger
 
 # ─── Connection ───────────────────────────────────────────────────────────────
 
-def _conn_params() -> dict:
-    return {
+def get_connection() -> PgConnection:
+    # Ưu tiên DATABASE_URL (Neon / cloud) — SSL đã có sẵn trong URL
+    dsn = os.getenv("DATABASE_URL")
+    if dsn:
+        return psycopg2.connect(dsn)
+
+    # Fallback: individual params (Docker local)
+    params: dict = {
         "host":     os.getenv("DB_HOST", "localhost"),
         "port":     int(os.getenv("DB_PORT", 5432)),
         "dbname":   os.getenv("DB_NAME", "trading"),
         "user":     os.getenv("DB_USER", "trading_user"),
         "password": os.getenv("DB_PASSWORD", "trading_pass"),
     }
-
-
-def get_connection() -> PgConnection:
-    return psycopg2.connect(**_conn_params())
+    sslmode = os.getenv("DB_SSLMODE")
+    if sslmode:
+        params["sslmode"] = sslmode
+    return psycopg2.connect(**params)
 
 
 @contextmanager
