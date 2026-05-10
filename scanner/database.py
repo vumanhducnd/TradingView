@@ -231,6 +231,15 @@ def save_scan_results(df: pd.DataFrame, scan_date: date | None = None) -> None:
         except Exception:
             return None
 
+    def _date(row, col):
+        v = row.get(col)
+        try:
+            if v is None or pd.isna(v):
+                return None
+        except (TypeError, ValueError):
+            pass
+        return v
+
     def _bool(row, col):
         v = row.get(col)
         return bool(v) if v is not None else False
@@ -263,7 +272,7 @@ def save_scan_results(df: pd.DataFrame, scan_date: date | None = None) -> None:
             _v(r, "turnover",          float),
             # Dual mode: ưu tiên long_, fallback sang field gốc
             r.get("long_last_signal_type") or r.get("last_signal_type"),
-            r.get("long_last_signal_date") or r.get("last_signal_date"),
+            _date(r, "long_last_signal_date") or _date(r, "last_signal_date"),
             _v(r, "long_last_signal_price",  float) or _v(r, "last_signal_price", float),
             _v(r, "long_bars_since_signal",  int)   or _v(r, "bars_since_signal",  int),
             _v(r, "long_signal_pnl_pct",     float) or _v(r, "signal_pnl_pct",     float),
@@ -286,9 +295,9 @@ def save_scan_results(df: pd.DataFrame, scan_date: date | None = None) -> None:
             _bool(r, "both_buy"),
             _bool(r, "both_sell"),
             # Lịch sử lệnh
-            r.get("buy_date"),
+            _date(r, "buy_date"),
             _v(r, "buy_price",  float),
-            r.get("sell_date"),
+            _date(r, "sell_date"),
             _v(r, "sell_price", float),
             _v(r, "hold_days",  int),
             _v(r, "pnl_pct",    float),
