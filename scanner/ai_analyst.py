@@ -1,0 +1,336 @@
+"""
+AI Analyst — Groq (free: 14,400 req/ngay, 30 RPM).
+Phan tich chi tiet tung tin hieu MUA/BAN + tong quan thi truong.
+"""
+
+from __future__ import annotations
+
+import re
+import time
+import textwrap
+from datetime import date
+
+import pandas as pd
+
+from scanner.utils import logger
+
+_MODEL      = "llama-3.3-70b-versatile"
+_BATCH_SIZE = 5      # 5 ma/call de co du token cho phan tich sau
+_RPM_DELAY  = 3.0    # giay giua cac call (30 RPM = 1 call/2s)
+
+
+# ─── Client ───────────────────────────────────────────────────────────────────
+
+def _get_client():
+    try:
+        import httpx
+        from groq import Groq
+        from scanner.config import GROQ_API_KEY
+        if not GROQ_API_KEY:
+            raise ValueError("GROQ_API_KEY chua set trong .env")
+        return Groq(api_key=GROQ_API_KEY, http_client=httpx.Client(verify=False))
+    except ImportError:
+        raise ImportError("pip install groq httpx")
+
+
+def _call(client, prompt: str, max_tokens: int = 2048, _retry: int = 0) -> str:
+    try:
+        resp = client.chat.completions.create(
+            model=_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.35,
+            max_tokens=max_tokens,
+        )
+        return resp.choices[0].message.content.strip()
+    except Exception as e:
+        err = str(e)
+        if "429" in err and _retry < 2:
+            m = re.search(r"Please try again in ([\d.]+)s", err)
+            wait = int(float(m.group(1))) + 2 if m else 35
+            logger.warning(f"Groq 429 - cho {wait}s ({_retry+1}/2)...")
+            time.sleep(wait)
+            return _call(client, prompt, max_tokens, _retry + 1)
+        logger.warning(f"Groq loi: {e}")
+        return ""
+
+
+# ─── Data context ─────────────────────────────────────────────────────────────
+
+def _build_ticker_block(row: pd.Series, signal_type: str) -> str:
+    """Tao block du lieu day du cho 1 ticker de AI phan tich."""
+    close     = row.get("close", 0)
+    bias      = row.get("bias_norm", 0)
+    b_score   = row.get("b_score", 0)
+    r_score   = row.get("r_score", 0)
+    support   = row.get("support") or row.get("long_support") or 0
+    resist    = row.get("resistance") or row.get("long_resistance") or 0
+    atr       = row.get("atr") or row.get("long_atr") or 0
+    turnover  = row.get("turnover", 0)
+
+    # Trend
+    long_trend  = "TANG" if row.get("long_trend",  0) == 1 else "GIAM"
+    short_trend = "TANG" if row.get("short_trend", 0) == 1 else "GIAM"
+
+    # SuperTrend
+    st_long  = row.get("long_supertrend")  or row.get("supertrend") or 0
+    st_short = row.get("short_supertrend") or 0
+
+    # Indicators
+    ind_map = {
+        "EMA9>21":   row.get("bull_ema",    False),
+        "Gia>VWAP":  row.get("bull_vwap",   False),
+        "RSI>52":    row.get("bull_rsi",    False),
+        "MACD tang": row.get("bull_macd",   False),
+        "ADX>20":    row.get("bull_adx",    False),
+        "OBV tang":  row.get("bull_obv",    False),
+        "Stoch tang":row.get("bull_stoch",  False),
+        "Nen xanh":  row.get("bull_candle", False),
+        "Volume tang":row.get("bull_vol",   False),
+    }
+    bull_list = [k for k, v in ind_map.items() if v]
+    bear_list = [k for k, v in ind_map.items() if not v]
+
+    pnl = row.get("pnl_pct") or row.get("long_signal_pnl_pct")
+    pnl_str = f"{pnl:+.1f}%" if pnl is not None else "N/A"
+
+    dist_sup = round((close - support) / close * 100, 1) if close and support else 0
+    dist_res = round((resist - close)  / close * 100, 1) if close and resist  else 0
+    tk_ty = round(turnover / 1e9, 1) if turnover else 0
+
+    return textwrap.dedent(f"""
+        MA: {row.get('ticker', '')} | TIN HIEU: {signal_type}
+        Gia dong cua: {close:.1f} | SuperTrend DH: {st_long:.1f} | ST NH: {st_short:.1f}
+        Xu huong: Dai han={long_trend}, Ngan han={short_trend}
+        BiasNorm: {bias:.1f}/100 (Bull {b_score}/9, Bear {r_score}/9)
+        Ho tro (stop): {support:.1f} ({dist_sup:+.1f}% tu gia HT)
+        Khang cu (target): {resist:.1f} ({dist_res:+.1f}% tu gia HT)
+        ATR: {atr:.2f} | TK: {tk_ty} ty VND
+        P&L tu tin hieu: {pnl_str}
+        Chi bao BULLISH ({len(bull_list)}/9): {', '.join(bull_list) if bull_list else 'Khong co'}
+        Chi bao BEARISH ({len(bear_list)}/9): {', '.join(bear_list) if bear_list else 'Khong co'}
+    """).strip()
+
+
+# ─── Market overview ──────────────────────────────────────────────────────────
+
+def generate_market_overview(results: pd.DataFrame) -> str:
+    try:
+        client = _get_client()
+    except Exception as e:
+        logger.warning(f"AI khong kha dung: {e}")
+        return ""
+
+    today     = date.today().strftime("%d/%m/%Y")
+    avg_bias  = results["bias_norm"].mean() if "bias_norm" in results.columns else 0
+
+    buy_col  = "long_buy_signal"  if "long_buy_signal"  in results.columns else "buy_signal"
+    sell_col = "long_sell_signal" if "long_sell_signal" in results.columns else "sell_signal"
+    n_buy    = int(results[buy_col].sum())  if buy_col  in results.columns else 0
+    n_sell   = int(results[sell_col].sum()) if sell_col in results.columns else 0
+    n_bull   = int((results["bias_norm"] >= 55).sum()) if "bias_norm" in results.columns else 0
+    n_bear   = int((results["bias_norm"] <= 45).sum()) if "bias_norm" in results.columns else 0
+
+    buy_list  = results[results[buy_col].astype(bool)]["ticker"].tolist()  if buy_col  in results.columns else []
+    sell_list = results[results[sell_col].astype(bool)]["ticker"].tolist() if sell_col in results.columns else []
+
+    top10_bull = results.nlargest(10, "bias_norm")[["ticker", "bias_norm"]].to_string(index=False)
+    top10_bear = results.nsmallest(10, "bias_norm")[["ticker", "bias_norm"]].to_string(index=False)
+
+    prompt = textwrap.dedent(f"""
+        Ban la chuyen gia phan tich ky thuat chung khoan Viet Nam (VN100).
+        Ngay phan tich: {today}
+
+        THONG KE:
+        - Tin hieu MUA: {n_buy} ma ({buy_list})
+        - Tin hieu BAN: {n_sell} ma ({sell_list})
+        - So ma bullish (bias>=55): {n_bull}/100
+        - So ma bearish (bias<=45): {n_bear}/100
+        - BiasNorm trung binh: {avg_bias:.1f}/100
+
+        TOP 10 TICH CUC NHAT:
+        {top10_bull}
+
+        TOP 10 TIEU CUC NHAT:
+        {top10_bear}
+
+        Hay viet nhan dinh tong quan thi truong theo cau truc sau (bang tieng Viet):
+
+        XU HUONG CHUNG: [1-2 cau nhan dinh xu huong tong the hom nay]
+
+        DIEM NHAN: [Nhom nganh / ma noi bat can chu y, ly do]
+
+        RUI RO: [Nhung rui ro / diem yeu can luu y]
+
+        KHUYEN NGHI: [Chien luoc ngay hom nay cho nha dau tu ngan han]
+
+        Viet bang tieng Viet thuan, khong dung markdown, khong lap lai so lieu.
+    """).strip()
+
+    logger.info("AI: tong quan thi truong...")
+    return _call(client, prompt, max_tokens=1024)
+
+
+# ─── Signal analysis ──────────────────────────────────────────────────────────
+
+def analyze_signals(
+    results: pd.DataFrame,
+    signal_col: str = "buy_signal",
+    top_n: int = 20,
+) -> list[dict]:
+    """
+    Phan tich chi tiet tung tin hieu.
+    Returns list[{ticker, analysis, telegram_text}]
+    """
+    if signal_col not in results.columns:
+        return []
+
+    signal_type = "MUA" if "buy" in signal_col else "BAN"
+    df = results[results[signal_col].astype(bool)].copy()
+    if df.empty:
+        return []
+
+    if "bias_norm" in df.columns:
+        df = df.nlargest(top_n, "bias_norm")
+    else:
+        df = df.head(top_n)
+
+    try:
+        client = _get_client()
+    except Exception as e:
+        logger.warning(f"AI khong kha dung: {e}")
+        return []
+
+    all_results: list[dict] = []
+    batches = [df.iloc[i:i + _BATCH_SIZE] for i in range(0, len(df), _BATCH_SIZE)]
+
+    for batch_idx, batch in enumerate(batches):
+        ticker_blocks = "\n\n".join(
+            _build_ticker_block(row, signal_type)
+            for _, row in batch.iterrows()
+        )
+
+        prompt = textwrap.dedent(f"""
+            Ban la chuyen gia phan tich ky thuat chung khoan Viet Nam.
+            Phan tich CHI TIET tung ma co tin hieu {signal_type} duoi day.
+
+            Du lieu moi ma gom: gia, SuperTrend 2 khung, xu huong, BiasNorm,
+            ho tro/khang cu, ATR, thanh khoan, cac chi bao bullish/bearish.
+
+            {ticker_blocks}
+
+            Voi TUNG ma, tra loi theo dung format sau (tieng Viet):
+
+            === [TEN MA] ===
+            XU HUONG: [Nhan dinh xu huong tong the va suc manh cua xu huong]
+            DONG LUC: [Chi bao nao xac nhan tin hieu, diem manh chinh]
+            RUI RO: [Chi bao chua xac nhan, diem yeu, dieu kien can chu y]
+            MUC GIA: Ho tro [X] | Khang cu [Y] | ATR [Z]
+            KHUYEN NGHI: [Nen mua/ban/cho o muc gia nao, cat lo o dau, muc tieu]
+            ===
+
+            Viet thuc chat, cu the, tranh chung chung. Khong dung markdown ngoai format tren.
+        """).strip()
+
+        logger.info(f"AI: batch {batch_idx+1}/{len(batches)} ({signal_type}, {len(batch)} ma)...")
+        text = _call(client, prompt, max_tokens=2048)
+
+        parsed = _parse_analysis(text, batch["ticker"].tolist())
+        all_results.extend(parsed)
+
+        if batch_idx < len(batches) - 1:
+            time.sleep(_RPM_DELAY)
+
+    return all_results
+
+
+def _parse_analysis(text: str, tickers: list[str]) -> list[dict]:
+    """Parse output dang === TICKER === ... === thanh list dict."""
+    results = []
+    # Split theo === MA === ... ===
+    sections = re.split(r"===\s*([A-Z]{2,10})\s*===", text)
+
+    # sections = [prefix, TICKER1, body1, TICKER2, body2, ...]
+    i = 1
+    while i + 1 < len(sections):
+        ticker = sections[i].strip().upper()
+        body   = sections[i + 1].strip()
+        i += 2
+
+        if ticker not in tickers:
+            # Thu khop gan (bo dau cach)
+            match = next((t for t in tickers if t in ticker or ticker in t), None)
+            if not match:
+                continue
+            ticker = match
+
+        # Format lai cho Telegram (bo === cuoi)
+        body = re.sub(r"===\s*$", "", body).strip()
+        telegram_text = _format_for_telegram(body)
+
+        results.append({
+            "ticker":        ticker,
+            "analysis":      body,          # full text cho Excel
+            "telegram_text": telegram_text, # condensed cho Telegram
+        })
+
+    return results
+
+
+def _format_for_telegram(body: str) -> str:
+    """Chuyen analysis text thanh HTML Telegram-friendly."""
+    lines = []
+    for line in body.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if ":" in line:
+            key, _, val = line.partition(":")
+            key = key.strip()
+            val = val.strip()
+            if key in ("XU HUONG", "DONG LUC", "RUI RO", "MUC GIA", "KHUYEN NGHI"):
+                emoji = {
+                    "XU HUONG":   "📈",
+                    "DONG LUC":   "💪",
+                    "RUI RO":     "⚠️",
+                    "MUC GIA":    "🎯",
+                    "KHUYEN NGHI":"💡",
+                }.get(key, "•")
+                lines.append(f"{emoji} <b>{key}:</b> {val}")
+            else:
+                lines.append(line)
+        else:
+            lines.append(line)
+    return "\n".join(lines)
+
+
+# ─── Full pipeline ─────────────────────────────────────────────────────────────
+
+def run_full_analysis(results: pd.DataFrame) -> dict:
+    """
+    Chay toan bo phan tich AI:
+      overview, buy_signals, sell_signals
+    Moi item trong signals: {ticker, analysis, telegram_text}
+    """
+    output = {"overview": "", "buy_signals": [], "sell_signals": []}
+
+    try:
+        _get_client()
+    except Exception as e:
+        logger.warning(f"AI bi bo qua: {e}")
+        return output
+
+    output["overview"] = generate_market_overview(results)
+    time.sleep(_RPM_DELAY)
+
+    buy_col  = "long_buy_signal"  if "long_buy_signal"  in results.columns else "buy_signal"
+    sell_col = "long_sell_signal" if "long_sell_signal" in results.columns else "sell_signal"
+
+    output["buy_signals"]  = analyze_signals(results, signal_col=buy_col,  top_n=20)
+    time.sleep(_RPM_DELAY)
+    output["sell_signals"] = analyze_signals(results, signal_col=sell_col, top_n=20)
+
+    logger.info(
+        f"AI: xong | overview + "
+        f"{len(output['buy_signals'])} MUA + {len(output['sell_signals'])} BAN"
+    )
+    return output

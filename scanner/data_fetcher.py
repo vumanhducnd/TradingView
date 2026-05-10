@@ -29,13 +29,36 @@ def get_vn100_tickers() -> list[str]:
 
 
 def refresh_watchlist() -> list[str]:
-    """Force-refresh watchlist from API and save to CSV."""
+    """Force-refresh watchlist from API. Fallback sang CSV rồi DB nếu API down."""
     tickers = _fetch_from_api()
-    if not tickers:
-        raise RuntimeError("Cannot refresh watchlist: API unavailable")
-    _save_watchlist(tickers)
-    logger.info(f"Watchlist refreshed: {len(tickers)} tickers")
-    return tickers
+    if tickers:
+        _save_watchlist(tickers)
+        logger.info(f"Watchlist refreshed từ API: {len(tickers)} tickers")
+        return tickers
+
+    logger.warning("vnstock API không khả dụng — dùng watchlist hiện có")
+
+    # Fallback 1: CSV local
+    try:
+        tickers = _load_watchlist_csv()
+        if tickers:
+            _save_watchlist(tickers)  # cập nhật rank trong DB
+            logger.info(f"Watchlist giữ nguyên từ CSV: {len(tickers)} tickers")
+            return tickers
+    except FileNotFoundError:
+        pass
+
+    # Fallback 2: DB watchlist
+    try:
+        from scanner.database import get_watchlist
+        tickers = get_watchlist()
+        if tickers:
+            logger.info(f"Watchlist giữ nguyên từ DB: {len(tickers)} tickers")
+            return tickers
+    except Exception:
+        pass
+
+    raise RuntimeError("Không có watchlist nào khả dụng (API down, không có CSV, DB trống)")
 
 
 def fetch_ohlcv(ticker: str, days: int = LOOKBACK_DAYS) -> pd.DataFrame | None:
@@ -156,6 +179,14 @@ def _load_watchlist_csv() -> list[str]:
 def _save_watchlist(tickers: list[str]) -> None:
     WATCHLIST_FILE.parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame({"ticker": tickers}).to_csv(WATCHLIST_FILE, index=False)
+    # Đồng bộ rank vào DB — chạy migration nếu cột chưa tồn tại
+    try:
+        from scanner.database import db_cursor, upsert_watchlist
+        with db_cursor() as cur:
+            cur.execute("ALTER TABLE watchlist ADD COLUMN IF NOT EXISTS vn100_rank INT")
+        upsert_watchlist(tickers)
+    except Exception as e:
+        logger.debug(f"upsert_watchlist bỏ qua: {e}")
 
 
 def _find_ticker_col(df: pd.DataFrame) -> str:
@@ -214,7 +245,7 @@ def load_all_from_db(
         if not tickers:
             tickers = _load_watchlist_csv()
 
-    # Load từng ticker (dùng khi chỉ cần 1 số mã cụ thể)
+    # Load từng ticker theo đúng thứ tự watchlist (VN100 rank ưu tiên)
     result = {}
     for ticker in tickers:
         df = load_ohlcv(ticker, days=days)

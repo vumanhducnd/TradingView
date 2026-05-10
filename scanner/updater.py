@@ -89,9 +89,11 @@ def run_full_pipeline(force: bool = False) -> None:
 
     # Step 2 & 3: Scan + save to DB
     from scanner.data_fetcher import load_all_from_db
+    from scanner.database import get_vn100_watchlist
     from scanner.scanner import get_current_signals, run_scan
 
-    ticker_data = load_all_from_db()
+    vn100 = get_vn100_watchlist()
+    ticker_data = load_all_from_db(tickers=vn100 if vn100 else None)
     if not ticker_data:
         logger.error("Không load được data từ DB")
         return
@@ -125,6 +127,7 @@ def run_full_pipeline(force: bool = False) -> None:
     except Exception as e:
         logger.warning(f"Excel failed: {e}")
 
+
     buy_n = len(signals.get("buy", []))
     sell_n = len(signals.get("sell", []))
     logger.info(f"=== Pipeline xong: {buy_n} MUA, {sell_n} BÁN ===")
@@ -155,8 +158,10 @@ def run_scan_only() -> None:
                 logger.info(f"=== Xong (cache): {buy_n} MUA, {sell_n} BAN ===")
                 return
 
-    logger.info("Buoc 1/4: Load OHLCV tu DB...")
-    ticker_data = load_all_from_db()
+    logger.info("Buoc 1/4: Load OHLCV tu DB (chi VN100)...")
+    from scanner.database import get_vn100_watchlist
+    vn100 = get_vn100_watchlist()
+    ticker_data = load_all_from_db(tickers=vn100 if vn100 else None)
     if not ticker_data:
         logger.error("Khong load duoc data tu DB")
         return
@@ -166,6 +171,10 @@ def run_scan_only() -> None:
     if results.empty:
         logger.error("Scan khong co ket qua")
         return
+
+    from scanner.scanner import get_super_buy_stocks
+    super_stocks = get_super_buy_stocks(results, top_n=10)
+    logger.info(f"  Super co phieu vung mua: {len(super_stocks)} ma")
 
     signals = get_current_signals(results)
     buy_n   = len(signals.get("buy",  []))
@@ -178,8 +187,15 @@ def run_scan_only() -> None:
     save_signals(results)
 
     logger.info("Buoc 4/4: Gui Telegram + Excel...")
+    ai_analysis = {}
     try:
-        send_daily_report(results, signals)
+        from scanner.ai_analyst import run_full_analysis
+        ai_analysis = run_full_analysis(results)
+    except Exception as e:
+        logger.warning(f"AI analysis failed: {e}")
+
+    try:
+        send_daily_report(results, signals, ai_analysis=ai_analysis, super_stocks=super_stocks)
     except Exception as e:
         logger.warning(f"Telegram failed: {e}")
 

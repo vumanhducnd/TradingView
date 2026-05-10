@@ -6,8 +6,12 @@
 CREATE TABLE IF NOT EXISTS watchlist (
     ticker      VARCHAR(10) PRIMARY KEY,
     exchange    VARCHAR(10) DEFAULT 'HOSE',
+    vn100_rank  INT,           -- thứ tự trong VN100 (1=quan trọng nhất, NULL=ngoài VN100)
     updated_at  TIMESTAMP DEFAULT NOW()
 );
+
+-- Migration cho DB cũ (safe nếu cột đã tồn tại)
+ALTER TABLE watchlist ADD COLUMN IF NOT EXISTS vn100_rank INT;
 
 -- Dữ liệu OHLCV lịch sử (1 mã = nhiều dòng theo ngày)
 CREATE TABLE IF NOT EXISTS ohlcv (

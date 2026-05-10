@@ -9,7 +9,9 @@
       "Bash(docker compose *)",
       "Bash(Start-Sleep -Seconds 8)",
       "Bash(docker exec *)",
-      "Bash(python test_one.py)"
+      "Bash(python test_one.py)",
+      "Bash(python -c \"import google.generativeai; print\\('OK'\\)\")",
+      "Bash(python -m scanner.updater --scan-only --force)"
     ]
   }
 }

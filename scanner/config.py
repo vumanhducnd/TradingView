@@ -50,6 +50,12 @@ FETCH_DELAY = 3.5    # giây chờ giữa mỗi request (guest: 20/phút → c�
 # vnstock API key (đăng ký miễn phí tại vnstocks.com/login → 60 req/phút)
 VNSTOCK_API_KEY = os.getenv("VNSTOCK_API_KEY", "")
 
+# Google Gemini API key (miễn phí tại aistudio.google.com → 1500 req/ngày)
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+
+# Groq API key (miễn phí tại console.groq.com → 14,400 req/ngày)
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+
 # Telegram
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")

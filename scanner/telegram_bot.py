@@ -71,8 +71,10 @@ def send_message(text: str, parse_mode: str = "HTML") -> bool:
 def send_daily_report(
     results: pd.DataFrame,
     signals: dict[str, pd.DataFrame],
+    ai_analysis: dict | None = None,
+    super_stocks: pd.DataFrame | None = None,
 ) -> None:
-    """Send full daily report: header + buy signals + sell signals + top watchlist."""
+    """Send full daily report: header + AI overview + super stocks + buy/sell signals."""
     buy_df = signals.get("buy", pd.DataFrame())
     sell_df = signals.get("sell", pd.DataFrame())
     today = date.today().strftime("%d/%m/%Y")
@@ -97,6 +99,16 @@ def send_daily_report(
     send_message(header)
     time.sleep(1)
 
+    # AI tổng quan thị trường
+    if ai_analysis and ai_analysis.get("overview"):
+        send_message(f"<b>🤖 Nhận định AI:</b>\n{ai_analysis['overview']}")
+        time.sleep(1)
+
+    # Siêu cổ phiếu vùng mua
+    if super_stocks is not None and not super_stocks.empty:
+        _send_super_stocks(super_stocks)
+        time.sleep(1)
+
     # Tóm tắt vị thế đang mở
     _send_positions_summary(results)
     time.sleep(1)
@@ -115,13 +127,26 @@ def send_daily_report(
     buy_top  = _top10(buy_df)
     sell_top = _top10(sell_df)
 
+    ai_buy  = {x["ticker"]: x.get("telegram_text", x.get("analysis", ""))
+               for x in (ai_analysis or {}).get("buy_signals",  [])}
+    ai_sell = {x["ticker"]: x.get("telegram_text", x.get("analysis", ""))
+               for x in (ai_analysis or {}).get("sell_signals", [])}
+
     for _, row in buy_top.iterrows():
         send_message(_format_signal(row, signal_type="MUA"))
-        time.sleep(1)
+        time.sleep(0.5)
+        ai_text = ai_buy.get(row["ticker"], "")
+        if ai_text:
+            send_message(f"🤖 <b>AI - {row['ticker']}:</b>\n{ai_text}")
+            time.sleep(1)
 
     for _, row in sell_top.iterrows():
         send_message(_format_signal(row, signal_type="BÁN"))
-        time.sleep(1)
+        time.sleep(0.5)
+        ai_text = ai_sell.get(row["ticker"], "")
+        if ai_text:
+            send_message(f"🤖 <b>AI - {row['ticker']}:</b>\n{ai_text}")
+            time.sleep(1)
 
     # Không có tín hiệu → top 5 bias_norm
     if buy_df.empty and sell_df.empty:
@@ -138,7 +163,7 @@ def send_daily_report(
     # Gửi file Excel report
     try:
         from scanner.excel_report import build_excel_report
-        excel_path = build_excel_report(results, signals)
+        excel_path = build_excel_report(results, signals, ai_analysis=ai_analysis, super_stocks=super_stocks)
         if excel_path:
             send_file(
                 str(excel_path),
@@ -197,6 +222,43 @@ def _format_signal(row: pd.Series, signal_type: str) -> str:
         f"<i>Tín hiệu: hôm nay (đảo chiều {('lên' if signal_type == 'MUA' else 'xuống')})</i>",
     ]
     return "\n".join(l for l in lines if l != "" or l == "")
+
+
+def _send_super_stocks(df: pd.DataFrame) -> None:
+    """Gửi danh sách siêu cổ phiếu vùng mua."""
+    lines = ["<b>⭐ SIÊU CỔ PHIẾU VÙNG MUA:</b>"]
+
+    for _, row in df.iterrows():
+        ticker   = row["ticker"]
+        score    = row.get("super_score", 0)
+        bias     = row.get("bias_norm", 0)
+        close    = row.get("close", 0)
+        sup      = row.get("long_support") or row.get("long_supertrend") or 0
+        res      = row.get("long_resistance") or 0
+        dist_s   = row.get("dist_support_pct", 0)
+        dist_r   = row.get("dist_resistance_pct", 0)
+        b_score  = row.get("b_score", 0)
+        both     = row.get("both_buy", False)
+        lbuy     = row.get("long_buy_signal", False)
+        sbuy     = row.get("short_buy_signal", False)
+
+        signal_tag = ""
+        if both:
+            signal_tag = " 🔥"
+        elif lbuy and sbuy:
+            signal_tag = " 🟢🟢"
+        elif lbuy:
+            signal_tag = " 🟢DH"
+        elif sbuy:
+            signal_tag = " 🟢NH"
+
+        lines.append(
+            f"\n<b>{ticker}</b>{signal_tag} | Score: {score:.0f}"
+            f"\n  Giá: {fmt_price(close)} | Bias: {bias:.0f}/100 | Bull: {b_score}/9"
+            f"\n  HT: {fmt_price(sup)} ({dist_s:+.1f}%) → KC: {fmt_price(res)} ({dist_r:+.1f}%)"
+        )
+
+    send_message("\n".join(lines))
 
 
 def _send_positions_summary(results: pd.DataFrame) -> None:
