@@ -95,9 +95,11 @@ def sync():
             ticker, df = future.result()
             done += 1
             if df is not None and not df.empty:
-                upsert_ohlcv(ticker, df)
+                n = upsert_ohlcv(ticker, df)
+                logger.info(f"  {ticker}: +{n} nến")
                 ok += 1
             else:
+                logger.warning(f"  {ticker}: không có data")
                 failed.append(ticker)
 
             if done % LOG_EVERY == 0 or done == len(need):

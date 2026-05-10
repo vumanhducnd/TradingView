@@ -55,12 +55,12 @@ def update_daily(force: bool = False) -> bool:
         df = _fetch_latest(ticker, start, today)
 
         if df is not None and not df.empty:
-            upsert_ohlcv(ticker, df)
+            n = upsert_ohlcv(ticker, df)
             ok += 1
-            logger.info(f"[{i}/{len(tickers)}] {ticker}: +{len(df)} bar(s)")
+            logger.info(f"  {ticker}: +{n} nến")
         else:
             failed.append(ticker)
-            logger.debug(f"[{i}/{len(tickers)}] {ticker}: no new data")
+            logger.warning(f"  {ticker}: không có data")
 
         if i < len(tickers):
             time.sleep(FETCH_DELAY)
