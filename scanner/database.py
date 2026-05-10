@@ -64,15 +64,27 @@ def test_connection() -> bool:
 
 # ─── Watchlist ────────────────────────────────────────────────────────────────
 
-def upsert_watchlist(tickers: list[str], exchange: str = "HOSE") -> None:
+def upsert_watchlist(
+    tickers: list[str] | list[tuple[str, str]],
+    exchange: str = "HOSE",
+) -> None:
+    """
+    tickers: list[str] → dùng exchange mặc định
+             list[tuple(ticker, exchange)] → dùng exchange riêng từng mã
+    """
     sql = """
         INSERT INTO watchlist (ticker, exchange, updated_at)
         VALUES (%s, %s, NOW())
         ON CONFLICT (ticker) DO UPDATE SET exchange = EXCLUDED.exchange, updated_at = NOW()
     """
+    if tickers and isinstance(tickers[0], tuple):
+        rows = tickers  # [(ticker, exchange), ...]
+    else:
+        rows = [(t, exchange) for t in tickers]
+
     with db_cursor() as cur:
-        cur.executemany(sql, [(t, exchange) for t in tickers])
-    logger.info(f"Watchlist: upserted {len(tickers)} tickers")
+        cur.executemany(sql, rows)
+    logger.info(f"Watchlist: upserted {len(rows)} tickers")
 
 
 def get_watchlist() -> list[str]:
@@ -163,13 +175,84 @@ def get_all_last_dates() -> dict[str, date]:
 # ─── Scan Results ─────────────────────────────────────────────────────────────
 
 def save_scan_results(df: pd.DataFrame, scan_date: date | None = None) -> None:
-    """Lưu toàn bộ kết quả quét vào scan_results."""
+    """Lưu toàn bộ kết quả quét vào scan_results — đồng bộ đầy đủ các cột."""
     if df.empty:
         return
     if scan_date is None:
         scan_date = date.today()
 
+    def _v(row, col, cast=None):
+        v = row.get(col)
+        if v is None or (isinstance(v, float) and v != v):  # NaN check
+            return None
+        try:
+            return cast(v) if cast else v
+        except Exception:
+            return None
+
+    def _bool(row, col):
+        v = row.get(col)
+        return bool(v) if v is not None else False
+
     criteria = ["ema", "vwap", "rsi", "macd", "adx", "obv", "stoch", "candle", "vol"]
+
+    # Xác định style: single hoặc dual
+    is_dual = "long_buy_signal" in df.columns
+
+    rows = []
+    for _, row in df.iterrows():
+        r = dict(row)
+        rows.append((
+            scan_date,
+            r.get("ticker"),
+            _v(r, "close",      float),
+            _v(r, "trend",      int)   if not is_dual else None,
+            _v(r, "supertrend", float) if not is_dual else None,
+            _v(r, "bias_norm",  float),
+            _v(r, "b_score",    int),
+            _v(r, "r_score",    int),
+            _bool(r, "buy_signal")  if not is_dual else None,
+            _bool(r, "sell_signal") if not is_dual else None,
+            *[_bool(r, f"bull_{c}") for c in criteria],
+            _v(r, "atr",    float),
+            _v(r, "volume", int),
+            # Cột mới
+            _v(r, "support",           float),
+            _v(r, "resistance",        float),
+            _v(r, "turnover",          float),
+            # Dual mode: ưu tiên long_, fallback sang field gốc
+            r.get("long_last_signal_type") or r.get("last_signal_type"),
+            r.get("long_last_signal_date") or r.get("last_signal_date"),
+            _v(r, "long_last_signal_price",  float) or _v(r, "last_signal_price", float),
+            _v(r, "long_bars_since_signal",  int)   or _v(r, "bars_since_signal",  int),
+            _v(r, "long_signal_pnl_pct",     float) or _v(r, "signal_pnl_pct",     float),
+            r.get("bias_label"),
+            # Dual mode
+            _v(r, "long_trend",  int),
+            _v(r, "short_trend", int),
+            _bool(r, "long_buy_signal"),
+            _bool(r, "short_buy_signal"),
+            _bool(r, "long_sell_signal"),
+            _bool(r, "short_sell_signal"),
+            _v(r, "long_supertrend",  float),
+            _v(r, "short_supertrend", float),
+            r.get("long_last_signal_type"),
+            r.get("short_last_signal_type"),
+            _v(r, "long_signal_pnl_pct",  float),
+            _v(r, "short_signal_pnl_pct", float),
+            _v(r, "long_bars_since_signal",  int),
+            _v(r, "short_bars_since_signal", int),
+            _bool(r, "both_buy"),
+            _bool(r, "both_sell"),
+            # Lịch sử lệnh
+            r.get("buy_date"),
+            _v(r, "buy_price",  float),
+            r.get("sell_date"),
+            _v(r, "sell_price", float),
+            _v(r, "hold_days",  int),
+            _v(r, "pnl_pct",    float),
+            _v(r, "max_loss_pct", float),
+        ))
 
     sql = """
         INSERT INTO scan_results (
@@ -177,53 +260,50 @@ def save_scan_results(df: pd.DataFrame, scan_date: date | None = None) -> None:
             b_score, r_score, buy_signal, sell_signal,
             bull_ema, bull_vwap, bull_rsi, bull_macd, bull_adx,
             bull_obv, bull_stoch, bull_candle, bull_vol,
-            atr, volume
+            atr, volume,
+            support, resistance, turnover,
+            last_signal_type, last_signal_date, last_signal_price,
+            bars_since_signal, signal_pnl_pct, bias_label,
+            long_trend, short_trend,
+            long_buy_signal, short_buy_signal, long_sell_signal, short_sell_signal,
+            long_supertrend, short_supertrend,
+            long_last_signal_type, short_last_signal_type,
+            long_signal_pnl_pct, short_signal_pnl_pct,
+            long_bars_since_signal, short_bars_since_signal,
+            both_buy, both_sell,
+            buy_date, buy_price, sell_date, sell_price,
+            hold_days, pnl_pct, max_loss_pct
         ) VALUES %s
         ON CONFLICT (scan_date, ticker) DO UPDATE SET
-            close       = EXCLUDED.close,
-            trend       = EXCLUDED.trend,
-            supertrend  = EXCLUDED.supertrend,
-            bias_norm   = EXCLUDED.bias_norm,
-            b_score     = EXCLUDED.b_score,
-            r_score     = EXCLUDED.r_score,
-            buy_signal  = EXCLUDED.buy_signal,
-            sell_signal = EXCLUDED.sell_signal,
-            bull_ema    = EXCLUDED.bull_ema,   bull_vwap   = EXCLUDED.bull_vwap,
-            bull_rsi    = EXCLUDED.bull_rsi,   bull_macd   = EXCLUDED.bull_macd,
-            bull_adx    = EXCLUDED.bull_adx,   bull_obv    = EXCLUDED.bull_obv,
-            bull_stoch  = EXCLUDED.bull_stoch, bull_candle = EXCLUDED.bull_candle,
-            bull_vol    = EXCLUDED.bull_vol,
-            atr         = EXCLUDED.atr,
-            volume      = EXCLUDED.volume
+            close = EXCLUDED.close, bias_norm = EXCLUDED.bias_norm,
+            b_score = EXCLUDED.b_score, r_score = EXCLUDED.r_score,
+            support = EXCLUDED.support, resistance = EXCLUDED.resistance,
+            turnover = EXCLUDED.turnover,
+            last_signal_type = EXCLUDED.last_signal_type,
+            last_signal_date = EXCLUDED.last_signal_date,
+            last_signal_price = EXCLUDED.last_signal_price,
+            bars_since_signal = EXCLUDED.bars_since_signal,
+            signal_pnl_pct = EXCLUDED.signal_pnl_pct,
+            bias_label = EXCLUDED.bias_label,
+            long_trend = EXCLUDED.long_trend, short_trend = EXCLUDED.short_trend,
+            long_buy_signal = EXCLUDED.long_buy_signal,
+            short_buy_signal = EXCLUDED.short_buy_signal,
+            long_sell_signal = EXCLUDED.long_sell_signal,
+            short_sell_signal = EXCLUDED.short_sell_signal,
+            long_supertrend = EXCLUDED.long_supertrend,
+            short_supertrend = EXCLUDED.short_supertrend,
+            long_last_signal_type = EXCLUDED.long_last_signal_type,
+            short_last_signal_type = EXCLUDED.short_last_signal_type,
+            long_signal_pnl_pct = EXCLUDED.long_signal_pnl_pct,
+            short_signal_pnl_pct = EXCLUDED.short_signal_pnl_pct,
+            long_bars_since_signal = EXCLUDED.long_bars_since_signal,
+            short_bars_since_signal = EXCLUDED.short_bars_since_signal,
+            both_buy = EXCLUDED.both_buy, both_sell = EXCLUDED.both_sell,
+            buy_date = EXCLUDED.buy_date, buy_price = EXCLUDED.buy_price,
+            sell_date = EXCLUDED.sell_date, sell_price = EXCLUDED.sell_price,
+            hold_days = EXCLUDED.hold_days, pnl_pct = EXCLUDED.pnl_pct,
+            max_loss_pct = EXCLUDED.max_loss_pct
     """
-
-    def _bool(row, col):
-        v = row.get(col)
-        return bool(v) if v is not None else False
-
-    def _float(row, col):
-        v = row.get(col)
-        return float(v) if v is not None else None
-
-    rows = [
-        (
-            scan_date,
-            row.get("ticker"),
-            _float(row, "close"),
-            int(row.get("trend", 0)),
-            _float(row, "supertrend"),
-            _float(row, "bias_norm"),
-            int(row.get("b_score", 0)),
-            int(row.get("r_score", 0)),
-            _bool(row, "buy_signal"),
-            _bool(row, "sell_signal"),
-            *[_bool(row, f"bull_{c}") for c in criteria],
-            _float(row, "atr"),
-            int(row.get("volume", 0)) if row.get("volume") else None,
-        )
-        for _, row in df.iterrows()
-    ]
-
     with db_cursor() as cur:
         psycopg2.extras.execute_values(cur, sql, rows)
     logger.info(f"scan_results: saved {len(rows)} rows for {scan_date}")
@@ -263,7 +343,46 @@ def load_scan_results(scan_date: date) -> pd.DataFrame:
     with db_cursor(commit=False) as cur:
         cur.execute(sql, (scan_date,))
         rows = cur.fetchall()
-    return pd.DataFrame(rows) if rows else pd.DataFrame()
+    if not rows:
+        return pd.DataFrame()
+    df = pd.DataFrame(rows)
+    # Convert Decimal → float (pandas 2.x compatible)
+    for col in df.columns:
+        if df[col].dtype == object:
+            try:
+                converted = pd.to_numeric(df[col], errors="coerce")
+                if converted.notna().any():
+                    df[col] = converted
+            except Exception:
+                pass
+
+    # Convert boolean columns (float 0.0/1.0 → bool)
+    bool_cols = [c for c in df.columns if any(x in c for x in [
+        "buy_signal", "sell_signal", "both_buy", "both_sell",
+        "bull_", "bear_",
+    ])]
+    for col in bool_cols:
+        if col in df.columns:
+            df[col] = df[col].fillna(False).astype(bool)
+
+    # Convert numeric columns
+    numeric_cols = ["close", "bias_norm", "supertrend", "support", "resistance",
+                    "turnover", "atr", "last_signal_price", "signal_pnl_pct",
+                    "long_supertrend", "short_supertrend",
+                    "long_signal_pnl_pct", "short_signal_pnl_pct",
+                    "buy_price", "sell_price", "pnl_pct", "max_loss_pct"]
+    for col in numeric_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    int_cols = ["b_score", "r_score", "trend", "long_trend", "short_trend",
+                "bars_since_signal", "long_bars_since_signal", "short_bars_since_signal",
+                "hold_days", "volume"]
+    for col in int_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
+
+    return df
 
 
 def load_signal_history(days: int = 90) -> pd.DataFrame:

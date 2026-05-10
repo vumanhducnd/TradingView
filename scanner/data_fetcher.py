@@ -192,13 +192,17 @@ def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     return df[required].dropna()
 
 
-def load_all_from_db(days: int = LOOKBACK_DAYS) -> dict[str, pd.DataFrame]:
+def load_all_from_db(
+    days: int = LOOKBACK_DAYS,
+    tickers: list[str] | None = None,
+) -> dict[str, pd.DataFrame]:
     """
-    Đọc toàn bộ OHLCV từ PostgreSQL cho tất cả ticker trong watchlist.
-    Đây là hàm chính cho scanner sau khi đã có DB.
+    Đọc OHLCV từ PostgreSQL.
+    tickers: danh sách cụ thể cần load (None = lấy toàn bộ watchlist DB).
     """
     from scanner.database import get_watchlist, load_ohlcv
-    tickers = get_watchlist()
+    if tickers is None:
+        tickers = get_watchlist()
     if not tickers:
         logger.warning("Watchlist DB trống, fallback sang CSV")
         tickers = _load_watchlist_csv()

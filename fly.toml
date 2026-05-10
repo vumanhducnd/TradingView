@@ -1,0 +1,13 @@
+app = "manhduc-scanner"
+primary_region = "sin"  # Singapore - gần VN nhất
+
+[build]
+  # dùng Dockerfile
+
+[[vm]]
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1
+
+[processes]
+  worker = "python -m scanner.bot_listener"

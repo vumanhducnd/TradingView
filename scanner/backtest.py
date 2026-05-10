@@ -22,14 +22,22 @@ def run_backtest(
     initial_capital: float = DEFAULT_CAPITAL,
     compound: bool = COMPOUND_MODE,
     entry_mode: str = ENTRY_MODE,
+    date_from: str | None = None,
+    date_to: str | None = None,
 ) -> dict:
     """
     Replay buy/sell signals on historical data.
+    date_from/date_to: lọc khoảng thời gian (YYYY-MM-DD).
     Returns summary dict + list of trades.
     """
     df = calc_supertrend(df, style=style)
     df = calc_bias_norm(df)
     df = df.dropna(subset=["buy_signal", "sell_signal"])
+
+    if date_from:
+        df = df[df.index >= pd.Timestamp(date_from)]
+    if date_to:
+        df = df[df.index <= pd.Timestamp(date_to)]
 
     trades = []
     capital = initial_capital
@@ -80,8 +88,16 @@ def run_backtest(
     win_trades = sum(1 for t in trades if t["win"])
     total_return = (capital - initial_capital) / initial_capital * 100
 
+    # Thanh khoản trung bình 20 phiên gần nhất (volume × close × 1000 / 1e9 = tỷ VND)
+    try:
+        last20 = df.tail(20)
+        avg_tk_ty = round((last20["volume"] * last20["close"] * 1000).mean() / 1e9, 2)
+    except Exception:
+        avg_tk_ty = 0.0
+
     return {
         "ticker": ticker,
+        "avg_tk_20p_ty": avg_tk_ty,
         "total_trades": total_trades,
         "win_trades": win_trades,
         "loss_trades": total_trades - win_trades,
@@ -101,6 +117,8 @@ def run_portfolio_backtest(
     initial_capital: float = DEFAULT_CAPITAL,
     compound: bool = COMPOUND_MODE,
     entry_mode: str = ENTRY_MODE,
+    date_from: str | None = None,
+    date_to: str | None = None,
 ) -> pd.DataFrame:
     """
     Run backtest for all tickers. Saves results to CSV. Returns summary DataFrame.
@@ -110,7 +128,8 @@ def run_portfolio_backtest(
 
     for ticker, df in ticker_data.items():
         try:
-            result = run_backtest(ticker, df, style, initial_capital, compound, entry_mode)
+            result = run_backtest(ticker, df, style, initial_capital, compound, entry_mode,
+                                  date_from=date_from, date_to=date_to)
             summaries.append({k: v for k, v in result.items() if k != "trades"})
             all_trades.extend(result["trades"])
         except Exception as e:
@@ -119,18 +138,91 @@ def run_portfolio_backtest(
     summary_df = pd.DataFrame(summaries)
     trades_df = pd.DataFrame(all_trades)
 
-    # Save
-    BACKTEST_DIR.mkdir(parents=True, exist_ok=True)
-    summary_path = BACKTEST_DIR / "backtest_results.csv"
-    trades_path = BACKTEST_DIR / "backtest_trades.csv"
-
-    summary_df.to_csv(summary_path, index=False)
-    if not trades_df.empty:
-        trades_df.to_csv(trades_path, index=False)
+    # Lưu vào PostgreSQL
+    _save_to_db(summary_df, trades_df, style, date_from, date_to)
 
     logger.info(f"Backtest complete: {len(summaries)} tickers, {len(all_trades)} trades")
-    logger.info(f"Saved: {summary_path}, {trades_path}")
     return summary_df
+
+
+def _save_to_db(
+    summary_df: pd.DataFrame,
+    trades_df: pd.DataFrame,
+    style: str,
+    date_from: str | None,
+    date_to: str | None,
+) -> None:
+    """Lưu kết quả backtest vào PostgreSQL."""
+    try:
+        from scanner.database import db_cursor
+        import psycopg2.extras
+
+        # Xóa kết quả cũ cùng style trước khi lưu mới
+        with db_cursor() as cur:
+            cur.execute("DELETE FROM backtest_summary WHERE style = %s", (style,))
+            cur.execute("DELETE FROM backtest_trades WHERE style = %s", (style,))
+
+        # Lưu summary
+        if not summary_df.empty:
+            sql_sum = """
+                INSERT INTO backtest_summary
+                    (ticker, style, total_trades, win_trades, win_rate,
+                     total_return_pct, max_drawdown_pct, avg_hold_days, updated_at)
+                VALUES %s
+                ON CONFLICT (ticker) DO UPDATE SET
+                    style = EXCLUDED.style,
+                    total_trades = EXCLUDED.total_trades,
+                    win_trades = EXCLUDED.win_trades,
+                    win_rate = EXCLUDED.win_rate,
+                    total_return_pct = EXCLUDED.total_return_pct,
+                    max_drawdown_pct = EXCLUDED.max_drawdown_pct,
+                    avg_hold_days = EXCLUDED.avg_hold_days,
+                    updated_at = NOW()
+            """
+            def _f(v):
+                return float(v) if v is not None else None
+
+            rows_sum = [
+                (
+                    r.get("ticker"), style,
+                    int(r.get("total_trades", 0)),
+                    int(r.get("win_trades", 0)),
+                    _f(r.get("win_rate")),
+                    _f(r.get("total_return_pct")),
+                    _f(r.get("max_drawdown_pct")),
+                    _f(r.get("avg_hold_days")),
+                )
+                for _, r in summary_df.iterrows()
+            ]
+            with db_cursor() as cur:
+                psycopg2.extras.execute_values(cur, sql_sum, rows_sum)
+
+        # Lưu trades
+        if not trades_df.empty:
+            sql_tr = """
+                INSERT INTO backtest_trades
+                    (ticker, style, buy_date, buy_price, sell_date, sell_price,
+                     hold_days, pnl_pct, pnl_amount, win)
+                VALUES %s
+            """
+            rows_tr = [
+                (
+                    r.get("ticker"), style,
+                    r.get("buy_date"), _f(r.get("buy_price")),
+                    r.get("sell_date"), _f(r.get("sell_price")),
+                    int(r.get("hold_days", 0)),
+                    _f(r.get("pnl_pct")),
+                    _f(r.get("pnl_amount")),
+                    bool(r.get("win", False)),
+                )
+                for _, r in trades_df.iterrows()
+            ]
+            with db_cursor() as cur:
+                psycopg2.extras.execute_values(cur, sql_tr, rows_tr)
+
+        logger.info(f"DB: saved {len(summary_df)} summaries, {len(trades_df)} trades (style={style})")
+    except Exception as e:
+        logger.warning(f"DB save backtest failed: {e}")
 
 
 def _buy_price(row: pd.Series, mode: str) -> float:

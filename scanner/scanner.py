@@ -109,10 +109,73 @@ def run_scan(
     return results
 
 
+def run_scan_dual(
+    ticker_data: dict | None = None,
+    tickers: list[str] | None = None,
+) -> pd.DataFrame:
+    """
+    Scan cả ngắn hạn (7/2.0) lẫn dài hạn (10/3.0).
+    Trả về 1 DataFrame với cột prefix long_ và short_.
+    Thêm cột both_buy / both_sell khi cả 2 cùng đồng thuận.
+    """
+    long_df  = run_scan(ticker_data=ticker_data, tickers=tickers, style="long")
+    short_df = run_scan(ticker_data=ticker_data, tickers=tickers, style="short")
+
+    if long_df.empty or short_df.empty:
+        return long_df if not long_df.empty else short_df
+
+    # Cột dùng chung (không prefix)
+    shared = ["ticker", "close", "bias_norm", "bias_label", "b_score", "r_score",
+              "buy_date", "buy_price", "sell_date", "sell_price",
+              "hold_days", "pnl_pct", "max_loss_pct",
+              "volume", "turnover"]
+    # Cột riêng từng style
+    style_cols = ["trend", "supertrend", "support", "resistance",
+                  "buy_signal", "sell_signal",
+                  "last_signal_type", "last_signal_date",
+                  "last_signal_price", "bars_since_signal", "signal_pnl_pct"]
+    # Cột criteria (bull_ema, ...)
+    crit_cols = [c for c in long_df.columns if c.startswith("bull_") or c.startswith("bear_")]
+
+    # Prefix các cột style
+    long_rename  = {c: f"long_{c}"  for c in style_cols if c in long_df.columns}
+    short_rename = {c: f"short_{c}" for c in style_cols if c in short_df.columns}
+
+    long_sub  = long_df[["ticker"] + [c for c in style_cols if c in long_df.columns] + crit_cols].rename(columns=long_rename)
+    short_sub = short_df[["ticker"] + [c for c in style_cols if c in short_df.columns]].rename(columns=short_rename)
+    shared_sub = long_df[[c for c in shared if c in long_df.columns]]
+
+    merged = shared_sub.merge(long_sub, on="ticker", how="left")
+    merged = merged.merge(short_sub, on="ticker", how="left")
+
+    # Đồng thuận cả 2 style
+    merged["both_buy"]  = merged.get("long_buy_signal",  False) & merged.get("short_buy_signal",  False)
+    merged["both_sell"] = merged.get("long_sell_signal", False) & merged.get("short_sell_signal", False)
+
+    # Rank: both > long > short > nothing
+    merged["_rank"] = 3
+    merged.loc[merged["long_buy_signal"]  | merged["long_sell_signal"],  "_rank"] = 2
+    merged.loc[merged["short_buy_signal"] | merged["short_sell_signal"], "_rank"] = 1
+    merged.loc[merged["both_buy"]         | merged["both_sell"],         "_rank"] = 0
+    merged = merged.sort_values(["_rank", "bias_norm"], ascending=[True, False]).drop(columns="_rank")
+    return merged.reset_index(drop=True)
+
+
 def get_current_signals(results: pd.DataFrame) -> dict[str, pd.DataFrame]:
-    """Extract buy and sell signal rows."""
+    """Extract buy and sell signal rows. Hỗ trợ cả single và dual style."""
+    # Dual style
+    if "both_buy" in results.columns:
+        buy_mask  = results.get("long_buy_signal",  False) | results.get("short_buy_signal",  False)
+        sell_mask = results.get("long_sell_signal", False) | results.get("short_sell_signal", False)
+        return {
+            "buy":      results[buy_mask].copy(),
+            "sell":     results[sell_mask].copy(),
+            "both_buy":  results[results["both_buy"]].copy(),
+            "both_sell": results[results["both_sell"]].copy(),
+        }
+    # Single style
     return {
-        "buy": results[results["buy_signal"]].copy(),
+        "buy":  results[results["buy_signal"]].copy(),
         "sell": results[results["sell_signal"]].copy(),
     }
 

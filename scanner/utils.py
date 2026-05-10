@@ -1,6 +1,8 @@
 import logging
 import ssl
 import sys
+import threading
+import time
 import urllib3
 from datetime import date, datetime
 
@@ -78,6 +80,38 @@ def is_trading_day(d: date | None = None) -> bool:
 
 def today_str() -> str:
     return date.today().strftime("%Y-%m-%d")
+
+
+class StepTimer:
+    """
+    Context manager hiển thị elapsed time realtime trên cùng 1 dòng.
+    Dùng: with StepTimer("Tính indicators"):
+    """
+    def __init__(self, label: str):
+        self.label = label
+        self._stop = threading.Event()
+        self._thread = None
+
+    def __enter__(self):
+        self._start = time.time()
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._tick, daemon=True)
+        self._thread.start()
+        return self
+
+    def _tick(self):
+        while not self._stop.is_set():
+            elapsed = time.time() - self._start
+            sys.stdout.write(f"\r  ⏱  {self.label} ... {elapsed:.1f}s")
+            sys.stdout.flush()
+            time.sleep(0.1)
+
+    def __exit__(self, *_):
+        self._stop.set()
+        self._thread.join()
+        elapsed = time.time() - self._start
+        sys.stdout.write(f"\r  ✓  {self.label} — {elapsed:.1f}s\n")
+        sys.stdout.flush()
 
 
 def fmt_price(price: float) -> str:

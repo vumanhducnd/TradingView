@@ -78,13 +78,20 @@ def send_daily_report(
     today = date.today().strftime("%d/%m/%Y")
 
     # Header message
+    is_dual = "long_buy_signal" in results.columns
+    style_str = "Ngắn hạn (7/2.0) + Dài hạn (10/3.0)" if is_dual else "Dài hạn (ATR=10, x3.0)"
+    both_buy_n  = len(signals.get("both_buy",  pd.DataFrame()))
+    both_sell_n = len(signals.get("both_sell", pd.DataFrame()))
+    both_line = f"  🔥 Đồng thuận cả 2 : <b>{both_buy_n + both_sell_n}</b> mã\n" if is_dual else ""
+
     header = (
         f"<b>📊 ManhDucCapital Scanner</b>\n"
         f"Quét: {today} (sau 15:30 ICT)\n"
-        f"Top 100 VN-Index | Dài hạn (ATR=10, x3.0)\n\n"
+        f"{style_str}\n\n"
         f"<b>Kết quả:</b>\n"
         f"  🟢 Tín hiệu MUA : <b>{len(buy_df)}</b> mã\n"
         f"  🔴 Tín hiệu BÁN : <b>{len(sell_df)}</b> mã\n"
+        f"{both_line}"
         f"  ⬜ Không tín hiệu: <b>{len(results) - len(buy_df) - len(sell_df)}</b> mã"
     )
     send_message(header)
@@ -118,7 +125,13 @@ def send_daily_report(
         return
 
     # Top 3 bullish (no signal but high bias) as watchlist
-    no_signal = results[~results["buy_signal"] & ~results["sell_signal"]]
+    is_dual = "long_buy_signal" in results.columns
+    if is_dual:
+        has_signal = (results["long_buy_signal"] | results["short_buy_signal"] |
+                      results["long_sell_signal"] | results["short_sell_signal"])
+        no_signal = results[~has_signal]
+    else:
+        no_signal = results[~results["buy_signal"] & ~results["sell_signal"]]
     top3 = no_signal.nlargest(3, "bias_norm")
     if not top3.empty:
         lines = "\n".join(
@@ -127,15 +140,8 @@ def send_daily_report(
         )
         send_message(f"<b>👀 Theo dõi thêm (chưa tín hiệu):</b>\n{lines}")
 
-    # Gửi file Excel báo cáo
-    from scanner.config import REPORTS_DIR
-    report_path = REPORTS_DIR / f"report_{date.today().strftime('%Y-%m-%d')}.xlsx"
-    if report_path.exists():
-        time.sleep(1)
-        send_file(
-            str(report_path),
-            caption=f"📊 Báo cáo đầy đủ {date.today().strftime('%d/%m/%Y')} — {len(results)} mã"
-        )
+    # Gửi file Excel: tạm tắt
+    pass
 
 
 def _format_signal(row: pd.Series, signal_type: str) -> str:

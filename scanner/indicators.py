@@ -249,6 +249,8 @@ def analyze_ticker(
         "r_score": int(last["r_score"]),
         "atr": float(last["atr"]),
         "volume": float(last["volume"]),
+        # Giá vnstock trả về đơn vị nghìn VND (48.5 = 48,500đ) → nhân 1000 để ra VND thực
+        "turnover": float(last["volume"]) * float(last["close"]) * 1000,
         "vol_avg": last.get("_vol_avg", float("nan")),
         "bull_criteria": {n: bool(last[f"bull_{n}"]) for n in criteria_names},
         "bear_criteria": {n: bool(last[f"bear_{n}"]) for n in criteria_names},

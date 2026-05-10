@@ -48,10 +48,10 @@ def build_watchlist(
     logger.info(f"Tổng mã HOSE+HNX+UPCOM: {len(all_tickers)}")
 
     if not filter_liquidity:
-        # Lưu thẳng không lọc
-        upsert_watchlist(all_tickers)
+        # Lưu kèm exchange info
+        upsert_watchlist(all_tickers)  # all_tickers là list[(ticker, exchange)]
         logger.info(f"Watchlist: {len(all_tickers)} mã (không lọc)")
-        return all_tickers
+        return [t for t, _ in all_tickers]
 
     # Nếu muốn lọc theo thanh khoản: crawl nhanh trước
     _quick_crawl(all_tickers, days=QUICK_CRAWL_DAYS, force=force)
@@ -66,41 +66,86 @@ def build_watchlist(
     return ranked
 
 
-def _get_all_tickers() -> list[str]:
-    """Lấy toàn bộ mã VN từ KBS source (1500+ mã HOSE+HNX+UPCOM)."""
-    # KBS source: dùng all_symbols() → trả về toàn bộ ~1500 mã
+def _get_all_tickers() -> list[tuple[str, str]]:
+    """
+    Lấy toàn bộ mã VN. HOSE/HNX/UPCOM gán đúng sàn, còn lại UNKNOWN.
+    Returns list of (ticker, exchange).
+    """
+    import re
+    stock_pattern = re.compile(r'^[A-Z]{2,4}$')
+
+    # Bước 1: Exchange map từ 3 sàn chính
+    exchange_map: dict[str, str] = {}
+    for exchange in ["HOSE", "HNX", "UPCOM"]:
+        batch = _fetch_exchange_tickers_with_info(exchange)
+        for t in batch:
+            exchange_map[t] = exchange
+        logger.info(f"  {exchange}: {len(batch)} mã")
+
+    # Bước 2: Full list từ all_symbols
+    all_tickers: list[str] = []
     try:
         from vnstock.api.listing import Listing
-        listing = Listing(source="KBS")
-        df = listing.all_symbols()
+        df = Listing(source="KBS").all_symbols()
         if df is not None and not df.empty:
             col = _find_ticker_col(df)
-            tickers = df[col].str.upper().str.strip().tolist()
-            logger.info(f"KBS all_symbols: {len(tickers)} mã")
-            return tickers
+            raw = df[col].str.upper().str.strip().tolist()
+            all_tickers = [t for t in raw if stock_pattern.match(t)]
     except Exception as e:
-        logger.debug(f"KBS all_symbols failed: {e}")
+        logger.debug(f"all_symbols failed: {e}")
 
-    # Fallback: symbols_by_exchange từng sàn
-    tickers = []
-    for source in ["VCI", "KBS"]:
-        if tickers:
-            break
-        for exchange in ["HOSE", "HNX", "UPCOM"]:
-            try:
-                from vnstock.api.listing import Listing
-                listing = Listing(source=source)
-                df = listing.symbols_by_exchange(exchange=exchange)
-                if df is not None and not df.empty:
-                    col = _find_ticker_col(df)
-                    batch = df[col].str.upper().str.strip().tolist()
-                    logger.info(f"  {exchange} ({source}): {len(batch)} mã")
-                    tickers.extend(batch)
-            except Exception as e:
-                logger.debug(f"{exchange} {source} failed: {e}")
+    # Fallback nếu all_symbols trống
+    if not all_tickers:
+        all_tickers = list(exchange_map.keys())
 
+    # Bước 3: Gán exchange, UNKNOWN nếu không map được
     seen: set[str] = set()
-    return [t for t in tickers if not (t in seen or seen.add(t))]
+    result: list[tuple[str, str]] = []
+    unknown = 0
+    for t in all_tickers:
+        if t in seen:
+            continue
+        seen.add(t)
+        exch = exchange_map.get(t, "UNKNOWN")
+        if exch == "UNKNOWN":
+            unknown += 1
+        result.append((t, exch))
+
+    logger.info(f"Tổng: {len(result)} mã | {len(result)-unknown} có sàn | {unknown} UNKNOWN")
+    return result
+
+
+def _fetch_exchange_tickers_with_info(exchange: str) -> list[str]:
+    """
+    Lấy danh sách ticker cổ phiếu từ 1 sàn dùng symbols_by_group.
+    Lọc bỏ trái phiếu/chứng quyền (chỉ giữ mã 2-4 chữ cái).
+    """
+    import re
+    stock_pattern = re.compile(r'^[A-Z]{2,4}$')
+
+    try:
+        from vnstock.api.listing import Listing
+        import pandas as pd
+        listing = Listing(source="KBS")
+        result = listing.symbols_by_group(exchange)  # HOSE / HNX / UPCOM
+
+        # Xử lý cả Series lẫn DataFrame
+        if isinstance(result, pd.Series):
+            tickers = result.str.upper().str.strip().tolist()
+        elif isinstance(result, pd.DataFrame) and not result.empty:
+            col = _find_ticker_col(result)
+            tickers = result[col].str.upper().str.strip().tolist()
+        else:
+            tickers = []
+
+        valid = [t for t in tickers if stock_pattern.match(t)]
+        if valid:
+            logger.debug(f"  {exchange} KBS: {len(tickers)} raw → {len(valid)} valid")
+            return valid
+    except Exception as e:
+        logger.debug(f"{exchange} KBS symbols_by_group failed: {e}")
+
+    return []
 
 
 def _quick_crawl(tickers: list[str], days: int = QUICK_CRAWL_DAYS, force: bool = False) -> None:
@@ -113,7 +158,9 @@ def _quick_crawl(tickers: list[str], days: int = QUICK_CRAWL_DAYS, force: bool =
     cutoff = date.today() - timedelta(days=days)
     today = date.today()
 
-    need = [t for t in tickers if not (last_dates.get(t) and last_dates[t] >= cutoff)]
+    # Hỗ trợ cả list[str] và list[(ticker, exchange)]
+    ticker_list = [t if isinstance(t, str) else t[0] for t in tickers]
+    need = [t for t in ticker_list if not (last_dates.get(t) and last_dates[t] >= cutoff)]
     skip = len(tickers) - len(need)
     logger.info(f"Quick crawl: {len(need)} fetch, {skip} skip | est ~{len(need)*FETCH_DELAY/60:.1f} phút")
 
