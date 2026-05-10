@@ -139,8 +139,10 @@ def run_scan_only() -> None:
 
     logger.info("=== Bat dau scan-only (dual mode) ===")
 
-    # Nếu không phải ngày giao dịch → load kết quả cũ từ DB, gửi lại
-    if not is_trading_day():
+    force = "--force" in sys.argv
+
+    # Nếu không phải ngày giao dịch và không force → load kết quả cũ từ DB, gửi lại
+    if not force and not is_trading_day():
         dates = load_scan_dates()
         if dates:
             logger.info(f"Nghi giao dich — load ket qua {dates[0]} tu DB")
