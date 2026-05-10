@@ -22,7 +22,7 @@ from scanner.utils import logger
 
 def get_connection() -> PgConnection:
     # Ưu tiên DATABASE_URL (Neon / cloud) — SSL đã có sẵn trong URL
-    dsn = os.getenv("DATABASE_URL")
+    dsn = os.getenv("DATABASE_URL", "").strip()
     if dsn:
         return psycopg2.connect(dsn)
 
