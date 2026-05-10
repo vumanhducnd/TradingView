@@ -138,6 +138,38 @@ def upsert_ohlcv(ticker: str, df: pd.DataFrame) -> int:
     return len(rows)
 
 
+def load_all_ohlcv_bulk(days: int = 400) -> dict[str, pd.DataFrame]:
+    """Load OHLCV toàn bộ ticker trong 1 query — nhanh hơn gọi từng ticker."""
+    since = date.today() - timedelta(days=days)
+    sql = """
+        SELECT ticker, date, open, high, low, close, volume
+        FROM ohlcv
+        WHERE date >= %s
+        ORDER BY ticker, date ASC
+    """
+    with db_cursor(commit=False) as cur:
+        cur.execute(sql, (since,))
+        rows = cur.fetchall()
+
+    if not rows:
+        return {}
+
+    df = pd.DataFrame(rows)
+    df["date"] = pd.to_datetime(df["date"])
+    for col in ["open", "high", "low", "close"]:
+        df[col] = df[col].astype(float)
+    df["volume"] = df["volume"].astype(int)
+
+    result = {}
+    for ticker, group in df.groupby("ticker"):
+        g = group.set_index("date").sort_index()[["open", "high", "low", "close", "volume"]]
+        if len(g) >= 50:
+            result[str(ticker)] = g
+
+    logger.info(f"Bulk load OHLCV: {len(result)} tickers, {len(df):,} rows")
+    return result
+
+
 def load_ohlcv(ticker: str, days: int = 400) -> pd.DataFrame:
     """Load OHLCV từ DB, trả về DataFrame với DatetimeIndex."""
     since = date.today() - timedelta(days=days)

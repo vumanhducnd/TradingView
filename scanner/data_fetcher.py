@@ -197,25 +197,31 @@ def load_all_from_db(
     tickers: list[str] | None = None,
 ) -> dict[str, pd.DataFrame]:
     """
-    Đọc OHLCV từ PostgreSQL.
-    tickers: danh sách cụ thể cần load (None = lấy toàn bộ watchlist DB).
+    Đọc OHLCV từ PostgreSQL dùng 1 bulk query thay vì N queries.
+    tickers: danh sách cụ thể cần load (None = lấy toàn bộ từ DB).
     """
-    from scanner.database import get_watchlist, load_ohlcv
-    if tickers is None:
-        tickers = get_watchlist()
-    if not tickers:
-        logger.warning("Watchlist DB trống, fallback sang CSV")
-        tickers = _load_watchlist_csv()
+    from scanner.database import load_all_ohlcv_bulk, load_ohlcv, get_watchlist
 
+    # Bulk load toàn bộ (nhanh hơn nhiều so với từng ticker)
+    if tickers is None:
+        logger.info("Loading OHLCV bulk từ DB...")
+        result = load_all_ohlcv_bulk(days=days)
+        if result:
+            return result
+        # Fallback nếu bulk trả về rỗng
+        logger.warning("Bulk load rỗng, fallback sang load từng ticker")
+        tickers = get_watchlist()
+        if not tickers:
+            tickers = _load_watchlist_csv()
+
+    # Load từng ticker (dùng khi chỉ cần 1 số mã cụ thể)
     result = {}
     for ticker in tickers:
         df = load_ohlcv(ticker, days=days)
         if not df.empty and len(df) >= 50:
             result[ticker] = df
-        else:
-            logger.debug(f"{ticker}: không đủ data trong DB ({len(df)} bars)")
 
-    logger.info(f"Loaded {len(result)}/{len(tickers)} tickers từ DB")
+    logger.info(f"Loaded {len(result)}/{len(tickers)} tickers tu DB")
     return result
 
 

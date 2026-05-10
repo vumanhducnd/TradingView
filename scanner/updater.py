@@ -135,21 +135,27 @@ def run_scan_only() -> None:
     from scanner.data_fetcher import load_all_from_db
     from scanner.scanner import get_current_signals, run_scan, save_daily_snapshot
 
+    logger.info("=== Bat dau scan-only ===")
+    logger.info("Buoc 1/4: Load OHLCV tu DB...")
     ticker_data = load_all_from_db()
     if not ticker_data:
-        logger.error("Không load được data từ DB")
+        logger.error("Khong load duoc data tu DB")
         return
 
+    logger.info(f"Buoc 2/4: Tinh indicators cho {len(ticker_data)} tickers...")
     results = run_scan(ticker_data=ticker_data)
     if results.empty:
         logger.error("Scan không có kết quả")
         return
 
     signals = get_current_signals(results)
+
+    logger.info("Buoc 3/4: Luu ket qua vao DB...")
     save_scan_results(results)
     save_signals(results)
     save_daily_snapshot(results)
 
+    logger.info("Buoc 4/4: Gui Telegram...")
     try:
         from scanner.telegram_bot import send_daily_report
         send_daily_report(results, signals)
