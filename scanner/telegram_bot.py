@@ -101,17 +101,29 @@ def send_daily_report(
     _send_positions_summary(results)
     time.sleep(1)
 
-    # Buy signal messages
-    for _, row in buy_df.iterrows():
+    # Top 10 mua/bán có thanh khoản cao nhất
+    TOP_N = 10
+    vol_col = "volume" if "volume" in results.columns else None
+
+    def _top10(df: pd.DataFrame) -> pd.DataFrame:
+        if df.empty:
+            return df
+        if vol_col and vol_col in df.columns:
+            return df.nlargest(TOP_N, vol_col)
+        return df.head(TOP_N)
+
+    buy_top  = _top10(buy_df)
+    sell_top = _top10(sell_df)
+
+    for _, row in buy_top.iterrows():
         send_message(_format_signal(row, signal_type="MUA"))
         time.sleep(1)
 
-    # Sell signal messages
-    for _, row in sell_df.iterrows():
+    for _, row in sell_top.iterrows():
         send_message(_format_signal(row, signal_type="BÁN"))
         time.sleep(1)
 
-    # No signals case
+    # Không có tín hiệu → top 5 bias_norm
     if buy_df.empty and sell_df.empty:
         top5 = results.nlargest(5, "bias_norm")[["ticker", "bias_norm"]]
         lines = "\n".join(
@@ -122,26 +134,18 @@ def send_daily_report(
             f"Hôm nay không có tín hiệu MUA/BÁN mới.\n\n"
             f"<b>Top 5 mạnh nhất:</b>\n{lines}"
         )
-        return
 
-    # Top 3 bullish (no signal but high bias) as watchlist
-    is_dual = "long_buy_signal" in results.columns
-    if is_dual:
-        has_signal = (results["long_buy_signal"] | results["short_buy_signal"] |
-                      results["long_sell_signal"] | results["short_sell_signal"])
-        no_signal = results[~has_signal]
-    else:
-        no_signal = results[~results["buy_signal"] & ~results["sell_signal"]]
-    top3 = no_signal.nlargest(3, "bias_norm")
-    if not top3.empty:
-        lines = "\n".join(
-            f"  • {r['ticker']}: BiasNorm {r['bias_norm']:.0f} — {bias_label(r['bias_norm'])}"
-            for _, r in top3.iterrows()
-        )
-        send_message(f"<b>👀 Theo dõi thêm (chưa tín hiệu):</b>\n{lines}")
-
-    # Gửi file Excel: tạm tắt
-    pass
+    # Gửi file Excel report
+    try:
+        from scanner.excel_report import build_excel_report
+        excel_path = build_excel_report(results, signals)
+        if excel_path:
+            send_file(
+                str(excel_path),
+                caption=f"📊 Report {today} — {len(buy_df)} MUA | {len(sell_df)} BÁN",
+            )
+    except Exception as e:
+        logger.warning(f"Excel report failed: {e}")
 
 
 def _format_signal(row: pd.Series, signal_type: str) -> str:

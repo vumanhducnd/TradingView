@@ -133,7 +133,7 @@ def run_full_pipeline(force: bool = False) -> None:
 def run_scan_only() -> None:
     """Chỉ chạy scan từ DB — bỏ qua bước fetch OHLCV (dùng khi OHLCV đã được sync riêng)."""
     from scanner.data_fetcher import load_all_from_db
-    from scanner.scanner import get_current_signals, run_scan, save_daily_snapshot
+    from scanner.scanner import get_current_signals, run_scan
 
     logger.info("=== Bat dau scan-only ===")
     logger.info("Buoc 1/4: Load OHLCV tu DB...")
@@ -153,7 +153,6 @@ def run_scan_only() -> None:
     logger.info("Buoc 3/4: Luu ket qua vao DB...")
     save_scan_results(results)
     save_signals(results)
-    save_daily_snapshot(results)
 
     logger.info("Buoc 4/4: Gui Telegram...")
     try:
@@ -162,14 +161,8 @@ def run_scan_only() -> None:
     except Exception as e:
         logger.warning(f"Telegram failed: {e}")
 
-    try:
-        from scanner.excel_report import build_excel_report
-        build_excel_report(results, signals)
-    except Exception as e:
-        logger.warning(f"Excel failed: {e}")
-
-    buy_n = len(signals.get("buy", []))
-    sell_n = len(signals.get("sell", []))
+    buy_n = len(signals.get("buy", pd.DataFrame()))
+    sell_n = len(signals.get("sell", pd.DataFrame()))
     logger.info(f"=== Scan-only xong: {buy_n} MUA, {sell_n} BAN ===")
 
 
