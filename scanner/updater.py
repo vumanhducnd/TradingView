@@ -130,6 +130,43 @@ def run_full_pipeline(force: bool = False) -> None:
     logger.info(f"=== Pipeline xong: {buy_n} MUA, {sell_n} BÁN ===")
 
 
+def run_scan_only() -> None:
+    """Chỉ chạy scan từ DB — bỏ qua bước fetch OHLCV (dùng khi OHLCV đã được sync riêng)."""
+    from scanner.data_fetcher import load_all_from_db
+    from scanner.scanner import get_current_signals, run_scan, save_daily_snapshot
+
+    ticker_data = load_all_from_db()
+    if not ticker_data:
+        logger.error("Không load được data từ DB")
+        return
+
+    results = run_scan(ticker_data=ticker_data)
+    if results.empty:
+        logger.error("Scan không có kết quả")
+        return
+
+    signals = get_current_signals(results)
+    save_scan_results(results)
+    save_signals(results)
+    save_daily_snapshot(results)
+
+    try:
+        from scanner.telegram_bot import send_daily_report
+        send_daily_report(results, signals)
+    except Exception as e:
+        logger.warning(f"Telegram failed: {e}")
+
+    try:
+        from scanner.excel_report import build_excel_report
+        build_excel_report(results, signals)
+    except Exception as e:
+        logger.warning(f"Excel failed: {e}")
+
+    buy_n = len(signals.get("buy", []))
+    sell_n = len(signals.get("sell", []))
+    logger.info(f"=== Scan-only xong: {buy_n} MUA, {sell_n} BAN ===")
+
+
 def _fetch_latest(ticker: str, start: date, end: date):
     """Fetch OHLCV từ vnstock API (chỉ vài bar gần nhất)."""
     try:
@@ -163,5 +200,8 @@ def _fetch_latest(ticker: str, start: date, end: date):
 
 
 if __name__ == "__main__":
-    force = "--force" in sys.argv
-    run_full_pipeline(force=force)
+    if "--scan-only" in sys.argv:
+        run_scan_only()
+    else:
+        force = "--force" in sys.argv
+        run_full_pipeline(force=force)
