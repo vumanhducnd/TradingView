@@ -12,7 +12,7 @@ env:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 100
 
     steps:
       - name: Checkout repo
