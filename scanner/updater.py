@@ -161,8 +161,8 @@ def run_scan_only() -> None:
     except Exception as e:
         logger.warning(f"Telegram failed: {e}")
 
-    buy_n = len(signals.get("buy", pd.DataFrame()))
-    sell_n = len(signals.get("sell", pd.DataFrame()))
+    buy_n = len(signals.get("buy", []))
+    sell_n = len(signals.get("sell", []))
     logger.info(f"=== Scan-only xong: {buy_n} MUA, {sell_n} BAN ===")
 
 
