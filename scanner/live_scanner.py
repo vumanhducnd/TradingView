@@ -23,7 +23,7 @@ import pandas as pd
 import scanner.utils  # noqa: patch SSL trước
 from scanner.data_fetcher import _set_api_key, load_all_from_db
 from scanner.database import get_top_liquid_tickers, get_vn100_watchlist, load_ohlcv, upsert_ohlcv
-from scanner.indicators import calc_bias_norm, calc_supertrend
+from scanner.indicators import calc_bias_norm, calc_supertrend, calc_supertrend_next, get_supertrend_state
 from scanner.telegram_bot import send_message
 from scanner.utils import fmt_price, logger
 
@@ -435,7 +435,7 @@ def run_session(interval: int = 180) -> None:
 
     # ── Load lịch sử OHLCV cho top 300 (dùng để tính ST) ──
     logger.info(f"Load lịch sử OHLCV top 300 từ DB ({len(top300)} mã)...")
-    ticker_data = load_all_from_db(tickers=top300, days=60)
+    ticker_data = load_all_from_db(tickers=top300, days=90)
     today_ts = pd.Timestamp(date.today())
 
     hist_cache: dict[str, pd.DataFrame] = {
@@ -445,14 +445,16 @@ def run_session(interval: int = 180) -> None:
     }
     logger.info(f"DB full: {len(all_tickers)} mã | ST cache: {len(hist_cache)} mã top 300")
 
-    # ── Init prev_trend ──
-    prev_trend: dict[str, int] = {}
+    # ── Init ST state từ lịch sử (1 lần, O(n_bars × n_tickers)) ──
+    st_states: dict[str, dict] = {}
     for ticker, hist_df in hist_cache.items():
         try:
-            df_st = calc_supertrend(hist_df)
-            prev_trend[ticker] = int(df_st.iloc[-1]["trend"])
+            st_states[ticker] = get_supertrend_state(hist_df)
         except Exception:
             pass
+    bull = sum(1 for s in st_states.values() if s["trend"] == 1)
+    bear = sum(1 for s in st_states.values() if s["trend"] == -1)
+    logger.info(f"Init ST state: {len(st_states)} mã | Tang={bull} Giam={bear}")
 
     send_message(
         f"📡 <b>Session Scanner BẮT ĐẦU</b>\n"
@@ -481,32 +483,32 @@ def run_session(interval: int = 180) -> None:
 
         flips: list[dict] = []
 
-        # ── Tính ST cho top 300 ──
-        for ticker, hist_df in hist_cache.items():
+        # ── Tính ST incremental O(1)/mã ──
+        for ticker, state in st_states.items():
             bar = today_bars.get(ticker)
             if not bar:
                 continue
-
-            # Tính ST real-time
-            result = _calc_realtime_st(hist_df, bar)
-            if result is None:
+            try:
+                new_state = calc_supertrend_next(
+                    state,
+                    high=bar["high"], low=bar["low"], close=bar["close"],
+                )
+            except Exception:
                 continue
 
-            # Detect flip so với trend trước đó
-            prev = prev_trend.get(ticker)
-            if prev is not None:
-                if result["buy_signal"] and prev != 1:
-                    flips.append({
-                        "ticker": ticker, "direction": "buy",
-                        "price": result["close"], "st": result["supertrend"],
-                    })
-                elif result["sell_signal"] and prev != -1:
-                    flips.append({
-                        "ticker": ticker, "direction": "sell",
-                        "price": result["close"], "st": result["supertrend"],
-                    })
+            if new_state["buy_signal"]:
+                flips.append({
+                    "ticker": ticker, "direction": "buy",
+                    "price": bar["close"], "st": new_state["supertrend"],
+                })
+            elif new_state["sell_signal"]:
+                flips.append({
+                    "ticker": ticker, "direction": "sell",
+                    "price": bar["close"], "st": new_state["supertrend"],
+                })
 
-            prev_trend[ticker] = result["trend"]
+            # Cập nhật state với close mới nhất (không thay đổi atr/up/dn cho đến bar kế)
+            st_states[ticker] = {**new_state, "close": bar["close"]}
 
         # ── Gửi Telegram cho từng flip ──
         for flip in flips:
@@ -539,59 +541,96 @@ def run_session(interval: int = 180) -> None:
 
 def _run_session_once() -> None:
     """Chạy đúng 1 cycle để test — không cần trong giờ giao dịch."""
+    import time as _time
+    t_start = _time.time()
+
+    def _elapsed() -> str:
+        return f"{_time.time() - t_start:.1f}s"
+
+    logger.info("=" * 55)
+    logger.info("[TEST] SESSION SCANNER — 1 CYCLE")
+    logger.info("=" * 55)
+
     _set_api_key()
     from scanner.database import get_watchlist
-    all_tickers = get_watchlist()
-    vn100       = get_vn100_watchlist()
-    today_ts    = pd.Timestamp(date.today())
 
-    logger.info(f"[TEST] Load lịch sử VN100...")
-    ticker_data = load_all_from_db(tickers=vn100, days=60)
+    # ── Bước 1: Watchlist ─────────────────────────────────
+    t1 = _time.time()
+    all_tickers = get_watchlist()
+    top300      = get_top_liquid_tickers(n=300)
+    today_ts    = pd.Timestamp(date.today())
+    logger.info(f"[1/5] Watchlist: {len(all_tickers)} tong | {len(top300)} top-300 ({_time.time()-t1:.1f}s)")
+
+    # ── Bước 2: Load lịch sử OHLCV ────────────────────────
+    t2 = _time.time()
+    logger.info(f"[2/5] Load OHLCV 90 ngay cho {len(top300)} ma tu DB...")
+    ticker_data = load_all_from_db(tickers=top300, days=90)
     hist_cache  = {
         t: df[df.index.normalize() < today_ts]
         for t, df in ticker_data.items()
         if not df[df.index.normalize() < today_ts].empty
     }
+    logger.info(f"[2/5] Loaded: {len(hist_cache)}/{len(top300)} ma co du lich su ({_time.time()-t2:.1f}s)")
 
-    prev_trend: dict[str, int] = {}
+    # ── Bước 3: Init prev_trend ────────────────────────────
+    t3 = _time.time()
+    st_states: dict[str, dict] = {}
+    st_ok, st_fail = 0, 0
     for ticker, hist_df in hist_cache.items():
         try:
-            prev_trend[ticker] = int(calc_supertrend(hist_df).iloc[-1]["trend"])
+            st_states[ticker] = get_supertrend_state(hist_df)
+            st_ok += 1
         except Exception:
-            pass
+            st_fail += 1
+    bull = sum(1 for s in st_states.values() if s["trend"] == 1)
+    bear = sum(1 for s in st_states.values() if s["trend"] == -1)
+    logger.info(f"[3/5] Init ST: {st_ok} OK / {st_fail} fail | Tang={bull} Giam={bear} ({_time.time()-t3:.1f}s)")
 
-    logger.info(f"[TEST] Fetch price_board {len(all_tickers)} mã...")
+    # ── Bước 4: Fetch price_board + Upsert DB ─────────────
+    t4 = _time.time()
+    logger.info(f"[4/5] price_board fetch {len(all_tickers)} ma...")
     today_bars = _fetch_via_price_board(all_tickers)
-    logger.info(f"[TEST] Nhận được {len(today_bars)} bars")
+    t4b = _time.time()
+    logger.info(f"[4/5] price_board: {len(today_bars)}/{len(all_tickers)} bars ({t4b-t4:.1f}s)")
 
-    upsert_ok = 0
+    upsert_ok, upsert_fail = 0, 0
     for ticker, bar in today_bars.items():
         try:
             upsert_ohlcv(ticker, pd.DataFrame([bar], index=[today_ts]))
             upsert_ok += 1
         except Exception as e:
-            logger.debug(f"upsert {ticker}: {e}")
-    logger.info(f"[TEST] Upsert DB: {upsert_ok}/{len(today_bars)}")
+            upsert_fail += 1
+            logger.debug(f"  upsert {ticker}: {e}")
+    logger.info(f"[4/5] Upsert DB: {upsert_ok} OK / {upsert_fail} fail ({_time.time()-t4b:.1f}s)")
 
-    flips = []
-    for ticker, hist_df in hist_cache.items():
+    # ── Bước 5: Tính ST + detect flip ─────────────────────
+    t5 = _time.time()
+    flips, st_calc = [], 0
+    for ticker, state in st_states.items():
         bar = today_bars.get(ticker)
         if not bar:
             continue
-        result = _calc_realtime_st(hist_df, bar)
-        if not result:
-            continue
-        prev = prev_trend.get(ticker)
-        if prev is not None and result["buy_signal"] and prev != 1:
-            flips.append((ticker, "buy", result["close"], result["supertrend"]))
-        elif prev is not None and result["sell_signal"] and prev != -1:
-            flips.append((ticker, "sell", result["close"], result["supertrend"]))
+        try:
+            new_state = calc_supertrend_next(state, high=bar["high"], low=bar["low"], close=bar["close"])
+            st_calc += 1
+            if new_state["buy_signal"]:
+                flips.append((ticker, "MUA", bar["close"], new_state["supertrend"]))
+            elif new_state["sell_signal"]:
+                flips.append((ticker, "BAN", bar["close"], new_state["supertrend"]))
+        except Exception:
+            pass
+    logger.info(f"[5/5] Tinh ST incremental: {st_calc} ma | Flip: {len(flips)} ({_time.time()-t5:.1f}s)")
 
-    logger.info(f"[TEST] ST tính được: {sum(1 for t in hist_cache if today_bars.get(t))} mã")
-    logger.info(f"[TEST] Flips phát hiện: {len(flips)}")
-    for ticker, direction, price, st in flips:
-        logger.info(f"  {direction.upper()} {ticker} giá={price:,.0f} ST={st:,.0f}")
-    logger.info("[TEST] XONG — không gửi Telegram")
+    if flips:
+        logger.info("  Flips phat hien:")
+        for ticker, direction, price, st in flips:
+            logger.info(f"    {direction} {ticker} gia={price:,.0f} ST={st:,.0f}")
+    else:
+        logger.info("  Khong co flip nao (ngoai gio giao dich — binh thuong)")
+
+    logger.info("=" * 55)
+    logger.info(f"[TEST] TONG THOI GIAN: {_elapsed()} — KHONG GUI TELEGRAM")
+    logger.info("=" * 55)
 
 
 # ─── CLI ──────────────────────────────────────────────────────────────────────

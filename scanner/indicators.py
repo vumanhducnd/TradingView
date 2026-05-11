@@ -82,6 +82,77 @@ def calc_supertrend(
     return df
 
 
+def get_supertrend_state(df: pd.DataFrame, style: str = "long") -> dict:
+    """
+    Tính ST trên df lịch sử, trả về trạng thái bar cuối để dùng cho incremental update.
+    Gọi 1 lần lúc khởi động, sau đó dùng calc_supertrend_next() mỗi bar mới.
+    """
+    df = calc_supertrend(df, style=style)
+    last = df.iloc[-1]
+    prev = df.iloc[-2] if len(df) >= 2 else last
+    period = ST_PERIOD_LONG if style == "long" else ST_PERIOD_SHORT
+    mult   = ST_MULT_LONG   if style == "long" else ST_MULT_SHORT
+    return {
+        "atr":       float(last["atr"]),
+        "up":        float(last["st_up"]),
+        "dn":        float(last["st_dn"]),
+        "trend":     int(last["trend"]),
+        "close":     float(last["close"]),
+        "period":    period,
+        "mult":      mult,
+    }
+
+
+def calc_supertrend_next(
+    state: dict,
+    high: float, low: float, close: float,
+) -> dict:
+    """
+    Tính ST cho 1 bar mới dựa trên state từ bar trước — O(1).
+    Trả về state mới + tín hiệu.
+    """
+    period = state["period"]
+    mult   = state["mult"]
+    prev_close = state["close"]
+    prev_atr   = state["atr"]
+    prev_up    = state["up"]
+    prev_dn    = state["dn"]
+    prev_trend = state["trend"]
+
+    # Wilder ATR (1 bước)
+    tr  = max(high - low, abs(high - prev_close), abs(low - prev_close))
+    atr = (prev_atr * (period - 1) + tr) / period
+
+    src     = (high + low) / 2.0
+    up_raw  = src - mult * atr
+    dn_raw  = src + mult * atr
+
+    # Ratchet
+    up = max(up_raw, prev_up) if prev_close > prev_up else up_raw
+    dn = min(dn_raw, prev_dn) if prev_close < prev_dn else dn_raw
+
+    # Trend flip
+    if prev_trend == -1 and close > prev_dn:
+        trend = 1
+    elif prev_trend == 1 and close < prev_up:
+        trend = -1
+    else:
+        trend = prev_trend
+
+    return {
+        "atr":        atr,
+        "up":         up,
+        "dn":         dn,
+        "trend":      trend,
+        "close":      close,
+        "period":     period,
+        "mult":       mult,
+        "supertrend": up if trend == 1 else dn,
+        "buy_signal": trend == 1 and prev_trend == -1,
+        "sell_signal":trend == -1 and prev_trend == 1,
+    }
+
+
 def calc_bias_norm(df: pd.DataFrame) -> pd.DataFrame:
     """
     Compute all 9 bull + 9 bear criteria and produce bias_norm [0, 100].
