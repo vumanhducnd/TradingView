@@ -22,7 +22,7 @@ from typing import Optional
 import pandas as pd
 import scanner.utils  # noqa: patch SSL trước
 from scanner.data_fetcher import _set_api_key, load_all_from_db
-from scanner.database import get_top_liquid_tickers, get_vn100_watchlist, load_ohlcv, upsert_ohlcv
+from scanner.database import bulk_upsert_today, get_top_liquid_tickers, get_vn100_watchlist, load_ohlcv, upsert_ohlcv
 from scanner.indicators import calc_bias_norm, calc_supertrend, calc_supertrend_next, get_supertrend_state
 from scanner.telegram_bot import send_message
 from scanner.utils import fmt_price, logger
@@ -474,12 +474,9 @@ def run_session(interval: int = 180) -> None:
         today_bars = _fetch_via_price_board(all_tickers)
         logger.info(f"  price_board: {len(today_bars)}/{len(all_tickers)} bars")
 
-        # ── Upsert DB cho tất cả mã có data ──
-        for ticker, bar in today_bars.items():
-            try:
-                upsert_ohlcv(ticker, pd.DataFrame([bar], index=[today_ts]))
-            except Exception as e:
-                logger.debug(f"upsert {ticker}: {e}")
+        # ── Bulk upsert 1 lần cho tất cả mã ──
+        n_upsert = bulk_upsert_today(today_bars, date.today())
+        logger.info(f"  Upsert DB: {n_upsert} rows (1 query)")
 
         flips: list[dict] = []
 
@@ -593,15 +590,8 @@ def _run_session_once() -> None:
     t4b = _time.time()
     logger.info(f"[4/5] price_board: {len(today_bars)}/{len(all_tickers)} bars ({t4b-t4:.1f}s)")
 
-    upsert_ok, upsert_fail = 0, 0
-    for ticker, bar in today_bars.items():
-        try:
-            upsert_ohlcv(ticker, pd.DataFrame([bar], index=[today_ts]))
-            upsert_ok += 1
-        except Exception as e:
-            upsert_fail += 1
-            logger.debug(f"  upsert {ticker}: {e}")
-    logger.info(f"[4/5] Upsert DB: {upsert_ok} OK / {upsert_fail} fail ({_time.time()-t4b:.1f}s)")
+    n_upsert = bulk_upsert_today(today_bars, date.today())
+    logger.info(f"[4/5] Upsert DB: {n_upsert} rows bulk (1 query) ({_time.time()-t4b:.1f}s)")
 
     # ── Bước 5: Tính ST + detect flip ─────────────────────
     t5 = _time.time()

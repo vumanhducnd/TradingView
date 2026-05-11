@@ -248,6 +248,39 @@ def upsert_ohlcv(ticker: str, df: pd.DataFrame) -> int:
     return len(rows)
 
 
+def bulk_upsert_today(bars: dict[str, dict], today: "date") -> int:
+    """
+    Upsert bar hôm nay cho nhiều ticker trong 1 lần gọi DB duy nhất.
+    bars = {ticker: {open, high, low, close, volume}}
+    Trả về số rows upserted.
+    """
+    if not bars:
+        return 0
+
+    sql = """
+        INSERT INTO ohlcv (ticker, date, open, high, low, close, volume)
+        VALUES %s
+        ON CONFLICT (ticker, date) DO UPDATE SET
+            open   = EXCLUDED.open,
+            high   = EXCLUDED.high,
+            low    = EXCLUDED.low,
+            close  = EXCLUDED.close,
+            volume = EXCLUDED.volume
+    """
+    rows = [
+        (ticker, today,
+         float(b["open"]), float(b["high"]), float(b["low"]),
+         float(b["close"]), int(b["volume"]))
+        for ticker, b in bars.items()
+        if b.get("close", 0) > 0
+    ]
+    if not rows:
+        return 0
+    with db_cursor() as cur:
+        psycopg2.extras.execute_values(cur, sql, rows, page_size=500)
+    return len(rows)
+
+
 def load_all_ohlcv_bulk(days: int = 400) -> dict[str, pd.DataFrame]:
     """Load OHLCV toàn bộ ticker trong 1 query — nhanh hơn gọi từng ticker."""
     since = date.today() - timedelta(days=days)
