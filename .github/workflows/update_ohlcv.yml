@@ -1,9 +1,10 @@
 name: Update OHLCV to Neon
 
 on:
-  schedule:
-    # 8:00 AM UTC = 3:00 PM ICT, weekdays — chạy trước scanner 30 phút
-    - cron: '0 8 * * 1-5'
+  # Tắt schedule — live_in_session.yml đã update VN100 real-time trong phiên
+  # Bật lại nếu cần sync toàn bộ 1411 mã
+  # schedule:
+  #   - cron: '0 8 * * 1-5'
   workflow_dispatch:
 
 env:

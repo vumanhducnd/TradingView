@@ -14,6 +14,11 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, timedelta
 
+from dotenv import load_dotenv
+load_dotenv()
+
+from scanner.config import LOOKBACK_DAYS
+
 import pandas as pd
 
 from scanner.database import get_all_last_dates, get_watchlist, upsert_ohlcv
@@ -188,13 +193,16 @@ def sync_fallback(need: list[tuple], label: str = "fallback") -> tuple[int, list
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
-def sync():
+def sync(tickers_override: list[str] | None = None):
+    from scanner.data_fetcher import _set_api_key
+    _set_api_key()
+
     t0    = time.time()
     today = date.today()
     logger.info(f"=== Bat dau sync OHLCV ({today}) ===")
     logger.info(f"API key: {'co' if HAS_KEY else 'khong'}")
 
-    tickers    = get_watchlist()
+    tickers    = tickers_override or get_watchlist()
     last_dates = get_all_last_dates()
 
     if not tickers:
@@ -202,7 +210,7 @@ def sync():
         return
 
     # Phân loại ticker
-    cutoff = today - timedelta(days=5)
+    cutoff = today - timedelta(days=LOOKBACK_DAYS)  # 400 ngày — đủ warm-up cho mọi indicator
     need_today:    list[str]            = []  # chỉ cần bar hôm nay
     need_backfill: list[tuple]          = []  # thiếu nhiều ngày → phải dùng history
 
@@ -255,4 +263,11 @@ def sync():
 
 
 if __name__ == "__main__":
-    sync()
+    import sys
+    if "--vn100" in sys.argv:
+        from scanner.database import get_vn100_watchlist
+        vn100 = get_vn100_watchlist()
+        logger.info(f"Mode: VN100 only ({len(vn100)} ma)")
+        sync(tickers_override=vn100)
+    else:
+        sync()

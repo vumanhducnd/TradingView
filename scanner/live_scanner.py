@@ -419,33 +419,33 @@ def _is_market_open() -> bool:
 def run_session(interval: int = 180) -> None:
     """
     Loop chính trong phiên 9:00–15:15 ICT.
-    - Fetch toàn bộ VN100 bằng price_board (1 API call, ~0.5s)
-    - Upsert bar hôm nay vào DB sau mỗi cycle
-    - Tính SuperTrend real-time, detect flip
-    - Gửi Slack khi có mã lật trend
+    - Fetch toàn bộ watchlist bằng price_board (1 API call, ~0.5s) → upsert DB
+    - Tính SuperTrend real-time chỉ cho VN100 (có đủ 60 ngày lịch sử)
+    - Gửi Telegram khi có mã VN100 lật trend
     """
     _set_api_key()
     logger.info(f"=== Session Scanner START (mỗi {interval//60} phút, 9:00-15:15 ICT) ===")
 
-    vn100 = get_vn100_watchlist()
+    from scanner.database import get_watchlist
+    all_tickers = get_watchlist()   # toàn bộ watchlist để upsert DB
+    vn100       = get_vn100_watchlist()
     if not vn100:
         logger.error("VN100 watchlist trống")
         return
 
-    # ── Load lịch sử OHLCV 1 lần vào RAM ──
-    logger.info(f"Load lịch sử OHLCV từ DB cho {len(vn100)} mã...")
+    # ── Load lịch sử OHLCV cho VN100 (dùng để tính ST) ──
+    logger.info(f"Load lịch sử OHLCV VN100 từ DB ({len(vn100)} mã)...")
     ticker_data = load_all_from_db(tickers=vn100, days=60)
     today_ts = pd.Timestamp(date.today())
 
-    # Bỏ bar hôm nay trong cache (sẽ fetch real-time)
     hist_cache: dict[str, pd.DataFrame] = {
         t: df[df.index.normalize() < today_ts]
         for t, df in ticker_data.items()
         if not df[df.index.normalize() < today_ts].empty
     }
-    logger.info(f"Cache: {len(hist_cache)} mã")
+    logger.info(f"DB full: {len(all_tickers)} mã | ST cache: {len(hist_cache)} mã VN100")
 
-    # ── Init prev_trend từ SuperTrend của bar gần nhất trong DB ──
+    # ── Init prev_trend ──
     prev_trend: dict[str, int] = {}
     for ticker, hist_df in hist_cache.items():
         try:
@@ -456,8 +456,8 @@ def run_session(interval: int = 180) -> None:
 
     send_message(
         f"📡 <b>Session Scanner BẮT ĐẦU</b>\n"
-        f"Theo dõi {len(hist_cache)} mã VN100 | Quét mỗi {interval//60} phút\n"
-        f"Phiên: 09:00 – 15:15 ICT"
+        f"Update DB: {len(all_tickers)} mã | Tín hiệu ST: {len(hist_cache)} mã VN100\n"
+        f"Quét mỗi {interval//60} phút | Phiên: 09:00 – 15:15 ICT"
     )
 
     total_flips = 0
@@ -466,25 +466,26 @@ def run_session(interval: int = 180) -> None:
     while _is_market_open():
         now = datetime.now(ICT)
         scan_count += 1
-        logger.info(f"[{now.strftime('%H:%M')}] Scan #{scan_count} — {len(hist_cache)} mã...")
+        logger.info(f"[{now.strftime('%H:%M')}] Scan #{scan_count}...")
 
-        # ── Fetch bar hôm nay (1 API call) ──
-        today_bars = _fetch_via_price_board(list(hist_cache.keys()))
-        logger.info(f"  price_board: {len(today_bars)} bars")
+        # ── Fetch toàn bộ watchlist (1 API call) ──
+        today_bars = _fetch_via_price_board(all_tickers)
+        logger.info(f"  price_board: {len(today_bars)}/{len(all_tickers)} bars")
+
+        # ── Upsert DB cho tất cả mã có data ──
+        for ticker, bar in today_bars.items():
+            try:
+                upsert_ohlcv(ticker, pd.DataFrame([bar], index=[today_ts]))
+            except Exception as e:
+                logger.debug(f"upsert {ticker}: {e}")
 
         flips: list[dict] = []
 
+        # ── Tính ST chỉ cho VN100 ──
         for ticker, hist_df in hist_cache.items():
             bar = today_bars.get(ticker)
             if not bar:
                 continue
-
-            # Upsert DB (bar hôm nay, cập nhật liên tục trong phiên)
-            try:
-                bar_df = pd.DataFrame([bar], index=[today_ts])
-                upsert_ohlcv(ticker, bar_df)
-            except Exception as e:
-                logger.debug(f"upsert {ticker}: {e}")
 
             # Tính ST real-time
             result = _calc_realtime_st(hist_df, bar)

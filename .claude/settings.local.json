@@ -12,7 +12,9 @@
       "Bash(python test_one.py)",
       "Bash(python -c \"import google.generativeai; print\\('OK'\\)\")",
       "Bash(python -m scanner.updater --scan-only --force)",
-      "Bash(python test_price_board.py --find-limit)"
+      "Bash(python test_price_board.py --find-limit)",
+      "Bash(python sync_ohlcv.py)",
+      "Bash(python sync_ohlcv.py --vn100)"
     ]
   }
 }
