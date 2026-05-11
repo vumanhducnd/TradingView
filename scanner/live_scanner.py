@@ -436,7 +436,7 @@ def run_session(interval: int = 180) -> None:
 
     # ── Load lịch sử OHLCV cho top 300 (dùng để tính ST) ──
     logger.info(f"Load lịch sử OHLCV top 300 từ DB ({len(top300)} mã)...")
-    ticker_data = load_all_ohlcv_bulk(tickers=top300, days=90)
+    ticker_data = load_all_ohlcv_bulk(tickers=top300, days=300)
     today_ts = pd.Timestamp(date.today())
 
     hist_cache: dict[str, pd.DataFrame] = {
@@ -562,7 +562,7 @@ def _run_session_once() -> None:
     # ── Bước 2: Load lịch sử OHLCV ────────────────────────
     t2 = _time.time()
     logger.info(f"[2/5] Load OHLCV 90 ngay cho {len(top300)} ma tu DB...")
-    ticker_data = load_all_ohlcv_bulk(tickers=top300, days=90)
+    ticker_data = load_all_ohlcv_bulk(tickers=top300, days=300)
     hist_cache  = {
         t: df[df.index.normalize() < today_ts]
         for t, df in ticker_data.items()
