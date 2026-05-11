@@ -276,11 +276,12 @@ def _fetch_via_price_board(tickers: list[str]) -> dict[str, dict]:
                     continue
                 if high == low == close:
                     no_hl += 1          # chưa có H/L thực (ATO hoặc 1 lệnh đầu)
+                # price_board trả về VND thực (41500), DB lưu VND/1000 (41.5)
                 result[ticker] = {
-                    "open":   float(row["open"] or 0) or close,
-                    "high":   high,
-                    "low":    low,
-                    "close":  close,
+                    "open":   (float(row["open"] or 0) or close) / 1000,
+                    "high":   high   / 1000,
+                    "low":    low    / 1000,
+                    "close":  close  / 1000,
                     "volume": float(row["volume"] or 0),
                 }
             except (TypeError, ValueError):
