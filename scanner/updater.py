@@ -158,10 +158,10 @@ def run_scan_only() -> None:
                 logger.info(f"=== Xong (cache): {buy_n} MUA, {sell_n} BAN ===")
                 return
 
-    logger.info("Buoc 1/4: Load OHLCV tu DB (chi VN100)...")
-    from scanner.database import get_vn100_watchlist
-    vn100 = get_vn100_watchlist()
-    ticker_data = load_all_from_db(tickers=vn100 if vn100 else None)
+    logger.info("Buoc 1/4: Load OHLCV bulk tu DB (top 300)...")
+    from scanner.database import get_top_liquid_tickers, load_all_ohlcv_bulk
+    top300 = get_top_liquid_tickers(n=300)
+    ticker_data = load_all_ohlcv_bulk(tickers=top300, days=300)
     if not ticker_data:
         logger.error("Khong load duoc data tu DB")
         return
