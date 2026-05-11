@@ -537,6 +537,63 @@ def run_session(interval: int = 180) -> None:
     logger.info(f"=== Session Scanner KẾT THÚC — {total_flips} flips trong phiên ===")
 
 
+def _run_session_once() -> None:
+    """Chạy đúng 1 cycle để test — không cần trong giờ giao dịch."""
+    _set_api_key()
+    from scanner.database import get_watchlist
+    all_tickers = get_watchlist()
+    vn100       = get_vn100_watchlist()
+    today_ts    = pd.Timestamp(date.today())
+
+    logger.info(f"[TEST] Load lịch sử VN100...")
+    ticker_data = load_all_from_db(tickers=vn100, days=60)
+    hist_cache  = {
+        t: df[df.index.normalize() < today_ts]
+        for t, df in ticker_data.items()
+        if not df[df.index.normalize() < today_ts].empty
+    }
+
+    prev_trend: dict[str, int] = {}
+    for ticker, hist_df in hist_cache.items():
+        try:
+            prev_trend[ticker] = int(calc_supertrend(hist_df).iloc[-1]["trend"])
+        except Exception:
+            pass
+
+    logger.info(f"[TEST] Fetch price_board {len(all_tickers)} mã...")
+    today_bars = _fetch_via_price_board(all_tickers)
+    logger.info(f"[TEST] Nhận được {len(today_bars)} bars")
+
+    upsert_ok = 0
+    for ticker, bar in today_bars.items():
+        try:
+            upsert_ohlcv(ticker, pd.DataFrame([bar], index=[today_ts]))
+            upsert_ok += 1
+        except Exception as e:
+            logger.debug(f"upsert {ticker}: {e}")
+    logger.info(f"[TEST] Upsert DB: {upsert_ok}/{len(today_bars)}")
+
+    flips = []
+    for ticker, hist_df in hist_cache.items():
+        bar = today_bars.get(ticker)
+        if not bar:
+            continue
+        result = _calc_realtime_st(hist_df, bar)
+        if not result:
+            continue
+        prev = prev_trend.get(ticker)
+        if prev is not None and result["buy_signal"] and prev != 1:
+            flips.append((ticker, "buy", result["close"], result["supertrend"]))
+        elif prev is not None and result["sell_signal"] and prev != -1:
+            flips.append((ticker, "sell", result["close"], result["supertrend"]))
+
+    logger.info(f"[TEST] ST tính được: {sum(1 for t in hist_cache if today_bars.get(t))} mã")
+    logger.info(f"[TEST] Flips phát hiện: {len(flips)}")
+    for ticker, direction, price, st in flips:
+        logger.info(f"  {direction.upper()} {ticker} giá={price:,.0f} ST={st:,.0f}")
+    logger.info("[TEST] XONG — không gửi Telegram")
+
+
 # ─── CLI ──────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -555,11 +612,19 @@ if __name__ == "__main__":
         default=3,
         help="Phút giữa mỗi lần quét (default: 3)",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Chạy 1 cycle dù ngoài giờ giao dịch (để test)",
+    )
     args = parser.parse_args()
 
     if args.mode == "pre":
         run_pre_session()
     elif args.mode == "session":
-        run_session(interval=args.interval * 60)
+        if args.force:
+            _run_session_once()
+        else:
+            run_session(interval=args.interval * 60)
     else:
         run_realtime(mode=args.mode, interval=args.interval * 60)
