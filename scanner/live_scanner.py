@@ -463,8 +463,9 @@ def run_session(interval: int = 180) -> None:
         f"Quét mỗi {interval//60} phút | Phiên: 09:00 – 15:15 ICT"
     )
 
-    total_flips = 0
-    scan_count  = 0
+    total_flips   = 0
+    scan_count    = 0
+    alerted_today: set[str] = set()  # mã đã báo trong phiên → bỏ qua
 
     while _is_market_open():
         now = datetime.now(ICT)
@@ -494,18 +495,21 @@ def run_session(interval: int = 180) -> None:
             except Exception:
                 continue
 
-            if new_state["buy_signal"]:
-                flips.append({
-                    "ticker": ticker, "direction": "buy",
-                    "price": bar["close"], "st": new_state["supertrend"],
-                })
-            elif new_state["sell_signal"]:
-                flips.append({
-                    "ticker": ticker, "direction": "sell",
-                    "price": bar["close"], "st": new_state["supertrend"],
-                })
+            if ticker not in alerted_today:
+                if new_state["buy_signal"]:
+                    flips.append({
+                        "ticker": ticker, "direction": "buy",
+                        "price": bar["close"], "st": new_state["supertrend"],
+                    })
+                    alerted_today.add(ticker)
+                elif new_state["sell_signal"]:
+                    flips.append({
+                        "ticker": ticker, "direction": "sell",
+                        "price": bar["close"], "st": new_state["supertrend"],
+                    })
+                    alerted_today.add(ticker)
 
-            # Cập nhật state với close mới nhất (không thay đổi atr/up/dn cho đến bar kế)
+            # Cập nhật state với close mới nhất
             st_states[ticker] = {**new_state, "close": bar["close"]}
 
         # ── Gửi Telegram cho từng flip ──
