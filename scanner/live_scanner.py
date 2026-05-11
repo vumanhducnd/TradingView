@@ -52,13 +52,14 @@ def run_pre_session() -> None:
         logger.error("Watchlist trống")
         return
 
-    logger.info(f"Tính SuperTrend cho {len(vn100)} mã từ DB...")
+    logger.info(f"Load OHLCV bulk {len(vn100)} mã từ DB...")
+    ticker_data = load_all_ohlcv_bulk(tickers=vn100, days=300)
+    logger.info(f"Loaded {len(ticker_data)} mã, tính ST...")
     results: list[dict] = []
 
-    for ticker in vn100:
+    for ticker, df in ticker_data.items():
         try:
-            df = load_ohlcv(ticker, days=60)
-            if df.empty or len(df) < 20:
+            if len(df) < 20:
                 continue
             df = calc_supertrend(df)
             df = calc_bias_norm(df)
