@@ -199,6 +199,14 @@ def run_scan_only() -> None:
     except Exception as e:
         logger.warning(f"Telegram failed: {e}")
 
+    # Cập nhật thanh khoản trung bình 20 phiên cho toàn bộ watchlist
+    try:
+        from scanner.database import update_liquidity_stats
+        n_updated = update_liquidity_stats(days=20)
+        logger.info(f"Liquidity stats updated: {n_updated} tickers")
+    except Exception as e:
+        logger.warning(f"update_liquidity_stats failed: {e}")
+
     logger.info(f"=== Scan-only xong: {buy_n} MUA, {sell_n} BAN, {both_n} DONG THUAN ===")
 
 

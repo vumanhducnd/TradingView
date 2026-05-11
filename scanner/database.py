@@ -118,33 +118,95 @@ def get_vn100_watchlist() -> list[str]:
         return [r["ticker"] for r in cur.fetchall()]
 
 
-def get_top_liquid_tickers(n: int = 300, days: int = 20) -> list[str]:
+def get_top_liquid_tickers(n: int = 300) -> list[str]:
     """
-    Trả về top N mã thanh khoản cao nhất dựa trên trung bình turnover (volume*close)
-    trong N ngày giao dịch gần nhất. Fallback về VN100 nếu DB không đủ data.
+    Trả về top N mã theo avg_turnover_20d đã tính sẵn trong watchlist.
+    Fallback về tính trực tiếp từ ohlcv nếu cột chưa có data.
     """
+    try:
+        with db_cursor(commit=False) as cur:
+            # Dùng cột pre-computed (nhanh)
+            cur.execute(
+                """
+                SELECT ticker FROM watchlist
+                WHERE avg_turnover_20d IS NOT NULL AND avg_turnover_20d > 0
+                ORDER BY avg_turnover_20d DESC
+                LIMIT %s
+                """,
+                (n,),
+            )
+            result = [r["ticker"] for r in cur.fetchall()]
+            if len(result) >= min(n, 50):   # đủ data mới tin
+                return result
+    except Exception:
+        pass
+
+    # Fallback: tính trực tiếp từ ohlcv
+    logger.warning("avg_turnover_20d chưa có, tính trực tiếp từ ohlcv...")
     try:
         with db_cursor(commit=False) as cur:
             cur.execute(
                 """
                 SELECT ticker
                 FROM ohlcv
-                WHERE date >= CURRENT_DATE - INTERVAL '%(days)s days'
+                WHERE date >= CURRENT_DATE - INTERVAL '30 days'
                   AND close > 0 AND volume > 0
                 GROUP BY ticker
-                HAVING COUNT(*) >= %(min_bars)s
+                HAVING COUNT(*) >= 10
                 ORDER BY AVG(volume * close) DESC
-                LIMIT %(n)s
+                LIMIT %s
                 """,
-                {"days": days, "min_bars": max(5, days // 2), "n": n},
+                (n,),
             )
             result = [r["ticker"] for r in cur.fetchall()]
             if result:
                 return result
     except Exception as e:
-        logger.warning(f"get_top_liquid_tickers failed: {e}")
-    # Fallback
+        logger.warning(f"get_top_liquid_tickers fallback failed: {e}")
     return get_vn100_watchlist()
+
+
+def update_liquidity_stats(days: int = 20) -> int:
+    """
+    Tính avg_turnover_20d và avg_volume_20d cho tất cả ticker trong watchlist,
+    lưu lại vào bảng watchlist. Gọi hàng ngày sau khi đóng cửa.
+    Trả về số ticker đã update.
+    """
+    # Tạo cột nếu chưa có
+    with db_cursor(commit=True) as cur:
+        cur.execute("""
+            ALTER TABLE watchlist
+                ADD COLUMN IF NOT EXISTS avg_turnover_20d DOUBLE PRECISION,
+                ADD COLUMN IF NOT EXISTS avg_volume_20d   DOUBLE PRECISION,
+                ADD COLUMN IF NOT EXISTS liquidity_updated_at TIMESTAMP
+        """)
+
+    # Tính và update
+    with db_cursor(commit=True) as cur:
+        cur.execute(
+            """
+            UPDATE watchlist w
+            SET avg_turnover_20d      = stats.avg_turnover,
+                avg_volume_20d        = stats.avg_volume,
+                liquidity_updated_at  = NOW()
+            FROM (
+                SELECT ticker,
+                       AVG(volume * close) AS avg_turnover,
+                       AVG(volume)         AS avg_volume
+                FROM ohlcv
+                WHERE date >= CURRENT_DATE - INTERVAL '%(days)s days'
+                  AND close > 0 AND volume > 0
+                GROUP BY ticker
+                HAVING COUNT(*) >= %(min_bars)s
+            ) stats
+            WHERE w.ticker = stats.ticker
+            """,
+            {"days": days, "min_bars": max(5, days // 2)},
+        )
+        updated = cur.rowcount
+
+    logger.info(f"update_liquidity_stats: {updated} tickers updated (last {days} days)")
+    return updated
 
 
 # ─── OHLCV ────────────────────────────────────────────────────────────────────
