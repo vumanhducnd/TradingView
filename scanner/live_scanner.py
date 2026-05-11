@@ -22,7 +22,7 @@ from typing import Optional
 import pandas as pd
 import scanner.utils  # noqa: patch SSL trước
 from scanner.data_fetcher import _set_api_key, load_all_from_db
-from scanner.database import get_vn100_watchlist, load_ohlcv, upsert_ohlcv
+from scanner.database import get_top_liquid_tickers, get_vn100_watchlist, load_ohlcv, upsert_ohlcv
 from scanner.indicators import calc_bias_norm, calc_supertrend
 from scanner.telegram_bot import send_message
 from scanner.utils import fmt_price, logger
@@ -44,12 +44,12 @@ MODE_UNTIL = {
 # ─── Pre-session (8:30 ICT) ───────────────────────────────────────────────────
 
 def run_pre_session() -> None:
-    """Báo cáo sáng: load data DB, tính ST, gửi Telegram tóm tắt VN100."""
+    """Báo cáo sáng: load data DB, tính ST, gửi Telegram tóm tắt top 300."""
     _set_api_key()
     logger.info("=== Pre-session scan (8:30 ICT) ===")
-    vn100 = get_vn100_watchlist()
+    vn100 = get_top_liquid_tickers(n=300)
     if not vn100:
-        logger.error("VN100 watchlist trống")
+        logger.error("Watchlist trống")
         return
 
     logger.info(f"Tính SuperTrend cho {len(vn100)} mã từ DB...")
@@ -427,15 +427,15 @@ def run_session(interval: int = 180) -> None:
     logger.info(f"=== Session Scanner START (mỗi {interval//60} phút, 9:00-15:15 ICT) ===")
 
     from scanner.database import get_watchlist
-    all_tickers = get_watchlist()   # toàn bộ watchlist để upsert DB
-    vn100       = get_vn100_watchlist()
-    if not vn100:
-        logger.error("VN100 watchlist trống")
+    all_tickers  = get_watchlist()                  # toàn bộ để upsert DB
+    top300       = get_top_liquid_tickers(n=300)    # top 300 để tính ST + alert
+    if not top300:
+        logger.error("Watchlist trống")
         return
 
-    # ── Load lịch sử OHLCV cho VN100 (dùng để tính ST) ──
-    logger.info(f"Load lịch sử OHLCV VN100 từ DB ({len(vn100)} mã)...")
-    ticker_data = load_all_from_db(tickers=vn100, days=60)
+    # ── Load lịch sử OHLCV cho top 300 (dùng để tính ST) ──
+    logger.info(f"Load lịch sử OHLCV top 300 từ DB ({len(top300)} mã)...")
+    ticker_data = load_all_from_db(tickers=top300, days=60)
     today_ts = pd.Timestamp(date.today())
 
     hist_cache: dict[str, pd.DataFrame] = {
@@ -443,7 +443,7 @@ def run_session(interval: int = 180) -> None:
         for t, df in ticker_data.items()
         if not df[df.index.normalize() < today_ts].empty
     }
-    logger.info(f"DB full: {len(all_tickers)} mã | ST cache: {len(hist_cache)} mã VN100")
+    logger.info(f"DB full: {len(all_tickers)} mã | ST cache: {len(hist_cache)} mã top 300")
 
     # ── Init prev_trend ──
     prev_trend: dict[str, int] = {}
@@ -456,7 +456,7 @@ def run_session(interval: int = 180) -> None:
 
     send_message(
         f"📡 <b>Session Scanner BẮT ĐẦU</b>\n"
-        f"Update DB: {len(all_tickers)} mã | Tín hiệu ST: {len(hist_cache)} mã VN100\n"
+        f"Update DB: {len(all_tickers)} mã | Tín hiệu ST: {len(hist_cache)} mã top 300\n"
         f"Quét mỗi {interval//60} phút | Phiên: 09:00 – 15:15 ICT"
     )
 
@@ -481,7 +481,7 @@ def run_session(interval: int = 180) -> None:
 
         flips: list[dict] = []
 
-        # ── Tính ST chỉ cho VN100 ──
+        # ── Tính ST cho top 300 ──
         for ticker, hist_df in hist_cache.items():
             bar = today_bars.get(ticker)
             if not bar:

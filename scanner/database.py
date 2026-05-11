@@ -118,6 +118,35 @@ def get_vn100_watchlist() -> list[str]:
         return [r["ticker"] for r in cur.fetchall()]
 
 
+def get_top_liquid_tickers(n: int = 300, days: int = 20) -> list[str]:
+    """
+    Trả về top N mã thanh khoản cao nhất dựa trên trung bình turnover (volume*close)
+    trong N ngày giao dịch gần nhất. Fallback về VN100 nếu DB không đủ data.
+    """
+    try:
+        with db_cursor(commit=False) as cur:
+            cur.execute(
+                """
+                SELECT ticker
+                FROM ohlcv
+                WHERE date >= CURRENT_DATE - INTERVAL '%(days)s days'
+                  AND close > 0 AND volume > 0
+                GROUP BY ticker
+                HAVING COUNT(*) >= %(min_bars)s
+                ORDER BY AVG(volume * close) DESC
+                LIMIT %(n)s
+                """,
+                {"days": days, "min_bars": max(5, days // 2), "n": n},
+            )
+            result = [r["ticker"] for r in cur.fetchall()]
+            if result:
+                return result
+    except Exception as e:
+        logger.warning(f"get_top_liquid_tickers failed: {e}")
+    # Fallback
+    return get_vn100_watchlist()
+
+
 # ─── OHLCV ────────────────────────────────────────────────────────────────────
 
 def upsert_ohlcv(ticker: str, df: pd.DataFrame) -> int:
