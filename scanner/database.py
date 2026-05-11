@@ -281,17 +281,33 @@ def bulk_upsert_today(bars: dict[str, dict], today: "date") -> int:
     return len(rows)
 
 
-def load_all_ohlcv_bulk(days: int = 400) -> dict[str, pd.DataFrame]:
-    """Load OHLCV toàn bộ ticker trong 1 query — nhanh hơn gọi từng ticker."""
+def load_all_ohlcv_bulk(
+    days: int = 400,
+    tickers: list[str] | None = None,
+) -> dict[str, pd.DataFrame]:
+    """Load OHLCV trong 1 query. tickers=None → toàn bộ watchlist."""
     since = date.today() - timedelta(days=days)
-    sql = """
-        SELECT ticker, date, open, high, low, close, volume
-        FROM ohlcv
-        WHERE date >= %s
-        ORDER BY ticker, date ASC
-    """
     with db_cursor(commit=False) as cur:
-        cur.execute(sql, (since,))
+        if tickers:
+            cur.execute(
+                """
+                SELECT ticker, date, open, high, low, close, volume
+                FROM ohlcv
+                WHERE date >= %s AND ticker = ANY(%s)
+                ORDER BY ticker, date ASC
+                """,
+                (since, tickers),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT ticker, date, open, high, low, close, volume
+                FROM ohlcv
+                WHERE date >= %s
+                ORDER BY ticker, date ASC
+                """,
+                (since,),
+            )
         rows = cur.fetchall()
 
     if not rows:
@@ -590,7 +606,6 @@ def load_signal_history(days: int = 90) -> pd.DataFrame:
     since = date.today() - timedelta(days=days)
     sql = "SELECT * FROM signals WHERE signal_date >= %s ORDER BY signal_date DESC"
     with db_cursor(commit=False) as cur:
-        cur.execute(sql, (since,))
         rows = cur.fetchall()
     return pd.DataFrame(rows) if rows else pd.DataFrame()
 

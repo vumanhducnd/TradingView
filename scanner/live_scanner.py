@@ -22,7 +22,7 @@ from typing import Optional
 import pandas as pd
 import scanner.utils  # noqa: patch SSL trước
 from scanner.data_fetcher import _set_api_key, load_all_from_db
-from scanner.database import bulk_upsert_today, get_top_liquid_tickers, get_vn100_watchlist, load_ohlcv, upsert_ohlcv
+from scanner.database import bulk_upsert_today, get_top_liquid_tickers, get_vn100_watchlist, load_all_ohlcv_bulk, load_ohlcv, upsert_ohlcv
 from scanner.indicators import calc_bias_norm, calc_supertrend, calc_supertrend_next, get_supertrend_state
 from scanner.telegram_bot import send_message
 from scanner.utils import fmt_price, logger
@@ -435,7 +435,7 @@ def run_session(interval: int = 180) -> None:
 
     # ── Load lịch sử OHLCV cho top 300 (dùng để tính ST) ──
     logger.info(f"Load lịch sử OHLCV top 300 từ DB ({len(top300)} mã)...")
-    ticker_data = load_all_from_db(tickers=top300, days=90)
+    ticker_data = load_all_ohlcv_bulk(tickers=top300, days=90)
     today_ts = pd.Timestamp(date.today())
 
     hist_cache: dict[str, pd.DataFrame] = {
@@ -561,7 +561,7 @@ def _run_session_once() -> None:
     # ── Bước 2: Load lịch sử OHLCV ────────────────────────
     t2 = _time.time()
     logger.info(f"[2/5] Load OHLCV 90 ngay cho {len(top300)} ma tu DB...")
-    ticker_data = load_all_from_db(tickers=top300, days=90)
+    ticker_data = load_all_ohlcv_bulk(tickers=top300, days=90)
     hist_cache  = {
         t: df[df.index.normalize() < today_ts]
         for t, df in ticker_data.items()
