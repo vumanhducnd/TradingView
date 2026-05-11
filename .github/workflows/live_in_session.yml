@@ -1,0 +1,48 @@
+name: Live Session Scanner (9:00–15:15 ICT)
+
+# Chạy 1 job duy nhất từ 9:00 đến 15:15 ICT (6h15m).
+# GitHub Actions giới hạn 6h/job → cần timeout-minutes: 390 (6.5h).
+# Job tự dừng khi _is_market_open() = False (15:15 ICT).
+
+on:
+  schedule:
+    # 02:00 UTC = 09:00 ICT (GMT+7), thứ 2–6
+    - cron: '0 2 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      interval:
+        description: 'Phút giữa mỗi lần quét (default: 3)'
+        required: false
+        default: '3'
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  session:
+    runs-on: ubuntu-latest
+    timeout-minutes: 390   # 6.5h — đủ cho 9:00–15:15 ICT + setup
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run session scanner
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
+          DATABASE_URL:       ${{ secrets.DATABASE_URL }}
+          VNSTOCK_API_KEY:    ${{ secrets.VNSTOCK_API_KEY }}
+          SLACK_WEBHOOK_URL:  ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          INTERVAL=${{ inputs.interval || '3' }}
+          python -m scanner.live_scanner --mode session --interval $INTERVAL

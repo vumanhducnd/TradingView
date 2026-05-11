@@ -1,0 +1,36 @@
+name: Live Pre-session Scan (8:30 ICT)
+
+on:
+  schedule:
+    # 01:30 UTC = 08:30 ICT (GMT+7), thứ 2–6
+    - cron: '30 1 * * 1-5'
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  pre-session:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Báo cáo đầu phiên VN100
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
+          DATABASE_URL:       ${{ secrets.DATABASE_URL }}
+          VNSTOCK_API_KEY:    ${{ secrets.VNSTOCK_API_KEY }}
+        run: python -m scanner.live_scanner --mode pre
