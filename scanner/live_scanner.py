@@ -1,243 +1,409 @@
 """
-Live scanner — chạy trong phiên giao dịch (9:00 - 15:15 ICT).
-Mỗi N phút: fetch giá hiện tại → so sánh vs SuperTrend level hôm qua.
-Alert Telegram khi giá tiệm cận hoặc vượt ngưỡng lật.
+Live scanner — chạy trong phiên giao dịch (9:00–15:15 ICT).
 
-Chạy: python -m scanner.live_scanner
+Modes:
+  pre       — 8:30 ICT: báo cáo sáng dùng data DB hôm qua (1 lần, thoát)
+  session   — 9:00–15:15 ICT: loop 3 phút, price_board batch, upsert DB, Slack flip alert
+  morning   — 9:00–12:00 ICT: loop cũ (giữ tương thích)
+  afternoon — 12:00–15:15 ICT: loop cũ (giữ tương thích)
+
+Chạy:
+  python -m scanner.live_scanner --mode pre
+  python -m scanner.live_scanner --mode session
+  python -m scanner.live_scanner --mode session --interval 3
 """
 
 from __future__ import annotations
 
 import time
-from datetime import date, datetime, timezone, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 import pandas as pd
 import scanner.utils  # noqa: patch SSL trước
-from scanner.config import TELEGRAM_CHAT_ID, TELEGRAM_TOKEN
-from scanner.database import get_watchlist, load_ohlcv, load_scan_results, load_scan_dates
-from scanner.indicators import calc_supertrend
+from scanner.data_fetcher import _set_api_key, load_all_from_db
+from scanner.database import get_vn100_watchlist, load_ohlcv, upsert_ohlcv
+from scanner.indicators import calc_bias_norm, calc_supertrend
 from scanner.telegram_bot import send_message
 from scanner.utils import fmt_price, logger
 
 # ─── Config ───────────────────────────────────────────────────────────────────
-SCAN_INTERVAL_SEC = 5 * 60        # quét mỗi 5 phút
-APPROACH_THRESHOLD_PCT = 1.5      # cảnh báo khi giá cách ST < 1.5%
-MAX_WORKERS_LIVE = 3              # số ticker fetch song song
+SCAN_INTERVAL_SEC      = 5 * 60      # quét mỗi 5 phút
+APPROACH_THRESHOLD_PCT = 1.5         # % cách ST để cảnh báo tiệm cận
+FETCH_DELAY_LIVE       = 1.0         # giây chờ giữa request khi dùng fallback per-ticker
 
-ICT = timezone(timedelta(hours=7))  # UTC+7
+ICT = timezone(timedelta(hours=7))   # UTC+7
 
-MARKET_OPEN  = (9,  0)
-MARKET_CLOSE = (15, 15)
+# Mỗi mode chạy đến giờ này rồi dừng
+MODE_UNTIL = {
+    "morning":   (12, 0),
+    "afternoon": (15, 15),
+}
 
 
-# ─── Main loop ────────────────────────────────────────────────────────────────
+# ─── Pre-session (8:30 ICT) ───────────────────────────────────────────────────
 
-def run(interval: int = SCAN_INTERVAL_SEC) -> None:
-    logger.info("=== Live Scanner START ===")
-    logger.info(f"Quét mỗi {interval//60} phút | Ngưỡng cảnh báo: {APPROACH_THRESHOLD_PCT}%")
-
-    # Load SuperTrend levels từ scan_results hôm qua / gần nhất
-    st_levels = _load_supertrend_levels()
-    if not st_levels:
-        logger.error("Không có SuperTrend levels. Chạy scanner.updater trước.")
+def run_pre_session() -> None:
+    """Báo cáo sáng: load data DB, tính ST, gửi Telegram tóm tắt VN100."""
+    _set_api_key()
+    logger.info("=== Pre-session scan (8:30 ICT) ===")
+    vn100 = get_vn100_watchlist()
+    if not vn100:
+        logger.error("VN100 watchlist trống")
         return
 
-    logger.info(f"Loaded {len(st_levels)} SuperTrend levels")
-    send_message(
-        f"🟡 <b>Live Scanner BẮT ĐẦU</b>\n"
-        f"Theo dõi {len(st_levels)} mã | Cảnh báo khi giá cách ST &lt;{APPROACH_THRESHOLD_PCT}%\n"
-        f"Quét mỗi {interval//60} phút | Kết thúc lúc 15:15 ICT"
-    )
+    logger.info(f"Tính SuperTrend cho {len(vn100)} mã từ DB...")
+    results: list[dict] = []
 
-    alerted: set[str] = set()  # tránh gửi alert trùng lặp trong ngày
-
-    while _is_market_open():
-        now = datetime.now(ICT).strftime("%H:%M")
-        logger.info(f"[{now}] Đang quét {len(st_levels)} mã...")
-
-        prices = _fetch_all_prices(list(st_levels.keys()))
-        if not prices:
-            logger.warning("Không fetch được giá nào")
-            time.sleep(interval)
-            continue
-
-        alerts = _check_signals(st_levels, prices, alerted)
-        if alerts:
-            _send_alerts(alerts)
-            for a in alerts:
-                alerted.add(f"{a['ticker']}_{a['type']}")
-
-        logger.info(f"  → {len(prices)} giá | {len(alerts)} cảnh báo mới")
-        time.sleep(interval)
-
-    logger.info("Thị trường đã đóng cửa. Live Scanner kết thúc.")
-    send_message("🔴 <b>Live Scanner KẾT THÚC</b> — Thị trường đóng cửa 15:15 ICT")
-
-
-# ─── Logic ────────────────────────────────────────────────────────────────────
-
-def _load_supertrend_levels() -> dict[str, dict]:
-    """
-    Load SuperTrend level từ scan_results (ngày gần nhất trong DB).
-    Returns {ticker: {trend, supertrend, close, bias_norm}}
-    """
-    try:
-        dates = load_scan_dates()
-        if not dates:
-            return {}
-        latest = dates[0]
-        df = load_scan_results(latest)
-        if df.empty:
-            return {}
-        result = {}
-        for _, row in df.iterrows():
-            result[row["ticker"]] = {
-                "trend":      int(row.get("trend", 1)),
-                "supertrend": float(row.get("supertrend", 0)),
-                "close":      float(row.get("close", 0)),
-                "bias_norm":  float(row.get("bias_norm", 50)),
-            }
-        return result
-    except Exception:
-        # Fallback: tính lại từ OHLCV DB
-        return _compute_levels_from_db()
-
-
-def _compute_levels_from_db() -> dict[str, dict]:
-    """Tính SuperTrend trực tiếp từ OHLCV trong DB (fallback)."""
-    tickers = get_watchlist()
-    result = {}
-    for ticker in tickers:
+    for ticker in vn100:
         try:
             df = load_ohlcv(ticker, days=60)
             if df.empty or len(df) < 20:
                 continue
             df = calc_supertrend(df)
+            df = calc_bias_norm(df)
             last = df.iloc[-1]
-            result[ticker] = {
+            results.append({
+                "ticker":     ticker,
+                "close":      float(last["close"]),
                 "trend":      int(last["trend"]),
                 "supertrend": float(last["supertrend"]),
-                "close":      float(last["close"]),
-                "bias_norm":  50.0,
-            }
-        except Exception:
-            pass
-    return result
+                "bias_norm":  round(float(last["bias_norm"]), 1),
+            })
+        except Exception as e:
+            logger.debug(f"{ticker}: {e}")
+
+    if not results:
+        logger.error("Không có kết quả")
+        return
+
+    bull = [r for r in results if r["trend"] == 1]
+    bear = [r for r in results if r["trend"] == -1]
+
+    # Mã gần ngưỡng lật nhất (dist < 2%)
+    near_flip = []
+    for r in results:
+        dist = abs(r["close"] - r["supertrend"]) / r["supertrend"] * 100 if r["supertrend"] else 99
+        if dist < 2.0:
+            near_flip.append({**r, "dist_pct": round(dist, 2)})
+    near_flip.sort(key=lambda x: x["dist_pct"])
+
+    today_str = datetime.now(ICT).strftime("%d/%m/%Y")
+    lines = [
+        f"🌅 <b>Báo cáo đầu phiên VN100 — {today_str}</b>\n",
+        f"📊 Xu hướng: 🟢 <b>{len(bull)}</b> tăng | 🔴 <b>{len(bear)}</b> giảm",
+    ]
+
+    if near_flip:
+        lines.append(f"\n⚠️ <b>Gần ngưỡng lật (&lt;2%) — {len(near_flip)} mã:</b>")
+        for r in near_flip[:10]:
+            arrow = "⬇️" if r["trend"] == 1 else "⬆️"
+            lines.append(
+                f"  {arrow} <b>{r['ticker']}</b> | "
+                f"Giá {fmt_price(r['close'])} → ST {fmt_price(r['supertrend'])} "
+                f"({r['dist_pct']:.1f}%)"
+            )
+
+    top_bull = sorted(bull, key=lambda x: -x["bias_norm"])[:5]
+    if top_bull:
+        lines.append("\n🔥 <b>Top 5 BiasNorm (xu hướng tăng):</b>")
+        for r in top_bull:
+            lines.append(
+                f"  <b>{r['ticker']}</b> | ST {fmt_price(r['supertrend'])} | "
+                f"Bias {r['bias_norm']:.0f}/100"
+            )
+
+    send_message("\n".join(lines))
+    logger.info(f"Pre-session xong: {len(bull)} tăng, {len(bear)} giảm, {len(near_flip)} gần lật")
 
 
-def _fetch_all_prices(tickers: list[str]) -> dict[str, float]:
+# ─── Real-time loop (morning / afternoon) ─────────────────────────────────────
+
+def run_realtime(mode: str, interval: int = SCAN_INTERVAL_SEC) -> None:
     """
-    Fetch giá hiện tại (last price) cho tất cả ticker.
-    Dùng Quote.history() với ngày hôm nay để lấy bar đang hình thành.
+    Loop quét ST real-time trong phiên.
+    Mỗi vòng: fetch bar hôm nay (O/H/L/C/V) → ghép vào lịch sử → tính lại ST.
     """
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-    prices: dict[str, float] = {}
+    _set_api_key()
+    until_h, until_m = MODE_UNTIL[mode]
+    logger.info(f"=== Live Scanner [{mode.upper()}] START — đến {until_h:02d}:{until_m:02d} ICT ===")
+
+    vn100 = get_vn100_watchlist()
+    if not vn100:
+        logger.error("VN100 watchlist trống")
+        return
+
+    # ── Load lịch sử OHLCV 1 lần duy nhất vào RAM ──
+    logger.info(f"Load lịch sử OHLCV từ DB cho {len(vn100)} mã (1 lần)...")
+    hist_cache: dict[str, pd.DataFrame] = {}
+    today_ts = pd.Timestamp(date.today())
+
+    for ticker in vn100:
+        try:
+            df = load_ohlcv(ticker, days=60)
+            if df.empty or len(df) < 20:
+                continue
+            # Loại bar hôm nay nếu có trong DB (sẽ fetch real-time)
+            df = df[df.index.normalize() < today_ts]
+            if not df.empty:
+                hist_cache[ticker] = df
+        except Exception as e:
+            logger.debug(f"{ticker} load_ohlcv: {e}")
+
+    logger.info(f"Cache xong: {len(hist_cache)} mã")
+    send_message(
+        f"🟡 <b>Live Scanner [{mode.upper()}] BẮT ĐẦU</b>\n"
+        f"Theo dõi {len(hist_cache)} mã VN100\n"
+        f"Quét mỗi {interval//60} phút — kết thúc {until_h:02d}:{until_m:02d} ICT"
+    )
+
+    alerted: set[str] = set()
+    scan_count = 0
+
+    while True:
+        now = datetime.now(ICT)
+        if (now.hour, now.minute) >= (until_h, until_m):
+            logger.info(f"Đã đến {until_h:02d}:{until_m:02d} — dừng vòng lặp")
+            break
+
+        scan_count += 1
+        logger.info(f"[{now.strftime('%H:%M')}] Scan #{scan_count} — {len(hist_cache)} mã...")
+
+        # Fetch bar hôm nay (O/H/L/C/V) song song
+        today_bars = _fetch_all_today_bars(list(hist_cache.keys()))
+
+        # Tính ST real-time + phát hiện tín hiệu
+        alerts: list[dict] = []
+        for ticker, hist_df in hist_cache.items():
+            bar = today_bars.get(ticker)
+            if bar is None:
+                continue
+            result = _calc_realtime_st(hist_df, bar)
+            if result is None:
+                continue
+            _collect_alerts(ticker, result, alerted, alerts)
+
+        # Ưu tiên flip trước, tiệm cận sau; cùng loại thì sort theo dist_pct tăng dần
+        alerts.sort(key=lambda a: (0 if "cross" in a["type"] else 1, a["dist_pct"]))
+
+        if alerts:
+            _send_alerts(alerts)
+            for a in alerts:
+                alerted.add(f"{a['ticker']}_{a['type']}")
+
+        logger.info(f"  → {len(today_bars)} bar | {len(alerts)} cảnh báo mới")
+
+        elapsed = (datetime.now(ICT) - now).total_seconds()
+        sleep_sec = max(0, interval - elapsed)
+        if sleep_sec > 0:
+            time.sleep(sleep_sec)
+
+    send_message(
+        f"🔴 <b>Live Scanner [{mode.upper()}] KẾT THÚC</b> — {until_h:02d}:{until_m:02d} ICT"
+    )
+
+
+# ─── Fetch helpers ────────────────────────────────────────────────────────────
+
+def _fetch_all_today_bars(tickers: list[str]) -> dict[str, dict]:
+    """
+    Fetch bar hôm nay cho tất cả tickers bằng price_board (1 API call).
+    Fallback sang per-ticker nếu price_board thất bại.
+    """
+    result = _fetch_via_price_board(tickers)
+    if result:
+        logger.info(f"  price_board: {len(result)}/{len(tickers)} mã")
+        return result
+
+    logger.warning("price_board thất bại, fallback per-ticker...")
+    return _fetch_via_history(tickers)
+
+
+def _fetch_via_price_board(tickers: list[str]) -> dict[str, dict]:
+    """
+    1 API call trả về session O/H/L/C/V cho toàn bộ danh sách.
+    price_board trả về MultiIndex columns — flatten rồi map về chuẩn.
+    """
+    try:
+        from vnstock import Trading
+        t = Trading(source="VCI")
+        df = t.price_board(symbols_list=tickers)
+        if df is None or df.empty:
+            return {}
+
+        # Flatten MultiIndex: ('match', 'highest') → 'match.highest'
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = [
+                f"{a}.{b}".lower().strip() if b and str(b) != "nan" else str(a).lower().strip()
+                for a, b in df.columns
+            ]
+        else:
+            df.columns = [str(c).lower().strip() for c in df.columns]
+
+        # Map tên cột price_board → chuẩn OHLCV
+        FIELD_MAP = {
+            "ticker": ["listing.symbol"],
+            "open":   ["match.open_price"],
+            "high":   ["match.highest"],
+            "low":    ["match.lowest"],
+            "close":  ["match.match_price"],
+            "volume": ["match.accumulated_volume"],
+        }
+        col_map: dict[str, str] = {}
+        for target, candidates in FIELD_MAP.items():
+            for c in candidates:
+                if c in df.columns:
+                    col_map[c] = target
+                    break
+
+        df = df.rename(columns=col_map)
+        required = {"ticker", "open", "high", "low", "close", "volume"}
+        if not required.issubset(df.columns):
+            logger.warning(f"price_board thiếu cột: {required - set(df.columns)}")
+            return {}
+
+        result: dict[str, dict] = {}
+        no_hl = 0
+        for _, row in df.iterrows():
+            ticker = str(row["ticker"]).strip().upper()
+            try:
+                close = float(row["close"] or 0)
+                if close <= 0:
+                    continue
+                high = float(row["high"] or 0) or close
+                low  = float(row["low"]  or 0) or close
+                if high < low:          # data lỗi, bỏ qua
+                    continue
+                if high == low == close:
+                    no_hl += 1          # chưa có H/L thực (ATO hoặc 1 lệnh đầu)
+                result[ticker] = {
+                    "open":   float(row["open"] or 0) or close,
+                    "high":   high,
+                    "low":    low,
+                    "close":  close,
+                    "volume": float(row["volume"] or 0),
+                }
+            except (TypeError, ValueError):
+                continue
+        if no_hl:
+            logger.debug(f"price_board: {no_hl} mã H=L=C (chưa có session H/L)")
+        return result
+    except Exception as e:
+        logger.debug(f"price_board error: {e}")
+        return {}
+
+
+def _fetch_via_history(tickers: list[str]) -> dict[str, dict]:
+    """Fallback: per-ticker Quote.history() với delay 1s/req."""
     today = date.today().strftime("%Y-%m-%d")
-
-    def _fetch_one(ticker: str) -> tuple[str, Optional[float]]:
+    result: dict[str, dict] = {}
+    for ticker in tickers:
         try:
             from vnstock.api.quote import Quote
-            for source in ["VCI", "KBS"]:
+            for source in ["VCI", "TCBS"]:
                 try:
-                    q = Quote(symbol=ticker, source=source)
-                    df = q.history(start=today, end=today, interval="1D")
-                    if df is not None and not df.empty:
-                        close_col = next(
-                            (c for c in ["close", "Close", "price"] if c in df.columns), None
-                        )
-                        if close_col:
-                            return ticker, float(df[close_col].iloc[-1])
+                    df = Quote(symbol=ticker, source=source).history(
+                        start=today, end=today, interval="1D"
+                    )
+                    if df is None or df.empty:
+                        continue
+                    df.columns = [c.lower() for c in df.columns]
+                    row = df.iloc[-1]
+                    close = float(row.get("close", row.get("c", 0)))
+                    if close > 0:
+                        result[ticker] = {
+                            "open":   float(row.get("open",   close)),
+                            "high":   float(row.get("high",   close)),
+                            "low":    float(row.get("low",    close)),
+                            "close":  close,
+                            "volume": float(row.get("volume", 0)),
+                        }
+                        break
                 except Exception:
                     continue
         except Exception:
             pass
-        return ticker, None
-
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS_LIVE) as exe:
-        futures = {exe.submit(_fetch_one, t): t for t in tickers}
-        for f in as_completed(futures):
-            ticker, price = f.result()
-            if price is not None:
-                prices[ticker] = price
-
-    return prices
+        time.sleep(FETCH_DELAY_LIVE)
+    return result
 
 
-def _check_signals(
-    st_levels: dict[str, dict],
-    prices: dict[str, float],
+# ─── ST calculation ───────────────────────────────────────────────────────────
+
+def _calc_realtime_st(hist_df: pd.DataFrame, today_bar: dict) -> Optional[dict]:
+    """Ghép bar hôm nay vào lịch sử, tính lại SuperTrend, trả về kết quả bar cuối."""
+    try:
+        today_row = pd.DataFrame(
+            [today_bar],
+            index=[pd.Timestamp(date.today())],
+        )
+        df = pd.concat([hist_df, today_row])
+        df = calc_supertrend(df)
+        last = df.iloc[-1]
+        return {
+            "close":      float(last["close"]),
+            "trend":      int(last["trend"]),
+            "supertrend": float(last["supertrend"]),
+            "buy_signal": bool(last["buy_signal"]),
+            "sell_signal": bool(last["sell_signal"]),
+        }
+    except Exception:
+        return None
+
+
+# ─── Alert helpers ────────────────────────────────────────────────────────────
+
+def _collect_alerts(
+    ticker: str,
+    result: dict,
     already_alerted: set[str],
-) -> list[dict]:
-    """
-    So sánh giá hiện tại vs SuperTrend level.
-    Trả về danh sách alert chưa gửi.
-    """
-    alerts = []
+    alerts: list[dict],
+) -> None:
+    """Kiểm tra flip / tiệm cận, thêm vào alerts nếu chưa gửi hôm nay."""
+    price = result["close"]
+    st    = result["supertrend"]
+    trend = result["trend"]
+    dist_pct = abs(price - st) / st * 100 if st else 0
 
-    for ticker, info in st_levels.items():
-        price = prices.get(ticker)
-        if not price or not info["supertrend"]:
-            continue
+    if result["buy_signal"] and f"{ticker}_cross_buy" not in already_alerted:
+        alerts.append({
+            "ticker": ticker, "type": "cross_buy",
+            "price": price, "st": st, "dist_pct": dist_pct,
+            "msg": "🟢 <b>LẬT LÊN (MUA)</b> — Giá vượt qua SuperTrend",
+        })
 
-        st = info["supertrend"]
-        trend = info["trend"]
-        dist_pct = abs(price - st) / st * 100
+    elif result["sell_signal"] and f"{ticker}_cross_sell" not in already_alerted:
+        alerts.append({
+            "ticker": ticker, "type": "cross_sell",
+            "price": price, "st": st, "dist_pct": dist_pct,
+            "msg": "🔴 <b>LẬT XUỐNG (BÁN)</b> — Giá xuyên qua SuperTrend",
+        })
 
-        # Đã lật (cross)
-        if trend == 1 and price < st:
-            alert_key = f"{ticker}_cross_sell"
-            if alert_key not in already_alerted:
-                alerts.append({
-                    "ticker": ticker, "type": "cross_sell",
-                    "price": price, "st": st, "dist_pct": dist_pct,
-                    "bias_norm": info["bias_norm"],
-                    "msg": "🔴 <b>ĐÃ LẬT XUỐNG</b> — Giá xuyên qua SuperTrend",
-                })
-
-        elif trend == -1 and price > st:
-            alert_key = f"{ticker}_cross_buy"
-            if alert_key not in already_alerted:
-                alerts.append({
-                    "ticker": ticker, "type": "cross_buy",
-                    "price": price, "st": st, "dist_pct": dist_pct,
-                    "bias_norm": info["bias_norm"],
-                    "msg": "🟢 <b>ĐÃ LẬT LÊN</b> — Giá xuyên qua SuperTrend",
-                })
-
-        # Tiệm cận (approach)
-        elif dist_pct <= APPROACH_THRESHOLD_PCT:
-            direction = "xuống" if trend == 1 else "lên"
-            alert_key = f"{ticker}_approach_{direction}"
-            if alert_key not in already_alerted:
-                alerts.append({
-                    "ticker": ticker, "type": f"approach_{direction}",
-                    "price": price, "st": st, "dist_pct": dist_pct,
-                    "bias_norm": info["bias_norm"],
-                    "msg": f"⚠️ <b>TIỆM CẬN ngưỡng lật {direction.upper()}</b>",
-                })
-
-    # Ưu tiên: cross trước, approach sau; sort theo dist_pct
-    alerts.sort(key=lambda a: (0 if "cross" in a["type"] else 1, a["dist_pct"]))
-    return alerts
+    elif dist_pct <= APPROACH_THRESHOLD_PCT:
+        direction = "xuong" if trend == 1 else "len"
+        key = f"{ticker}_approach_{direction}"
+        if key not in already_alerted:
+            arrow = "⬇️" if trend == 1 else "⬆️"
+            alerts.append({
+                "ticker": ticker, "type": f"approach_{direction}",
+                "price": price, "st": st, "dist_pct": dist_pct,
+                "msg": f"⚠️ <b>TIỆM CẬN lật {arrow}</b>",
+            })
 
 
 def _send_alerts(alerts: list[dict]) -> None:
-    """Gửi tối đa 10 alert, gộp nhóm nếu nhiều."""
+    """Gửi tối đa 10 alert một đợt."""
     if len(alerts) > 10:
-        summary = f"⚠️ <b>{len(alerts)} tín hiệu trong phiên</b> — Hiển thị top 10:\n"
-        send_message(summary)
+        send_message(f"⚠️ <b>{len(alerts)} tín hiệu trong phiên</b> — Hiển thị top 10:")
         alerts = alerts[:10]
 
     for a in alerts:
         text = (
             f"{a['msg']}\n"
             f"<b>{a['ticker']}</b> | Giá: <b>{fmt_price(a['price'])}</b>\n"
-            f"SuperTrend: {fmt_price(a['st'])} | Cách: {a['dist_pct']:.2f}%\n"
-            f"BiasNorm: {a['bias_norm']:.0f}/100"
+            f"SuperTrend: {fmt_price(a['st'])} | Cách: {a['dist_pct']:.2f}%"
         )
         send_message(text)
-        time.sleep(0.5)
+        time.sleep(0.3)
 
 
 def _is_market_open() -> bool:
@@ -245,31 +411,154 @@ def _is_market_open() -> bool:
     if now.weekday() >= 5:
         return False
     t = (now.hour, now.minute)
-    return MARKET_OPEN <= t < MARKET_CLOSE
+    return (9, 0) <= t < (15, 15)
+
+
+# ─── Session scanner (main mode) ─────────────────────────────────────────────
+
+def run_session(interval: int = 180) -> None:
+    """
+    Loop chính trong phiên 9:00–15:15 ICT.
+    - Fetch toàn bộ VN100 bằng price_board (1 API call, ~0.5s)
+    - Upsert bar hôm nay vào DB sau mỗi cycle
+    - Tính SuperTrend real-time, detect flip
+    - Gửi Slack khi có mã lật trend
+    """
+    _set_api_key()
+    logger.info(f"=== Session Scanner START (mỗi {interval//60} phút, 9:00-15:15 ICT) ===")
+
+    vn100 = get_vn100_watchlist()
+    if not vn100:
+        logger.error("VN100 watchlist trống")
+        return
+
+    # ── Load lịch sử OHLCV 1 lần vào RAM ──
+    logger.info(f"Load lịch sử OHLCV từ DB cho {len(vn100)} mã...")
+    ticker_data = load_all_from_db(tickers=vn100, days=60)
+    today_ts = pd.Timestamp(date.today())
+
+    # Bỏ bar hôm nay trong cache (sẽ fetch real-time)
+    hist_cache: dict[str, pd.DataFrame] = {
+        t: df[df.index.normalize() < today_ts]
+        for t, df in ticker_data.items()
+        if not df[df.index.normalize() < today_ts].empty
+    }
+    logger.info(f"Cache: {len(hist_cache)} mã")
+
+    # ── Init prev_trend từ SuperTrend của bar gần nhất trong DB ──
+    prev_trend: dict[str, int] = {}
+    for ticker, hist_df in hist_cache.items():
+        try:
+            df_st = calc_supertrend(hist_df)
+            prev_trend[ticker] = int(df_st.iloc[-1]["trend"])
+        except Exception:
+            pass
+
+    send_message(
+        f"📡 <b>Session Scanner BẮT ĐẦU</b>\n"
+        f"Theo dõi {len(hist_cache)} mã VN100 | Quét mỗi {interval//60} phút\n"
+        f"Phiên: 09:00 – 15:15 ICT"
+    )
+
+    total_flips = 0
+    scan_count  = 0
+
+    while _is_market_open():
+        now = datetime.now(ICT)
+        scan_count += 1
+        logger.info(f"[{now.strftime('%H:%M')}] Scan #{scan_count} — {len(hist_cache)} mã...")
+
+        # ── Fetch bar hôm nay (1 API call) ──
+        today_bars = _fetch_via_price_board(list(hist_cache.keys()))
+        logger.info(f"  price_board: {len(today_bars)} bars")
+
+        flips: list[dict] = []
+
+        for ticker, hist_df in hist_cache.items():
+            bar = today_bars.get(ticker)
+            if not bar:
+                continue
+
+            # Upsert DB (bar hôm nay, cập nhật liên tục trong phiên)
+            try:
+                bar_df = pd.DataFrame([bar], index=[today_ts])
+                upsert_ohlcv(ticker, bar_df)
+            except Exception as e:
+                logger.debug(f"upsert {ticker}: {e}")
+
+            # Tính ST real-time
+            result = _calc_realtime_st(hist_df, bar)
+            if result is None:
+                continue
+
+            # Detect flip so với trend trước đó
+            prev = prev_trend.get(ticker)
+            if prev is not None:
+                if result["buy_signal"] and prev != 1:
+                    flips.append({
+                        "ticker": ticker, "direction": "buy",
+                        "price": result["close"], "st": result["supertrend"],
+                    })
+                elif result["sell_signal"] and prev != -1:
+                    flips.append({
+                        "ticker": ticker, "direction": "sell",
+                        "price": result["close"], "st": result["supertrend"],
+                    })
+
+            prev_trend[ticker] = result["trend"]
+
+        # ── Gửi Telegram cho từng flip ──
+        for flip in flips:
+            emoji = "🟢" if flip["direction"] == "buy" else "🔴"
+            label = "LẬT TĂNG — XEM XÉT MUA" if flip["direction"] == "buy" else "LẬT GIẢM — XEM XÉT BÁN"
+            send_message(
+                f"{emoji} <b>{flip['ticker']}</b> | {label}\n"
+                f"Giá: <b>{fmt_price(flip['price'])}</b> | ST: {fmt_price(flip['st'])}\n"
+                f"Thời gian: {now.strftime('%H:%M')} ICT"
+            )
+            logger.info(
+                f"  FLIP {flip['direction'].upper()}: {flip['ticker']} "
+                f"giá={flip['price']:,.0f} ST={flip['st']:,.0f}"
+            )
+
+        total_flips += len(flips)
+        logger.info(f"  Upsert: {len(today_bars)} | Flip: {len(flips)} | Tổng: {total_flips}")
+
+        elapsed = (datetime.now(ICT) - now).total_seconds()
+        sleep_sec = max(0, interval - elapsed)
+        if sleep_sec > 0:
+            time.sleep(sleep_sec)
+
+    send_message(
+        f"🔔 <b>Session Scanner KẾT THÚC</b> (15:15 ICT)\n"
+        f"Tổng tín hiệu trong phiên: {total_flips}"
+    )
+    logger.info(f"=== Session Scanner KẾT THÚC — {total_flips} flips trong phiên ===")
 
 
 # ─── CLI ──────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--interval", type=int, default=5,
-                        help="Phút giữa mỗi lần quét (default: 5)")
-    parser.add_argument("--threshold", type=float, default=APPROACH_THRESHOLD_PCT,
-                        help="Ngưỡng cảnh báo %% cách SuperTrend (default: 1.5)")
-    parser.add_argument("--force", action="store_true",
-                        help="Chạy ngay kể cả ngoài giờ giao dịch (để test)")
+
+    parser = argparse.ArgumentParser(description="VN100 Live SuperTrend Scanner")
+    parser.add_argument(
+        "--mode",
+        choices=["pre", "session", "morning", "afternoon"],
+        required=True,
+        help="pre=báo cáo sáng | session=9:00-15:15 (main) | morning/afternoon=loop cũ",
+    )
+    parser.add_argument(
+        "--interval",
+        type=int,
+        default=3,
+        help="Phút giữa mỗi lần quét (default: 3)",
+    )
     args = parser.parse_args()
 
-    APPROACH_THRESHOLD_PCT = args.threshold
-
-    if args.force:
-        # Test mode: chạy 1 lần rồi thoát
-        levels = _load_supertrend_levels()
-        prices = _fetch_all_prices(list(levels.keys())[:20])
-        alerts = _check_signals(levels, prices, set())
-        print(f"Levels: {len(levels)} | Prices: {len(prices)} | Alerts: {len(alerts)}")
-        for a in alerts[:5]:
-            print(a)
+    if args.mode == "pre":
+        run_pre_session()
+    elif args.mode == "session":
+        run_session(interval=args.interval * 60)
     else:
-        run(interval=args.interval * 60)
+        run_realtime(mode=args.mode, interval=args.interval * 60)

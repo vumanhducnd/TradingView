@@ -29,11 +29,15 @@ def run_scan(
     else:
         all_data = ticker_data
 
+    # Ghi nhớ thứ tự VN100 để dùng khi sort kết quả
+    ticker_order = {t: i for i, t in enumerate(all_data.keys())}
+
     rows = []
     for ticker, df in all_data.items():
         try:
             info = analyze_ticker(df, style=style)
             info["ticker"] = ticker
+            info["vn100_rank"] = ticker_order[ticker]
             # Flatten bull/bear criteria thành cột riêng
             for k, v in info.pop("bull_criteria", {}).items():
                 info[f"bull_{k}"] = v
@@ -157,8 +161,95 @@ def run_scan_dual(
     merged.loc[merged["long_buy_signal"]  | merged["long_sell_signal"],  "_rank"] = 2
     merged.loc[merged["short_buy_signal"] | merged["short_sell_signal"], "_rank"] = 1
     merged.loc[merged["both_buy"]         | merged["both_sell"],         "_rank"] = 0
-    merged = merged.sort_values(["_rank", "bias_norm"], ascending=[True, False]).drop(columns="_rank")
+
+    sort_cols = ["_rank", "bias_norm"]
+    sort_asc  = [True, False]
+    if "vn100_rank" in merged.columns:
+        sort_cols.append("vn100_rank")
+        sort_asc.append(True)
+    merged = merged.sort_values(sort_cols, ascending=sort_asc).drop(columns="_rank")
     return merged.reset_index(drop=True)
+
+
+def get_super_buy_stocks(results: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
+    """
+    Loc 'sieu co phieu vung mua' — co phieu tot nhat dang o vung gia vao lenh hap dan.
+
+    Tieu chi CUNG (phai thoa het):
+      - long_trend == 1 (xu huong dai han tang)
+      - bias_norm >= 60
+      - b_score >= 5/9
+      - Khong co tin hieu BAN (ca ngan han lan dai han)
+
+    Diem THUONG (cang cao cang tot):
+      - both_buy: +4  (ca 2 khung deu MUA)
+      - long_buy_signal: +3
+      - short_buy_signal: +2
+      - bias_norm >= 75: +3  / >= 65: +1
+      - b_score >= 7: +2     / >= 6: +1
+      - short_trend == 1: +2 (ca 2 khung trend tang)
+      - bull_vol: +2          (volume xac nhan)
+      - bull_macd + bull_rsi + bull_adx: +1 moi cai
+      - Vung mua (0-7% tren long_support): +3
+      - Tiem nang len (>5% den long_resistance): +2
+    """
+    df = results.copy()
+
+    # ── Hard filters ──────────────────────────────────────────────────────────
+    mask = (
+        (df.get("long_trend", 0) == 1) &
+        (df["bias_norm"] >= 60) &
+        (df["b_score"] >= 5) &
+        (~df.get("long_sell_signal",  pd.Series(False, index=df.index)).astype(bool)) &
+        (~df.get("short_sell_signal", pd.Series(False, index=df.index)).astype(bool))
+    )
+    df = df[mask].copy()
+    if df.empty:
+        return df
+
+    # ── Scoring ───────────────────────────────────────────────────────────────
+    score = pd.Series(0.0, index=df.index)
+
+    # Tin hieu
+    if "both_buy"         in df.columns: score += df["both_buy"].astype(bool)        * 4
+    if "long_buy_signal"  in df.columns: score += df["long_buy_signal"].astype(bool) * 3
+    if "short_buy_signal" in df.columns: score += df["short_buy_signal"].astype(bool)* 2
+
+    # BiasNorm
+    score += (df["bias_norm"] >= 75).astype(int) * 3
+    score += ((df["bias_norm"] >= 65) & (df["bias_norm"] < 75)).astype(int) * 1
+
+    # bScore
+    score += (df["b_score"] >= 7).astype(int) * 2
+    score += ((df["b_score"] == 6)).astype(int) * 1
+
+    # Trend ngan han
+    if "short_trend" in df.columns:
+        score += (df["short_trend"] == 1).astype(int) * 2
+
+    # Indicator key
+    for col in ("bull_vol", "bull_macd", "bull_rsi", "bull_adx"):
+        if col in df.columns:
+            score += df[col].astype(bool).astype(int) * (2 if col == "bull_vol" else 1)
+
+    # Vung mua: gia 0-7% tren long_support
+    close   = pd.to_numeric(df["close"],         errors="coerce").fillna(0)
+    sup     = pd.to_numeric(df.get("long_support",    0), errors="coerce").fillna(0)
+    res     = pd.to_numeric(df.get("long_resistance",  0), errors="coerce").fillna(0)
+
+    dist_sup = ((close - sup) / sup.replace(0, 1) * 100)
+    dist_res = ((res - close)  / close.replace(0, 1) * 100)
+
+    df["dist_support_pct"]    = dist_sup.round(1)
+    df["dist_resistance_pct"] = dist_res.round(1)
+
+    score += ((dist_sup >= 0) & (dist_sup <= 7)).astype(int)  * 3   # vung mua ly tuong
+    score += ((dist_sup >  7) & (dist_sup <= 15)).astype(int) * 1   # con chap nhan
+    score += (dist_res  >= 5).astype(int)                     * 2   # co tiem nang
+
+    df["super_score"] = score.round(1)
+
+    return df.nlargest(top_n, "super_score").reset_index(drop=True)
 
 
 def get_current_signals(results: pd.DataFrame) -> dict[str, pd.DataFrame]:
@@ -203,16 +294,19 @@ def save_daily_snapshot(results: pd.DataFrame, scan_date: str | None = None) -> 
 
 
 def _rank(df: pd.DataFrame) -> pd.DataFrame:
-    """Sort: buy signals first (bias_norm desc), sell signals next, rest last."""
+    """Sort: tín hiệu trước (bias_norm desc), cùng nhóm thì VN100 rank ưu tiên."""
     df = df.copy()
     df["_rank_group"] = 2  # default: no signal
     df.loc[df["buy_signal"], "_rank_group"] = 0
     df.loc[df["sell_signal"], "_rank_group"] = 1
 
-    df = df.sort_values(
-        by=["_rank_group", "bias_norm"],
-        ascending=[True, False],
-    ).drop(columns=["_rank_group"])
+    sort_cols = ["_rank_group", "bias_norm"]
+    sort_asc  = [True, False]
+    if "vn100_rank" in df.columns:
+        sort_cols.append("vn100_rank")
+        sort_asc.append(True)
+
+    df = df.sort_values(by=sort_cols, ascending=sort_asc).drop(columns=["_rank_group"])
     return df.reset_index(drop=True)
 
 

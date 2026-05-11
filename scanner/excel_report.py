@@ -25,6 +25,8 @@ def build_excel_report(
     results: pd.DataFrame,
     signals: dict[str, pd.DataFrame],
     scan_date: str | None = None,
+    ai_analysis: dict | None = None,
+    super_stocks: pd.DataFrame | None = None,
 ) -> str:
     """Create reports/report_YYYY-MM-DD.xlsx. Returns file path string."""
     if scan_date is None:
@@ -34,11 +36,17 @@ def build_excel_report(
     wb = Workbook()
     is_dual = "long_buy_signal" in results.columns
 
-    _sheet_signals(wb, signals)   # Tab đầu tiên
+    _sheet_signals(wb, signals, ai_analysis=ai_analysis)   # Tab đầu tiên
+
+    if super_stocks is not None and not super_stocks.empty:
+        _sheet_super_stocks(wb, super_stocks, scan_date)
+
+    if ai_analysis:
+        _sheet_ai(wb, ai_analysis, scan_date)
 
     if is_dual:
-        _sheet_style(wb, results, style="short", title="Ngắn hạn (Mua lấy vị thế sớm)")
-        _sheet_style(wb, results, style="long",  title="Dài hạn (Giữ cổ phiếu lâu hơn)")
+        _sheet_style(wb, results, style="short", title="Ngắn hạn (Mua lay vi the som)")
+        _sheet_style(wb, results, style="long",  title="Dai han (Giu co phieu lau hon)")
     else:
         _sheet_all(wb, results)
 
@@ -167,13 +175,150 @@ def _sheet_all(wb: Workbook, df: pd.DataFrame) -> None:
     ws.auto_filter.ref = ws.dimensions
 
 
-def _sheet_signals(wb: Workbook, signals: dict) -> None:
-    ws = wb.create_sheet("Tín hiệu")
+STAR_FILL   = PatternFill("solid", fgColor="FFD700")   # vàng
+STRONG_FILL = PatternFill("solid", fgColor="00B050")   # xanh đậm
+
+
+def _sheet_super_stocks(wb: Workbook, df: pd.DataFrame, scan_date: str) -> None:
+    """Sheet siêu cổ phiếu vùng mua — top cổ phiếu tốt nhất đang ở vùng giá hấp dẫn."""
+    ws = wb.create_sheet("⭐ Sieu co phieu")
+
     headers = [
-        "Mã", "Loại tín hiệu", "Khung", "Đồng thuận", "Giá HT",
-        "Ngày vào lệnh", "Giá vào lệnh",
-        "TK (tỷ VND)", "BiasNorm", "Nhận xét", "bScore",
+        "Hang", "Ma", "Score", "Tin hieu",
+        "Gia HT", "Bias", "Bull/9",
+        "Ho tro", "Cach HT%", "Khang cu", "Tiem nang%",
+        "SuperTrend DH", "Trend DH", "Trend NH",
+        "TK (ty)", "P&L%",
     ]
+    _write_header(ws, headers)
+
+    for i, (_, row) in enumerate(df.iterrows(), start=2):
+        both  = row.get("both_buy", False)
+        lbuy  = row.get("long_buy_signal", False)
+        sbuy  = row.get("short_buy_signal", False)
+        signal = "DONG THUAN" if both else ("MUA DH+NH" if lbuy and sbuy else ("MUA DH" if lbuy else ("MUA NH" if sbuy else "")))
+
+        close  = row.get("close", 0)
+        sup    = row.get("long_support") or row.get("long_supertrend") or 0
+        res    = row.get("long_resistance") or 0
+        dist_s = row.get("dist_support_pct", "")
+        dist_r = row.get("dist_resistance_pct", "")
+        tk     = row.get("turnover", 0)
+        pnl    = row.get("pnl_pct") or row.get("long_signal_pnl_pct")
+
+        vals = [
+            i - 1,
+            row.get("ticker", ""),
+            round(row.get("super_score", 0), 1),
+            signal,
+            close,
+            round(row.get("bias_norm", 0), 1),
+            f"{int(row.get('b_score', 0))}/9",
+            sup,
+            f"{dist_s:+.1f}%" if isinstance(dist_s, (int, float)) else "",
+            res,
+            f"{dist_r:+.1f}%" if isinstance(dist_r, (int, float)) else "",
+            row.get("long_supertrend") or 0,
+            "TANG" if row.get("long_trend",  0) == 1 else "GIAM",
+            "TANG" if row.get("short_trend", 0) == 1 else "GIAM",
+            round(tk / 1e9, 1) if tk else "",
+            round(pnl, 2) if pnl is not None else "",
+        ]
+
+        for j, v in enumerate(vals, start=1):
+            ws.cell(row=i, column=j, value=v)
+
+        # Màu: đồng thuận = vàng, có tín hiệu = xanh đậm, còn lại = xanh nhạt
+        fill = STAR_FILL if both else (STRONG_FILL if lbuy or sbuy else GREEN_FILL)
+        for j in range(1, len(headers) + 1):
+            ws.cell(row=i, column=j).fill = fill
+        if both or lbuy or sbuy:
+            ws.cell(row=i, column=2).font = Font(bold=True, color="FFFFFF" if fill == STRONG_FILL else "000000")
+
+    # Ghi chú scoring
+    note_row = len(df) + 3
+    ws.cell(row=note_row, column=1, value="Cach tinh Score:").font = BOLD
+    ws.cell(row=note_row+1, column=1, value="both_buy=+4 | long_buy=+3 | short_buy=+2 | bias>=75=+3 | b_score>=7=+2 | short_trend=+2 | bull_vol=+2 | Vung mua(0-7%)=+3 | Tiem nang>5%=+2")
+
+    _auto_width(ws)
+    ws.freeze_panes = "A2"
+
+
+def _sheet_ai(wb: Workbook, ai_analysis: dict, scan_date: str) -> None:
+    """Sheet phân tích AI: overview + bảng từng tín hiệu."""
+    ws = wb.create_sheet("Phan tich AI")
+
+    WRAP = Alignment(wrap_text=True, vertical="top")
+    AI_FILL = PatternFill("solid", fgColor="EAF4FB")
+
+    # --- Tổng quan thị trường ---
+    ws.cell(row=1, column=1, value="NHAN DINH TONG QUAN THI TRUONG").font = Font(bold=True, size=13)
+    ws.cell(row=1, column=1).fill = PatternFill("solid", fgColor="2F75B6")
+    ws.cell(row=1, column=1).font = Font(bold=True, size=13, color="FFFFFF")
+    ws.merge_cells("A1:D1")
+
+    overview = ai_analysis.get("overview", "")
+    ws.cell(row=2, column=1, value=overview).alignment = WRAP
+    ws.merge_cells("A2:D2")
+    ws.row_dimensions[2].height = max(60, len(overview) // 5)
+
+    # --- Tín hiệu MUA ---
+    buy_signals = ai_analysis.get("buy_signals", [])
+    sell_signals = ai_analysis.get("sell_signals", [])
+
+    row = 4
+    for section_label, section_fill, signals_list in [
+        ("PHAN TICH TIN HIEU MUA", "C6EFCE", buy_signals),
+        ("PHAN TICH TIN HIEU BAN", "FFC7CE", sell_signals),
+    ]:
+        if not signals_list:
+            continue
+        ws.cell(row=row, column=1, value=section_label).font = Font(bold=True, color="FFFFFF")
+        ws.cell(row=row, column=1).fill = PatternFill("solid", fgColor="375623" if "MUA" in section_label else "9C0006")
+        ws.merge_cells(f"A{row}:D{row}")
+        row += 1
+
+        header_row = row
+        for j, h in enumerate(["Ma", "Nhan dinh AI", "Scan date"], start=1):
+            c = ws.cell(row=header_row, column=j, value=h)
+            c.fill = HEADER_FILL
+            c.font = HEADER_FONT
+        row += 1
+
+        for item in signals_list:
+            ws.cell(row=row, column=1, value=item.get("ticker", "")).font = Font(bold=True)
+            cell = ws.cell(row=row, column=2, value=item.get("analysis", ""))
+            cell.alignment = WRAP
+            cell.fill = AI_FILL
+            ws.cell(row=row, column=3, value=scan_date)
+            ws.row_dimensions[row].height = 40
+            row += 1
+
+        row += 1  # khoảng cách giữa section
+
+    ws.column_dimensions["A"].width = 8
+    ws.column_dimensions["B"].width = 80
+    ws.column_dimensions["C"].width = 14
+    ws.column_dimensions["D"].width = 14
+
+
+def _sheet_signals(wb: Workbook, signals: dict, ai_analysis: dict | None = None) -> None:
+    ws = wb.create_sheet("Tin hieu")
+
+    # Build AI lookup
+    ai_map: dict[str, str] = {}
+    if ai_analysis:
+        for item in ai_analysis.get("buy_signals", []) + ai_analysis.get("sell_signals", []):
+            ai_map[item["ticker"]] = item.get("analysis", "")
+
+    has_ai = bool(ai_map)
+    headers = [
+        "Ma", "Loai tin hieu", "Khung", "Dong thuan", "Gia HT",
+        "Ngay vao lenh", "Gia vao lenh",
+        "TK (ty VND)", "BiasNorm", "Nhan xet", "bScore",
+    ]
+    if has_ai:
+        headers.append("Phan tich AI")
     _write_header(ws, headers)
 
     is_dual = any("long_buy_signal" in df.columns
@@ -216,8 +361,13 @@ def _sheet_signals(wb: Workbook, signals: dict) -> None:
                 row.get("bias_label", ""),
                 row.get("b_score", 0),
             ]
+            if has_ai:
+                vals.append(ai_map.get(row.get("ticker", ""), ""))
             for j, v in enumerate(vals, start=1):
-                ws.cell(row=row_idx, column=j, value=v).fill = fill
+                c = ws.cell(row=row_idx, column=j, value=v)
+                c.fill = fill
+                if has_ai and j == len(vals):
+                    c.alignment = Alignment(wrap_text=True)
             row_idx += 1
 
     # Single mode fallback
@@ -234,7 +384,7 @@ def _sheet_signals(wb: Workbook, signals: dict) -> None:
                 vals = [
                     row.get("ticker", ""),
                     signal_type,
-                    "Dài hạn",
+                    "Dai han",
                     "",
                     row.get("close", 0),
                     str(sig_date)[:10] if sig_date else "",
@@ -244,8 +394,13 @@ def _sheet_signals(wb: Workbook, signals: dict) -> None:
                     row.get("bias_label", ""),
                     row.get("b_score", 0),
                 ]
+                if has_ai:
+                    vals.append(ai_map.get(row.get("ticker", ""), ""))
                 for j, v in enumerate(vals, start=1):
-                    ws.cell(row=row_idx, column=j, value=v).fill = fill
+                    c = ws.cell(row=row_idx, column=j, value=v)
+                    c.fill = fill
+                    if has_ai and j == len(vals):
+                        c.alignment = Alignment(wrap_text=True)
                 row_idx += 1
 
     _auto_width(ws)

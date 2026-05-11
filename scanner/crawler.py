@@ -83,10 +83,10 @@ def crawl_all(
         df = _fetch_with_retry(ticker, start_date, end_date)
         if df is not None and not df.empty:
             inserted = upsert_ohlcv(ticker, df)
-            logger.info(f"  → {inserted} rows upserted")
+            logger.info(f"  {ticker}: +{inserted} nến")
             ok += 1
         else:
-            logger.warning(f"  → Không có data")
+            logger.warning(f"  {ticker}: không có data")
             failed.append(ticker)
 
         if i < len(need_crawl):

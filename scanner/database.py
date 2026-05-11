@@ -75,27 +75,46 @@ def upsert_watchlist(
     exchange: str = "HOSE",
 ) -> None:
     """
-    tickers: list[str] → dùng exchange mặc định
-             list[tuple(ticker, exchange)] → dùng exchange riêng từng mã
+    tickers: list[str] → lưu vn100_rank theo vị trí trong list (index+1)
+             list[tuple(ticker, exchange)] → exchange riêng, rank theo vị trí
     """
+    # Đảm bảo cột tồn tại (migration safe cho DB cũ)
+    with db_cursor() as cur:
+        cur.execute("ALTER TABLE watchlist ADD COLUMN IF NOT EXISTS vn100_rank INT")
+
     sql = """
-        INSERT INTO watchlist (ticker, exchange, updated_at)
-        VALUES (%s, %s, NOW())
-        ON CONFLICT (ticker) DO UPDATE SET exchange = EXCLUDED.exchange, updated_at = NOW()
+        INSERT INTO watchlist (ticker, exchange, vn100_rank, updated_at)
+        VALUES (%s, %s, %s, NOW())
+        ON CONFLICT (ticker) DO UPDATE SET
+            exchange   = EXCLUDED.exchange,
+            vn100_rank = EXCLUDED.vn100_rank,
+            updated_at = NOW()
     """
     if tickers and isinstance(tickers[0], tuple):
-        rows = tickers  # [(ticker, exchange), ...]
+        rows = [(t, ex, i + 1) for i, (t, ex) in enumerate(tickers)]
     else:
-        rows = [(t, exchange) for t in tickers]
+        rows = [(t, exchange, i + 1) for i, t in enumerate(tickers)]
 
     with db_cursor() as cur:
         cur.executemany(sql, rows)
-    logger.info(f"Watchlist: upserted {len(rows)} tickers")
+    logger.info(f"Watchlist: upserted {len(rows)} tickers (rank 1–{len(rows)})")
 
 
 def get_watchlist() -> list[str]:
+    """Trả về danh sách ticker, ưu tiên VN100 rank trước, còn lại alpha."""
     with db_cursor(commit=False) as cur:
-        cur.execute("SELECT ticker FROM watchlist ORDER BY ticker")
+        cur.execute(
+            "SELECT ticker FROM watchlist ORDER BY vn100_rank NULLS LAST, ticker"
+        )
+        return [r["ticker"] for r in cur.fetchall()]
+
+
+def get_vn100_watchlist() -> list[str]:
+    """Chỉ trả về các mã có vn100_rank (top VN100), theo thứ tự rank."""
+    with db_cursor(commit=False) as cur:
+        cur.execute(
+            "SELECT ticker FROM watchlist WHERE vn100_rank IS NOT NULL ORDER BY vn100_rank"
+        )
         return [r["ticker"] for r in cur.fetchall()]
 
 
@@ -160,11 +179,19 @@ def load_all_ohlcv_bulk(days: int = 400) -> dict[str, pd.DataFrame]:
         df[col] = df[col].astype(float)
     df["volume"] = df["volume"].astype(int)
 
-    result = {}
+    raw = {}
     for ticker, group in df.groupby("ticker"):
         g = group.set_index("date").sort_index()[["open", "high", "low", "close", "volume"]]
         if len(g) >= 50:
-            result[str(ticker)] = g
+            raw[str(ticker)] = g
+
+    # Sắp xếp theo vn100_rank để scan ưu tiên đúng thứ tự
+    ordered_tickers = get_watchlist()
+    result = {t: raw[t] for t in ordered_tickers if t in raw}
+    # Thêm các ticker không có trong watchlist (nếu có) vào cuối
+    for t in raw:
+        if t not in result:
+            result[t] = raw[t]
 
     logger.info(f"Bulk load OHLCV: {len(result)} tickers, {len(df):,} rows")
     return result
