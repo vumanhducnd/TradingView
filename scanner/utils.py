@@ -4,7 +4,7 @@ import sys
 import threading
 import time
 import urllib3
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 
 # Bypass SSL certificate verification on Windows (local dev only)
 # GitHub Actions (Linux) không bị ảnh hưởng vì dùng Linux cert store
@@ -23,13 +23,22 @@ except Exception:
     pass
 
 
+_ICT = timezone(timedelta(hours=7))
+
+
+class _ICTFormatter(logging.Formatter):
+    """Log timestamps in ICT (UTC+7) regardless of server timezone."""
+    def formatTime(self, record: logging.LogRecord, datefmt: str | None = None) -> str:
+        dt = datetime.fromtimestamp(record.created, tz=_ICT)
+        return dt.strftime(datefmt or "%Y-%m-%d %H:%M:%S")
+
+
 def setup_logging(level: int = logging.INFO) -> logging.Logger:
     logger = logging.getLogger("scanner")
     if not logger.handlers:
         handler = logging.StreamHandler(sys.stdout)
-        handler.setFormatter(logging.Formatter(
-            "%(asctime)s [%(levelname)s] %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S"
+        handler.setFormatter(_ICTFormatter(
+            "%(asctime)s ICT [%(levelname)s] %(message)s",
         ))
         logger.addHandler(handler)
     logger.setLevel(level)

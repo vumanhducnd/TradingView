@@ -41,10 +41,36 @@ MODE_UNTIL = {
 }
 
 
+# ─── Timing helper ────────────────────────────────────────────────────────────
+
+def _wait_until_ict(hour: int, minute: int, abort_after_hour: int | None = None, abort_after_minute: int = 0) -> bool:
+    """
+    Chờ đến HH:MM ICT. Nếu đã qua abort_after_* thì trả về False (bỏ qua job).
+    Nếu đã qua target mà chưa qua abort thì trả về True ngay.
+    """
+    now = datetime.now(ICT)
+    if abort_after_hour is not None and (now.hour, now.minute) >= (abort_after_hour, abort_after_minute):
+        logger.warning(
+            f"Job chạy quá muộn ({now.strftime('%H:%M')} ICT) — "
+            f"bỏ qua (deadline {abort_after_hour:02d}:{abort_after_minute:02d} ICT)"
+        )
+        return False
+    target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if now < target:
+        wait_min = (target - now).total_seconds() / 60
+        logger.info(f"Chờ đến {hour:02d}:{minute:02d} ICT ({wait_min:.0f} phút nữa)...")
+        while datetime.now(ICT) < target:
+            time.sleep(30)
+        logger.info(f"Đã đến {hour:02d}:{minute:02d} ICT — bắt đầu")
+    return True
+
+
 # ─── Pre-session (8:30 ICT) ───────────────────────────────────────────────────
 
 def run_pre_session() -> None:
     """Báo cáo sáng: load data DB, tính ST, gửi Telegram tóm tắt top 300."""
+    if not _wait_until_ict(8, 30, abort_after_hour=9, abort_after_minute=15):
+        return  # GitHub Actions delay quá lớn, bỏ qua báo cáo sáng
     _set_api_key()
     logger.info("=== Pre-session scan (8:30 ICT) ===")
     vn100 = get_top_liquid_tickers(n=300)
@@ -425,6 +451,7 @@ def run_session(interval: int = 180) -> None:
     - Tính SuperTrend real-time chỉ cho VN100 (có đủ 60 ngày lịch sử)
     - Gửi Telegram khi có mã VN100 lật trend
     """
+    _wait_until_ict(9, 0)  # chờ đến đúng 9:00 ICT nếu job start sớm
     _set_api_key()
     logger.info(f"=== Session Scanner START (mỗi {interval//60} phút, 9:00-15:15 ICT) ===")
 

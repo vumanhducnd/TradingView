@@ -6,8 +6,9 @@ name: Live Session Scanner (9:00–15:15 ICT)
 
 on:
   schedule:
-    # 02:00 UTC = 09:00 ICT (GMT+7), thứ 2–6
-    - cron: '0 2 * * 1-5'
+    # 01:00 UTC = 08:00 ICT (GMT+7), thứ 2–6
+    # Chạy sớm 1 tiếng — Python tự _wait_until_ict(9,0) rồi mới bắt đầu phiên
+    - cron: '0 1 * * 1-5'
   workflow_dispatch:
     inputs:
       interval:
@@ -21,7 +22,7 @@ env:
 jobs:
   session:
     runs-on: ubuntu-latest
-    timeout-minutes: 390   # 6.5h — đủ cho 9:00–15:15 ICT + setup
+    timeout-minutes: 450   # 7.5h — 1h chờ đến 9:00 + 6.25h phiên + setup
 
     steps:
       - name: Checkout repo

@@ -2,8 +2,9 @@ name: Live Pre-session Scan (8:30 ICT)
 
 on:
   schedule:
-    # 01:30 UTC = 08:30 ICT (GMT+7), thứ 2–6
-    - cron: '30 1 * * 1-5'
+    # 00:30 UTC = 07:30 ICT (GMT+7), thứ 2–6
+    # Chạy sớm 1 tiếng — Python tự _wait_until_ict(8,30), bỏ qua nếu quá 9:15
+    - cron: '30 0 * * 1-5'
   workflow_dispatch:
 
 env:
@@ -12,7 +13,7 @@ env:
 jobs:
   pre-session:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 120   # tối đa 2h chờ + 5 phút chạy thực
 
     steps:
       - name: Checkout repo
