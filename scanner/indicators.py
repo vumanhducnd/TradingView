@@ -306,6 +306,31 @@ def analyze_ticker(
     dist_support    = (close_val - support)    / support    * 100 if support    else None
     dist_resistance = (resistance - close_val) / close_val * 100 if resistance else None
 
+    # ── Siêu cổ phiếu — 7 tiêu chí từ ManhDucCapital.pine ──────────────────
+    close_s  = df["close"]
+    vol_s    = df["volume"]
+    ema50    = close_s.ewm(span=50,  adjust=False).mean()
+    ema200   = close_s.ewm(span=200, adjust=False).mean()
+
+    _e200_now  = float(ema200.iloc[-1])
+    _e200_prev = float(ema200.iloc[-21]) if len(ema200) >= 21 else _e200_now
+    _e50_now   = float(ema50.iloc[-1])
+    _high52w   = float(close_s.rolling(min(252, len(close_s))).max().iloc[-1])
+    _adx_now   = float(_adx(df["high"], df["low"], close_s, 14).iloc[-1])
+    _vol20     = float(vol_s.rolling(20).mean().iloc[-1])
+    _vol60     = float(vol_s.rolling(min(60, len(vol_s))).mean().iloc[-1])
+
+    ss1 = close_val > _e200_now                      # Giá > EMA200
+    ss2 = _e200_now > _e200_prev                     # EMA200 đang tăng
+    ss3 = close_val >= _high52w * 0.90               # Gần/phá đỉnh 52 tuần
+    ss4 = _e50_now  > _e200_now                      # EMA50 > EMA200
+    ss5 = close_val > _e50_now                       # Giá > EMA50
+    ss6 = _adx_now  > 25                             # ADX > 25
+    ss7 = _vol20    > _vol60                         # Volume 20p > 60p
+
+    super_score    = sum([ss1, ss2, ss3, ss4, ss5, ss6, ss7])
+    is_super_stock = super_score >= 5
+
     return {
         "close": close_val,
         "trend": int(last["trend"]),
@@ -332,6 +357,11 @@ def analyze_ticker(
         "last_signal_price": last_signal_price,
         "bars_since_signal": bars_since_signal,
         "signal_pnl_pct":    signal_pnl_pct,
+        # Siêu cổ phiếu 7 tiêu chí
+        "ss1": ss1, "ss2": ss2, "ss3": ss3, "ss4": ss4,
+        "ss5": ss5, "ss6": ss6, "ss7": ss7,
+        "super_score":    super_score,
+        "is_super_stock": is_super_stock,
     }
 
 

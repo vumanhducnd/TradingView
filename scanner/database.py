@@ -473,6 +473,11 @@ def save_scan_results(df: pd.DataFrame, scan_date: date | None = None) -> None:
             _v(r, "hold_days",  int),
             _v(r, "pnl_pct",    float),
             _v(r, "max_loss_pct", float),
+            # Siêu cổ phiếu
+            _bool(r, "ss1"), _bool(r, "ss2"), _bool(r, "ss3"),
+            _bool(r, "ss4"), _bool(r, "ss5"), _bool(r, "ss6"), _bool(r, "ss7"),
+            _v(r, "super_score",    int),
+            _bool(r, "is_super_stock"),
         ))
 
     sql = """
@@ -495,7 +500,9 @@ def save_scan_results(df: pd.DataFrame, scan_date: date | None = None) -> None:
             long_bars_since_signal, short_bars_since_signal,
             both_buy, both_sell,
             buy_date, buy_price, sell_date, sell_price,
-            hold_days, pnl_pct, max_loss_pct
+            hold_days, pnl_pct, max_loss_pct,
+            ss1, ss2, ss3, ss4, ss5, ss6, ss7,
+            super_score, is_super_stock
         ) VALUES %s
         ON CONFLICT (scan_date, ticker) DO UPDATE SET
             close = EXCLUDED.close, bias_norm = EXCLUDED.bias_norm,
@@ -529,7 +536,12 @@ def save_scan_results(df: pd.DataFrame, scan_date: date | None = None) -> None:
             buy_date = EXCLUDED.buy_date, buy_price = EXCLUDED.buy_price,
             sell_date = EXCLUDED.sell_date, sell_price = EXCLUDED.sell_price,
             hold_days = EXCLUDED.hold_days, pnl_pct = EXCLUDED.pnl_pct,
-            max_loss_pct = EXCLUDED.max_loss_pct
+            max_loss_pct = EXCLUDED.max_loss_pct,
+            ss1 = EXCLUDED.ss1, ss2 = EXCLUDED.ss2, ss3 = EXCLUDED.ss3,
+            ss4 = EXCLUDED.ss4, ss5 = EXCLUDED.ss5, ss6 = EXCLUDED.ss6,
+            ss7 = EXCLUDED.ss7,
+            super_score = EXCLUDED.super_score,
+            is_super_stock = EXCLUDED.is_super_stock
     """
     with db_cursor() as cur:
         psycopg2.extras.execute_values(cur, sql, rows)
@@ -537,12 +549,22 @@ def save_scan_results(df: pd.DataFrame, scan_date: date | None = None) -> None:
 
 
 def ensure_scan_results_columns() -> None:
-    """Thêm cột short_last_signal_date/price vào scan_results nếu chưa có."""
+    """Thêm các cột mới vào scan_results nếu chưa có."""
     migrations = [
         "ALTER TABLE scan_results ADD COLUMN IF NOT EXISTS short_last_signal_date  DATE",
         "ALTER TABLE scan_results ADD COLUMN IF NOT EXISTS short_last_signal_price NUMERIC(12,4)",
         "ALTER TABLE scan_results ADD COLUMN IF NOT EXISTS long_last_signal_date   DATE",
         "ALTER TABLE scan_results ADD COLUMN IF NOT EXISTS long_last_signal_price  NUMERIC(12,4)",
+        # Siêu cổ phiếu 7 tiêu chí
+        "ALTER TABLE scan_results ADD COLUMN IF NOT EXISTS ss1 BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE scan_results ADD COLUMN IF NOT EXISTS ss2 BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE scan_results ADD COLUMN IF NOT EXISTS ss3 BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE scan_results ADD COLUMN IF NOT EXISTS ss4 BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE scan_results ADD COLUMN IF NOT EXISTS ss5 BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE scan_results ADD COLUMN IF NOT EXISTS ss6 BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE scan_results ADD COLUMN IF NOT EXISTS ss7 BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE scan_results ADD COLUMN IF NOT EXISTS super_score    SMALLINT DEFAULT 0",
+        "ALTER TABLE scan_results ADD COLUMN IF NOT EXISTS is_super_stock BOOLEAN DEFAULT FALSE",
     ]
     with db_cursor() as cur:
         for sql in migrations:
@@ -645,6 +667,18 @@ def save_signals(df: pd.DataFrame, scan_date: date | None = None) -> None:
 
 
 # ─── Query helpers cho Dashboard ──────────────────────────────────────────────
+
+def load_avg_turnover(tickers: list[str]) -> dict[str, float]:
+    """Lấy avg_turnover_20d (VND/1000) từ watchlist cho danh sách tickers."""
+    if not tickers:
+        return {}
+    with db_cursor(commit=False) as cur:
+        cur.execute(
+            "SELECT ticker, avg_turnover_20d FROM watchlist WHERE ticker = ANY(%s)",
+            (tickers,),
+        )
+        return {r["ticker"]: float(r["avg_turnover_20d"] or 0) for r in cur.fetchall()}
+
 
 def load_scan_results(scan_date: date) -> pd.DataFrame:
     sql = "SELECT * FROM scan_results WHERE scan_date = %s ORDER BY bias_norm DESC"

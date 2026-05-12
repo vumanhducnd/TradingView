@@ -125,7 +125,9 @@ def run_scan_dual(
     # Cột dùng chung (không prefix)
     shared = ["ticker", "close", "bias_norm", "bias_label", "b_score", "r_score",
               "buy_date", "buy_price", "hold_days", "pnl_pct", "max_loss_pct",
-              "volume", "turnover"]
+              "volume", "turnover",
+              "ss1", "ss2", "ss3", "ss4", "ss5", "ss6", "ss7",
+              "super_score", "is_super_stock"]
     # Cột riêng từng style
     style_cols = ["trend", "supertrend", "support", "resistance",
                   "buy_signal", "sell_signal",

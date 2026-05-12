@@ -78,16 +78,14 @@ def _build_workbook(
 
     _sheet_signals(wb, signals, ai_analysis=ai_analysis, style_filter=style)  # Tab 1
     _sheet_positions_tracking(wb, results, style=style)                         # Tab 2
+    _sheet_nam_giu(wb, results, style=style)                                    # Tab 3
+    _sheet_dung_ngoai(wb, results, style=style)                                 # Tab 4
+    _sheet_super_stocks(wb, results, scan_date)                                 # Tab 5 — dùng results trực tiếp
 
-    if style == "long":
-        if super_stocks is not None and not super_stocks.empty:
-            _sheet_super_stocks(wb, super_stocks, scan_date)
-        if ai_analysis:
-            _sheet_ai(wb, ai_analysis, scan_date)
+    if style == "long" and ai_analysis:
+        _sheet_ai(wb, ai_analysis, scan_date)                                   # Tab 6 — chỉ DH
 
-    _sheet_nam_giu(wb, results, style=style)
-    _sheet_dung_ngoai(wb, results, style=style)
-    _sheet_history(wb, style=style)
+    _sheet_history(wb, style=style)                                             # Tab cuối
 
     if "Sheet" in wb.sheetnames:
         del wb["Sheet"]
@@ -214,67 +212,74 @@ STAR_FILL   = PatternFill("solid", fgColor="FFD700")   # vàng
 STRONG_FILL = PatternFill("solid", fgColor="00B050")   # xanh đậm
 
 
-# 7 tiêu chí kỹ thuật cốt lõi (bỏ vwap và candle)
-_SUPER_CRITERIA = ["ema", "rsi", "macd", "adx", "obv", "stoch", "vol"]
-_SUPER_LABELS   = ["EMA9>21", "RSI>52", "MACD↑", "ADX>20", "OBV↑", "Stoch↑", "Vol↑"]
+_SS_COLS   = ["ss1", "ss2", "ss3", "ss4", "ss5", "ss6", "ss7"]
+_SS_LABELS = [
+    "Gia>EMA200", "EMA200 Tang", "Gan dinh 52T",
+    "EMA50>EMA200", "Gia>EMA50", "ADX>25", "Vol20>Vol60",
+]
+_SS_LIQTHRESH = 50e6   # 50 tỷ VND (avg_turnover_20d đơn vị VND/1000)
 
 
 def _sheet_super_stocks(wb: Workbook, df: pd.DataFrame, scan_date: str) -> None:
     """
-    Siêu cổ phiếu: long_trend=1, đủ ≥5/7 tiêu chí kỹ thuật, sort TK giảm dần.
-    7 tiêu chí: EMA, RSI, MACD, ADX, OBV, Stoch, Vol.
+    Siêu cổ phiếu: score ≥ 5/7 + TK TB 20 phiên ≥ 50 tỷ, sort TK giảm dần.
+    Cột: Mã | Giá | Score | TK TB 20p (tỷ) | ss1–ss7 (✓/✗)
     """
     ws = wb.create_sheet("Sieu co phieu (5-7 tieu chi)")
 
-    headers = [
-        "Ma", "Dat tieu chi", "Gia HT", "ST (Ho tro)",
-        "TK (ty)", "BiasNorm",
-    ] + _SUPER_LABELS
+    headers = ["Ma", "Gia", "Score", "TK TB 20p (ty)"] + _SS_LABELS
     _write_header(ws, headers)
 
-    # Lọc: long_trend=1 và đủ ≥5/7 tiêu chí
+    # Load avg_turnover_20d từ watchlist
+    try:
+        from scanner.database import load_avg_turnover
+        tk_map = load_avg_turnover(df["ticker"].tolist())
+    except Exception:
+        tk_map = {}
+
     rows_data = []
     for _, row in df.iterrows():
-        trend = row.get("long_trend", row.get("trend", 0))
-        if trend != 1:
-            continue
-        score = sum(1 for c in _SUPER_CRITERIA if row.get(f"bull_{c}"))
-        if score < 5:
-            continue
-        tk = float(row.get("turnover", 0) or 0)
-        rows_data.append((tk, score, row))
+        raw_score = row.get("super_score")
+        try:
+            score = int(raw_score) if raw_score is not None and raw_score == raw_score else 0
+        except (ValueError, TypeError):
+            score = 0
+        ticker  = row.get("ticker", "")
+        avg_tk  = tk_map.get(ticker, 0)          # VND/1000
+        tk_ty   = avg_tk / 1e6                   # → tỷ VND
 
-    # Sort TK giảm dần
+        if score < 5 or avg_tk < _SS_LIQTHRESH:
+            continue
+        rows_data.append((avg_tk, score, tk_ty, row))
+
     rows_data.sort(key=lambda x: x[0], reverse=True)
 
-    for i, (tk, score, row) in enumerate(rows_data, start=2):
-        close = row.get("close", "")
-        st    = row.get("long_supertrend", row.get("supertrend", ""))
-
+    for i, (avg_tk, score, tk_ty, row) in enumerate(rows_data, start=2):
         vals = [
             row.get("ticker", ""),
+            row.get("close", ""),
             f"{score}/7",
-            close,
-            round(float(st), 2) if st else "",
-            round(tk / 1e9, 1) if tk else "",
-            round(row.get("bias_norm", 0), 1),
-        ] + ["✓" if row.get(f"bull_{c}") else "✗" for c in _SUPER_CRITERIA]
+            round(tk_ty, 1),
+        ] + ["✓" if row.get(c) else "✗" for c in _SS_COLS]
 
         for j, v in enumerate(vals, start=1):
             ws.cell(row=i, column=j, value=v)
 
+        # Màu theo score
         fill = STAR_FILL if score == 7 else (STRONG_FILL if score >= 6 else GREEN_FILL)
         for j in range(1, len(headers) + 1):
             cell = ws.cell(row=i, column=j)
             cell.fill = fill
-            # Màu chữ trắng cho xanh đậm/vàng đậm
-            if fill in (STRONG_FILL,):
+            if fill == STRONG_FILL:
                 cell.font = Font(color="FFFFFF")
 
-    # Ghi chú
+        # Tô từng ô ✓/✗ theo kết quả
+        for j, c in enumerate(_SS_COLS, start=5):
+            ws.cell(row=i, column=j).fill = GREEN_FILL if row.get(c) else RED_FILL
+
     note_row = len(rows_data) + 3
-    ws.cell(row=note_row, column=1, value="Giai thich:").font = BOLD
-    ws.cell(row=note_row, column=2, value="7/7=vang | 6/7=xanh dam | 5/7=xanh nhat")
+    ws.cell(row=note_row, column=1, value="Tieu chi: score>=5/7 va TK TB 20 phien >=50 ty VND").font = BOLD
+    ws.cell(row=note_row + 1, column=1, value="7/7=Vang | 6/7=Xanh dam | 5/7=Xanh nhat").font = BOLD
 
     _auto_width(ws)
     ws.freeze_panes = "A2"
@@ -347,19 +352,12 @@ def _sheet_signals(wb: Workbook, signals: dict, ai_analysis: dict | None = None,
     style_label = {"long": " Dài hạn", "short": " Ngắn hạn"}.get(style_filter or "", "")
     ws = wb.create_sheet(f"Tin hieu trong ngay{style_label}")
 
-    # AI lookup: ticker → nhận xét
-    ai_map: dict[str, str] = {}
-    if ai_analysis:
-        for item in ai_analysis.get("buy_signals", []) + ai_analysis.get("sell_signals", []):
-            ai_map[item["ticker"]] = item.get("telegram_text") or item.get("analysis", "")
-
     today_str = date.today().strftime("%d/%m/%Y")
 
     headers = [
         "Ma", "Tin hieu", "Khung",
-        "Ngay mua", "Gia vao lenh", "Gia mua/ban (ST)",
+        "Ngay mua", "Gia mua/ban (ST)",
         "TK (ty VND)", "BiasNorm",
-        "Nhan xet AI",
     ]
     _write_header(ws, headers)
 
@@ -387,26 +385,18 @@ def _sheet_signals(wb: Workbook, signals: dict, ai_analysis: dict | None = None,
 
         tk  = row.get("turnover", 0) or 0
         st  = row.get(st_col) or row.get("supertrend") or ""
-        ai  = ai_map.get(ticker, "")
-        is_buy = "But pha" in signal_label
-        entry_price = row.get("low", "") if is_buy else row.get("high", "")
 
         vals = [
             ticker,
             signal_label,
             khung,
             today_str,
-            round(float(entry_price), 2) if entry_price else "",
             round(float(st), 2) if st else "",
             round(tk / 1e9, 1) if tk else "",
             round(row.get("bias_norm", 0), 1),
-            ai,
         ]
         for j, v in enumerate(vals, start=1):
-            cell = ws.cell(row=row_idx, column=j, value=v)
-            cell.fill = fill
-            if j == len(vals) and v:  # cột AI: wrap text
-                cell.alignment = Alignment(wrap_text=True, vertical="top")
+            ws.cell(row=row_idx, column=j, value=v).fill = fill
         row_idx += 1
 
     if is_dual:
