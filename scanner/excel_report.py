@@ -281,6 +281,50 @@ def _sheet_super_stocks(wb: Workbook, df: pd.DataFrame, scan_date: str) -> None:
     ws.cell(row=note_row, column=1, value="Tieu chi: score>=5/7 va TK TB 20 phien >=50 ty VND").font = BOLD
     ws.cell(row=note_row + 1, column=1, value="7/7=Vang | 6/7=Xanh dam | 5/7=Xanh nhat").font = BOLD
 
+    # ── Sắp thành Siêu cổ phiếu (score 3–4, top 5 TK) ───────────────────────
+    ALMOST_FILL = PatternFill("solid", fgColor="FFF2CC")   # vàng nhạt
+
+    almost_data = []
+    for _, row in df.iterrows():
+        raw_score = row.get("super_score")
+        try:
+            score = int(raw_score) if raw_score is not None and raw_score == raw_score else 0
+        except (ValueError, TypeError):
+            score = 0
+        ticker = row.get("ticker", "")
+        avg_tk = tk_map.get(ticker, 0)
+        if 3 <= score <= 4:
+            almost_data.append((avg_tk, score, avg_tk / 1e6, row))
+
+    almost_data.sort(key=lambda x: x[0], reverse=True)
+    almost_top5 = almost_data[:5]
+
+    if almost_top5:
+        sep_row = note_row + 3
+        cell = ws.cell(row=sep_row, column=1, value="⏳ Sap thanh Sieu co phieu (score 3-4/7, top 5 TK)")
+        cell.font = Font(bold=True, size=11)
+        cell.fill = ALMOST_FILL
+
+        hdr_row = sep_row + 1
+        for j, h in enumerate(headers, start=1):
+            c = ws.cell(row=hdr_row, column=j, value=h)
+            c.fill = PatternFill("solid", fgColor="FFE699")
+            c.font = Font(bold=True)
+
+        for k, (avg_tk, score, tk_ty, row) in enumerate(almost_top5, start=hdr_row + 1):
+            vals = [
+                row.get("ticker", ""),
+                row.get("close", ""),
+                f"{score}/7",
+                round(tk_ty, 1),
+            ] + ["✓" if row.get(c) else "✗" for c in _SS_COLS]
+
+            for j, v in enumerate(vals, start=1):
+                ws.cell(row=k, column=j, value=v).fill = ALMOST_FILL
+
+            for j, c in enumerate(_SS_COLS, start=5):
+                ws.cell(row=k, column=j).fill = GREEN_FILL if row.get(c) else _LIGHT_RED
+
     _auto_width(ws)
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = ws.dimensions
