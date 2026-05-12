@@ -1,14 +1,10 @@
-name: Live Session Scanner (9:00–15:15 ICT)
+name: Live Session Scanner (9:00–14:45 ICT)
 
-# Chạy 1 job duy nhất từ 9:00 đến 15:15 ICT (6h15m).
-# GitHub Actions giới hạn 6h/job → cần timeout-minutes: 390 (6.5h).
-# Job tự dừng khi _is_market_open() = False (15:15 ICT).
+# Job B: được trigger bởi live_wait.yml lúc 9:00 ICT
+# Quét từ 9:00 đến 14:45 ICT = 5h45m = 345 phút < 6h free tier limit
+# Không có cron — chỉ chạy qua workflow_dispatch từ live_wait.yml
 
 on:
-  schedule:
-    # 01:00 UTC = 08:00 ICT (GMT+7), thứ 2–6
-    # Chạy sớm 1 tiếng — Python tự _wait_until_ict(9,0) rồi mới bắt đầu phiên
-    - cron: '0 1 * * 1-5'
   workflow_dispatch:
     inputs:
       interval:
@@ -22,7 +18,7 @@ env:
 jobs:
   session:
     runs-on: ubuntu-latest
-    timeout-minutes: 450   # 7.5h — 1h chờ đến 9:00 + 6.25h phiên + setup
+    timeout-minutes: 360   # 6h — đủ cho 5h45m scan + setup (free tier limit)
 
     steps:
       - name: Checkout repo
@@ -43,9 +39,9 @@ jobs:
           TELEGRAM_CHAT_ID_LONG:    ${{ secrets.TELEGRAM_CHAT_ID_LONG }}
           TELEGRAM_BOT_TOKEN_SHORT: ${{ secrets.TELEGRAM_BOT_TOKEN_SHORT }}
           TELEGRAM_CHAT_ID_SHORT:   ${{ secrets.TELEGRAM_CHAT_ID_SHORT }}
-          DATABASE_URL:       ${{ secrets.DATABASE_URL }}
-          VNSTOCK_API_KEY:    ${{ secrets.VNSTOCK_API_KEY }}
-          SLACK_WEBHOOK_URL:  ${{ secrets.SLACK_WEBHOOK_URL }}
+          DATABASE_URL:             ${{ secrets.DATABASE_URL }}
+          VNSTOCK_API_KEY:          ${{ secrets.VNSTOCK_API_KEY }}
+          SLACK_WEBHOOK_URL:        ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
           INTERVAL=${{ inputs.interval || '3' }}
           python -m scanner.live_scanner --mode session --interval $INTERVAL

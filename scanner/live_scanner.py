@@ -439,7 +439,7 @@ def _is_market_open() -> bool:
     if now.weekday() >= 5:
         return False
     t = (now.hour, now.minute)
-    return (9, 0) <= t < (15, 15)
+    return (9, 0) <= t < (14, 45)
 
 
 # ─── Session scanner (main mode) ─────────────────────────────────────────────
@@ -451,7 +451,6 @@ def run_session(interval: int = 180) -> None:
     - Tính SuperTrend real-time chỉ cho VN100 (có đủ 60 ngày lịch sử)
     - Gửi Telegram khi có mã VN100 lật trend
     """
-    _wait_until_ict(9, 0)  # chờ đến đúng 9:00 ICT nếu job start sớm
     _set_api_key()
     logger.info(f"=== Session Scanner START (mỗi {interval//60} phút, 9:00-15:15 ICT) ===")
 
