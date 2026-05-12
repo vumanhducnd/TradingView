@@ -57,9 +57,16 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 # Groq API key (miễn phí tại console.groq.com → 14,400 req/ngày)
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 
-# Telegram
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+# Telegram — bot dài hạn (long, 10/3.0)
+# Fallback về TELEGRAM_BOT_TOKEN nếu chưa set biến riêng
+TELEGRAM_TOKEN    = os.getenv("TELEGRAM_BOT_TOKEN_LONG") or os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID  = os.getenv("TELEGRAM_CHAT_ID_LONG")  or os.getenv("TELEGRAM_CHAT_ID", "")
+
+# Telegram — bot ngắn hạn (short, 7/2.0)
+# Nếu chưa set → fallback về bot dài hạn (gửi chung 1 bot)
+TELEGRAM_TOKEN_SHORT   = os.getenv("TELEGRAM_BOT_TOKEN_SHORT") or TELEGRAM_TOKEN
+TELEGRAM_CHAT_ID_SHORT = os.getenv("TELEGRAM_CHAT_ID_SHORT")   or TELEGRAM_CHAT_ID
+
 TELEGRAM_API = "https://api.telegram.org/bot{token}/sendMessage"
 
 # Backtest

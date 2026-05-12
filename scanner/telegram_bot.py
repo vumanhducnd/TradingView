@@ -3,6 +3,7 @@ Telegram notification module.
 Uses requests (synchronous) — no asyncio needed for GitHub Actions.
 """
 
+import math
 import time
 import warnings
 import requests
@@ -12,8 +13,38 @@ import pandas as pd
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from datetime import date
 
-from scanner.config import TELEGRAM_API, TELEGRAM_CHAT_ID, TELEGRAM_TOKEN
+from scanner.config import (
+    TELEGRAM_API, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID,
+    TELEGRAM_TOKEN_SHORT, TELEGRAM_CHAT_ID_SHORT,
+)
 from scanner.utils import bias_label, fmt_price, logger
+
+
+def _val(row, *names, default=None):
+    """Lấy giá trị đầu tiên không-NaN từ danh sách tên cột (hỗ trợ single + dual mode)."""
+    for name in names:
+        v = row.get(name)
+        if v is not None and not (isinstance(v, float) and math.isnan(v)):
+            return v
+    return default
+
+
+def _fmt(v, default="–") -> str:
+    """fmt_price với fallback khi NaN/None."""
+    if v is None or (isinstance(v, float) and math.isnan(v)):
+        return default
+    return fmt_price(v)
+
+
+def _fmt_tk(row) -> str:
+    """Thanh khoản: ưu tiên turnover (tỷ VND), fallback volume (triệu cp)."""
+    tk = _val(row, "turnover")
+    if tk and tk > 0:
+        return f"{tk / 1e9:.1f} tỷ"
+    vol = _val(row, "volume")
+    if vol and vol > 0:
+        return f"{vol / 1e6:.1f}M cp"
+    return "–"
 
 _CRITERIA_LABELS = {
     "ema":    "EMA9>21",
@@ -28,17 +59,59 @@ _CRITERIA_LABELS = {
 }
 
 
-def send_file(file_path: str, caption: str = "") -> bool:
-    """Gửi file (Excel, PDF...) qua Telegram Bot."""
-    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+def _credentials(style: str) -> tuple[str, str]:
+    """Trả về (token, chat_id) theo style: 'long' | 'short'."""
+    if style == "short":
+        return TELEGRAM_TOKEN_SHORT, TELEGRAM_CHAT_ID_SHORT
+    return TELEGRAM_TOKEN, TELEGRAM_CHAT_ID
+
+
+def _send_raw(text: str, token: str, chat_id: str, parse_mode: str = "HTML") -> bool:
+    if not token or not chat_id:
+        logger.warning("Telegram credentials not set — skipping")
+        return False
+    url = TELEGRAM_API.format(token=token)
+    try:
+        resp = requests.post(
+            url,
+            json={"chat_id": chat_id, "text": text, "parse_mode": parse_mode},
+            timeout=10,
+            verify=False,
+        )
+        resp.raise_for_status()
+        return True
+    except Exception as e:
+        logger.warning(f"Telegram send failed: {e}")
+        return False
+
+
+def send_message(text: str, style: str = "long", parse_mode: str = "HTML") -> bool:
+    """Gửi tin nhắn đến bot theo style ('long' | 'short'). Returns True on success."""
+    token, chat_id = _credentials(style)
+    return _send_raw(text, token, chat_id, parse_mode)
+
+
+def send_message_both(text: str, parse_mode: str = "HTML") -> None:
+    """Gửi cùng 1 tin đến cả 2 bot (dùng cho header/summary chung)."""
+    _send_raw(text, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, parse_mode)
+    # Chỉ gửi lần 2 nếu short bot khác long bot
+    if TELEGRAM_TOKEN_SHORT != TELEGRAM_TOKEN or TELEGRAM_CHAT_ID_SHORT != TELEGRAM_CHAT_ID:
+        time.sleep(0.2)
+        _send_raw(text, TELEGRAM_TOKEN_SHORT, TELEGRAM_CHAT_ID_SHORT, parse_mode)
+
+
+def send_file(file_path: str, caption: str = "", style: str = "long") -> bool:
+    """Gửi file qua Telegram Bot."""
+    token, chat_id = _credentials(style)
+    if not token or not chat_id:
         logger.warning("Telegram credentials not set — skipping file send")
         return False
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendDocument"
+    url = f"https://api.telegram.org/bot{token}/sendDocument"
     try:
         with open(file_path, "rb") as f:
             resp = requests.post(
                 url,
-                data={"chat_id": TELEGRAM_CHAT_ID, "caption": caption, "parse_mode": "HTML"},
+                data={"chat_id": chat_id, "caption": caption, "parse_mode": "HTML"},
                 files={"document": (file_path.split("\\")[-1].split("/")[-1], f)},
                 timeout=60,
                 verify=False,
@@ -51,124 +124,142 @@ def send_file(file_path: str, caption: str = "") -> bool:
         return False
 
 
-def send_message(text: str, parse_mode: str = "HTML") -> bool:
-    """Send a single Telegram message. Returns True on success."""
-    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        logger.warning("Telegram credentials not set — skipping notification")
-        return False
-    url = TELEGRAM_API.format(token=TELEGRAM_TOKEN)
-    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": parse_mode}
-    try:
-        # verify=False: workaround for Windows SSL cert issue (safe for Telegram API)
-        resp = requests.post(url, json=payload, timeout=10, verify=False)
-        resp.raise_for_status()
-        return True
-    except Exception as e:
-        logger.warning(f"Telegram send failed: {e}")
-        return False
-
-
 def send_daily_report(
     results: pd.DataFrame,
     signals: dict[str, pd.DataFrame],
     ai_analysis: dict | None = None,
     super_stocks: pd.DataFrame | None = None,
 ) -> None:
-    """Send full daily report: header + AI overview + super stocks + buy/sell signals."""
-    buy_df = signals.get("buy", pd.DataFrame())
-    sell_df = signals.get("sell", pd.DataFrame())
+    """
+    Gửi báo cáo cuối ngày.
+    Dual mode: mỗi bot nhận header + positions + tín hiệu riêng của style đó.
+    Single mode: tất cả → bot dài hạn.
+    """
     today = date.today().strftime("%d/%m/%Y")
-
-    # Header message
     is_dual = "long_buy_signal" in results.columns
-    style_str = "Ngắn hạn (7/2.0) + Dài hạn (10/3.0)" if is_dual else "Dài hạn (ATR=10, x3.0)"
-    both_buy_n  = len(signals.get("both_buy",  pd.DataFrame()))
-    both_sell_n = len(signals.get("both_sell", pd.DataFrame()))
-    both_line = f"  🔥 Đồng thuận cả 2 : <b>{both_buy_n + both_sell_n}</b> mã\n" if is_dual else ""
 
-    header = (
-        f"<b>📊 ManhDucCapital Scanner</b>\n"
-        f"Quét: {today} (sau 15:30 ICT)\n"
-        f"{style_str}\n\n"
-        f"<b>Kết quả:</b>\n"
-        f"  🟢 Tín hiệu MUA : <b>{len(buy_df)}</b> mã\n"
-        f"  🔴 Tín hiệu BÁN : <b>{len(sell_df)}</b> mã\n"
-        f"{both_line}"
-        f"  ⬜ Không tín hiệu: <b>{len(results) - len(buy_df) - len(sell_df)}</b> mã"
-    )
-    send_message(header)
-    time.sleep(1)
-
-    # AI tổng quan thị trường
-    if ai_analysis and ai_analysis.get("overview"):
-        send_message(f"<b>🤖 Nhận định AI:</b>\n{ai_analysis['overview']}")
-        time.sleep(1)
-
-    # Siêu cổ phiếu vùng mua
-    if super_stocks is not None and not super_stocks.empty:
-        _send_super_stocks(super_stocks)
-        time.sleep(1)
-
-    # Tóm tắt vị thế đang mở
-    _send_positions_summary(results)
-    time.sleep(1)
-
-    # Top 10 mua/bán có thanh khoản cao nhất
-    TOP_N = 10
+    TOP_N = 15
     vol_col = "volume" if "volume" in results.columns else None
 
-    def _top10(df: pd.DataFrame) -> pd.DataFrame:
+    def _top_n(df: pd.DataFrame) -> pd.DataFrame:
         if df.empty:
             return df
-        if vol_col and vol_col in df.columns:
-            return df.nlargest(TOP_N, vol_col)
-        return df.head(TOP_N)
+        return df.nlargest(TOP_N, vol_col) if vol_col and vol_col in df.columns else df.head(TOP_N)
 
-    buy_top  = _top10(buy_df)
-    sell_top = _top10(sell_df)
+    def _signal_lines(df: pd.DataFrame, emoji: str, label: str, st_col: str) -> list[str]:
+        top = _top_n(df)
+        if top.empty:
+            return []
+        lines = [f"{emoji} <b>{label} — {len(top)} mã</b>"]
+        for _, row in top.iterrows():
+            st = _val(row, st_col, "supertrend")
+            close = _val(row, "close")
+            lines.append(
+                f"  <b>{row['ticker']}</b>\n"
+                f"    Giá đóng cửa : {_fmt(close)}\n"
+                f"    Giá ST (bán) : {_fmt(st)}\n"
+                f"    Thanh khoản  : {_fmt_tk(row)}"
+            )
+        return lines
 
-    ai_buy  = {x["ticker"]: x.get("telegram_text", x.get("analysis", ""))
-               for x in (ai_analysis or {}).get("buy_signals",  [])}
-    ai_sell = {x["ticker"]: x.get("telegram_text", x.get("analysis", ""))
-               for x in (ai_analysis or {}).get("sell_signals", [])}
+    def _send_for_style(style: str) -> None:
+        """Gửi toàn bộ report (header + positions + tín hiệu) cho 1 style."""
+        p = f"{style}_"
+        is_long = style == "long"
+        label   = "📈 Dài hạn (10/3.0)" if is_long else "⚡ Ngắn hạn (7/2.0)"
 
-    for _, row in buy_top.iterrows():
-        send_message(_format_signal(row, signal_type="MUA"))
-        time.sleep(0.5)
-        ai_text = ai_buy.get(row["ticker"], "")
-        if ai_text:
-            send_message(f"🤖 <b>AI - {row['ticker']}:</b>\n{ai_text}")
-            time.sleep(1)
+        buy_df  = results[results[f"{p}buy_signal"].astype(bool)]  if f"{p}buy_signal"  in results.columns else pd.DataFrame()
+        sell_df = results[results[f"{p}sell_signal"].astype(bool)] if f"{p}sell_signal" in results.columns else pd.DataFrame()
+        no_sig  = len(results) - len(buy_df) - len(sell_df)
 
-    for _, row in sell_top.iterrows():
-        send_message(_format_signal(row, signal_type="BÁN"))
-        time.sleep(0.5)
-        ai_text = ai_sell.get(row["ticker"], "")
-        if ai_text:
-            send_message(f"🤖 <b>AI - {row['ticker']}:</b>\n{ai_text}")
-            time.sleep(1)
-
-    # Không có tín hiệu → top 5 bias_norm
-    if buy_df.empty and sell_df.empty:
-        top5 = results.nlargest(5, "bias_norm")[["ticker", "bias_norm"]]
-        lines = "\n".join(
-            f"  • {r['ticker']}: {r['bias_norm']:.0f}/100"
-            for _, r in top5.iterrows()
+        # Header riêng từng bot
+        header = (
+            f"<b>📊 ManhDucCapital Scanner — {today}</b>\n"
+            f"{label}\n\n"
+            f"🟢 MUA: <b>{len(buy_df)}</b> mã\n"
+            f"🔴 BÁN: <b>{len(sell_df)}</b> mã\n"
+            f"⬜ Không tín hiệu: {no_sig} mã"
         )
-        send_message(
-            f"Hôm nay không có tín hiệu MUA/BÁN mới.\n\n"
-            f"<b>Top 5 mạnh nhất:</b>\n{lines}"
-        )
+        send_message(header, style=style)
+        time.sleep(0.8)
 
-    # Gửi file Excel report
+        # AI — chỉ bot dài hạn
+        if is_long and ai_analysis and ai_analysis.get("overview"):
+            send_message(f"<b>🤖 Nhận định AI:</b>\n{ai_analysis['overview']}", style=style)
+            time.sleep(0.8)
+
+        # Siêu cổ phiếu — chỉ bot dài hạn
+        if is_long and super_stocks is not None and not super_stocks.empty:
+            _send_super_stocks(super_stocks, style=style)
+            time.sleep(0.8)
+
+        # Vị thế — riêng từng bot
+        _send_positions_summary(results, style=style)
+        time.sleep(0.8)
+
+        # Tín hiệu
+        st_col = f"{p}supertrend"
+        for lines in [
+            _signal_lines(buy_df,  "🚀", "Tín hiệu bứt phá xác nhận", st_col),
+            _signal_lines(sell_df, "🔻", "Tín hiệu đảo chiều giảm",   st_col),
+        ]:
+            if lines:
+                send_message("\n".join(lines), style=style)
+                time.sleep(0.5)
+
+        if buy_df.empty and sell_df.empty:
+            top5 = results.nlargest(5, "bias_norm")[["ticker", "bias_norm"]]
+            txt = "\n".join(f"  • {r['ticker']}: {r['bias_norm']:.0f}/100" for _, r in top5.iterrows())
+            send_message(f"Hôm nay không có tín hiệu mới.\n\n<b>Top 5 mạnh nhất:</b>\n{txt}", style=style)
+
+    if is_dual:
+        _send_for_style("long")
+        time.sleep(1)
+        _send_for_style("short")
+    else:
+        buy_df  = signals.get("buy",  pd.DataFrame())
+        sell_df = signals.get("sell", pd.DataFrame())
+        header = (
+            f"<b>📊 ManhDucCapital Scanner — {today}</b>\n"
+            f"📈 Dài hạn (ATR=10, x3.0)\n\n"
+            f"🟢 MUA: <b>{len(buy_df)}</b> mã\n"
+            f"🔴 BÁN: <b>{len(sell_df)}</b> mã\n"
+            f"⬜ Không tín hiệu: {len(results) - len(buy_df) - len(sell_df)} mã"
+        )
+        send_message(header, style="long")
+        time.sleep(0.8)
+        if ai_analysis and ai_analysis.get("overview"):
+            send_message(f"<b>🤖 Nhận định AI:</b>\n{ai_analysis['overview']}", style="long")
+            time.sleep(0.8)
+        if super_stocks is not None and not super_stocks.empty:
+            _send_super_stocks(super_stocks, style="long")
+            time.sleep(0.8)
+        _send_positions_summary(results, style="long")
+        time.sleep(0.8)
+        for lines in [
+            _signal_lines(buy_df,  "🚀", "Tín hiệu bứt phá xác nhận", "supertrend"),
+            _signal_lines(sell_df, "🔻", "Tín hiệu đảo chiều giảm",   "supertrend"),
+        ]:
+            if lines:
+                send_message("\n".join(lines), style="long")
+                time.sleep(0.5)
+        if buy_df.empty and sell_df.empty:
+            top5 = results.nlargest(5, "bias_norm")[["ticker", "bias_norm"]]
+            txt = "\n".join(f"  • {r['ticker']}: {r['bias_norm']:.0f}/100" for _, r in top5.iterrows())
+            send_message(f"Hôm nay không có tín hiệu mới.\n\n<b>Top 5 mạnh nhất:</b>\n{txt}", style="long")
+
+    # ── Excel — mỗi file gửi đúng bot ────────────────────────────────────────
     try:
         from scanner.excel_report import build_excel_report
-        excel_path = build_excel_report(results, signals, ai_analysis=ai_analysis, super_stocks=super_stocks)
-        if excel_path:
-            send_file(
-                str(excel_path),
-                caption=f"📊 Report {today} — {len(buy_df)} MUA | {len(sell_df)} BÁN",
-            )
+        excel_paths = build_excel_report(results, signals, ai_analysis=ai_analysis, super_stocks=super_stocks)
+        for file_style, path in excel_paths.items():
+            if path:
+                send_file(
+                    path,
+                    caption=f"📊 Report {'Dài hạn' if file_style == 'long' else 'Ngắn hạn'} {today}",
+                    style=file_style,
+                )
+                time.sleep(0.5)
     except Exception as e:
         logger.warning(f"Excel report failed: {e}")
 
@@ -224,7 +315,7 @@ def _format_signal(row: pd.Series, signal_type: str) -> str:
     return "\n".join(l for l in lines if l != "" or l == "")
 
 
-def _send_super_stocks(df: pd.DataFrame) -> None:
+def _send_super_stocks(df: pd.DataFrame, style: str = "long") -> None:
     """Gửi danh sách siêu cổ phiếu vùng mua."""
     lines = ["<b>⭐ SIÊU CỔ PHIẾU VÙNG MUA:</b>"]
 
@@ -258,45 +349,63 @@ def _send_super_stocks(df: pd.DataFrame) -> None:
             f"\n  HT: {fmt_price(sup)} ({dist_s:+.1f}%) → KC: {fmt_price(res)} ({dist_r:+.1f}%)"
         )
 
-    send_message("\n".join(lines))
+    send_message("\n".join(lines), style=style)
 
 
-def _send_positions_summary(results: pd.DataFrame) -> None:
-    """Gửi tóm tắt tất cả vị thế đang mở (có buy_date)."""
-    if "buy_date" not in results.columns:
+def _send_positions_summary(results: pd.DataFrame, style: str = "long") -> None:
+    """Gửi tóm tắt vị thế đang mở theo style, query thẳng từ DB (closed=FALSE)."""
+    try:
+        from scanner.database import load_open_positions
+        positions = load_open_positions(style=style)
+    except Exception as e:
+        logger.warning(f"load_open_positions failed: {e}")
         return
 
-    pos = results[results["buy_date"].notna()].copy()
-    if pos.empty:
+    if not positions:
         return
 
-    lines = ["<b>📋 Vị thế đang nắm giữ:</b>"]
+    close_map = dict(zip(results["ticker"], results["close"])) if "close" in results.columns else {}
+    tk_map    = dict(zip(results["ticker"], results["turnover"])) if "turnover" in results.columns else {}
+    vol_map   = dict(zip(results["ticker"], results["volume"]))   if "volume"   in results.columns else {}
+
+    style_label = "Dài hạn" if style == "long" else "Ngắn hạn"
+    lines = [f"<b>📋 Vị thế đang nắm giữ ({style_label})</b>"]
     total_pnl = []
 
-    if "pnl_pct" not in pos.columns:
-        return
-    for _, row in pos.sort_values("pnl_pct", ascending=False, na_position="last").iterrows():
-        pnl   = row.get("pnl_pct")
-        close = row.get("close", 0)
-        sup   = row.get("support", 0)
-        buy_p = row.get("buy_price", 0)
+    for p in sorted(positions, key=lambda x: x.get("signal_date") or "", reverse=True):
+        ticker = p["ticker"]
+        buy_p  = float(p.get("buy_price") or 0)
+        bd     = str(p.get("signal_date") or "")[:10]
+        close  = float(close_map.get(ticker) or 0)
 
-        pnl_str = f"{pnl:+.1f}%" if pnl is not None else "N/A"
-        pnl_ico = "🟢" if (pnl or 0) >= 0 else "🔴"
+        try:
+            from datetime import date as _date
+            hold_days = (_date.today() - pd.to_datetime(bd).date()).days
+            hold_str  = f"{hold_days} ngày"
+        except Exception:
+            hold_str = "–"
 
-        # Tránh lỗ tối đa từ giá mua đến stop loss
-        max_loss = round((buy_p - sup) / buy_p * 100, 1) if buy_p and sup else None
-        stop_str = f" | Stop: -{max_loss}%" if max_loss else ""
+        pnl     = round((close - buy_p) / buy_p * 100, 2) if buy_p > 0 and close > 0 else None
+        pnl_ico = "🟢" if (pnl is not None and pnl >= 0) else "🔴"
+        pnl_str = f"{pnl:+.1f}%" if pnl is not None else "–"
+
+        tk_val  = float(tk_map.get(ticker) or 0)
+        vol_val = float(vol_map.get(ticker) or 0)
+        tk_str  = f"{tk_val/1e9:.1f} tỷ" if tk_val > 0 else (f"{vol_val/1e6:.1f}M cp" if vol_val > 0 else "–")
 
         lines.append(
-            f"{pnl_ico} <b>{row['ticker']}</b>: {pnl_str}{stop_str}"
-            f" | HT {fmt_price(sup)}"
+            f"\n{pnl_ico} <b>{ticker}</b>\n"
+            f"  Ngày mua    : {bd} ({hold_str})\n"
+            f"  Giá mua     : {_fmt(buy_p)}\n"
+            f"  Giá hiện tại: {_fmt(close)}\n"
+            f"  Lãi/Lỗ     : <b>{pnl_str}</b>\n"
+            f"  Thanh khoản : {tk_str}"
         )
         if pnl is not None:
             total_pnl.append(pnl)
 
     if total_pnl:
         avg = sum(total_pnl) / len(total_pnl)
-        lines.append(f"\n<b>Tổng {len(pos)} vị thế | Lời/Lỗ TB: {avg:+.1f}%</b>")
+        lines.append(f"\n<b>Tổng {len(positions)} vị thế | Lãi/Lỗ TB: {avg:+.1f}%</b>")
 
-    send_message("\n".join(lines))
+    send_message("\n".join(lines), style=style)

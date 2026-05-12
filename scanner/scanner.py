@@ -54,30 +54,26 @@ def run_scan(
     results = pd.DataFrame(rows)
     results["bias_label"] = results["bias_norm"].apply(bias_label)
 
-    # Gắn lịch sử MUA/BÁN và P&L cho tất cả ticker
+    # Gắn vị thế MUA đang mở (closed=FALSE) theo đúng style
     try:
         from scanner.database import load_last_signals
         tickers = results["ticker"].tolist()
-        sig_df = load_last_signals(tickers)
+        sig_df = load_last_signals(tickers, style=style)
 
-        def _get(ticker, stype, field):
+        def _get(ticker, field):
             if sig_df.empty:
                 return None
-            row = sig_df[(sig_df["ticker"] == ticker) & (sig_df["signal_type"] == stype)]
+            row = sig_df[sig_df["ticker"] == ticker]
             return row.iloc[0][field] if not row.empty else None
 
-        results["buy_date"]   = results["ticker"].map(lambda t: _get(t, "MUA", "signal_date"))
-        results["buy_price"]  = results["ticker"].map(lambda t: _get(t, "MUA", "price"))
-        results["sell_date"]  = results["ticker"].map(lambda t: _get(t, "BÁN", "signal_date"))
-        results["sell_price"] = results["ticker"].map(lambda t: _get(t, "BÁN", "price"))
+        results["buy_date"]  = results["ticker"].map(lambda t: _get(t, "signal_date"))
+        results["buy_price"] = results["ticker"].map(lambda t: _get(t, "price"))
 
         def _pnl(row):
             bp = row.get("buy_price")
             if not bp or bp <= 0:
                 return None
-            # Nếu đã bán → dùng sell_price, chưa bán → dùng close
-            ep = row.get("sell_price") or row.get("close")
-            return round((ep - bp) / bp * 100, 2) if ep else None
+            return round((float(row.get("close", 0)) - bp) / bp * 100, 2)
 
         results["pnl_pct"] = results.apply(_pnl, axis=1)
 
@@ -96,11 +92,9 @@ def run_scan(
             if not bd:
                 return None
             from datetime import date as _date
-            end = row.get("sell_date") or _date.today()
             try:
                 start = bd if isinstance(bd, _date) else pd.to_datetime(bd).date()
-                end   = end if isinstance(end, _date) else pd.to_datetime(end).date()
-                return (end - start).days
+                return (_date.today() - start).days
             except Exception:
                 return None
 
@@ -130,8 +124,7 @@ def run_scan_dual(
 
     # Cột dùng chung (không prefix)
     shared = ["ticker", "close", "bias_norm", "bias_label", "b_score", "r_score",
-              "buy_date", "buy_price", "sell_date", "sell_price",
-              "hold_days", "pnl_pct", "max_loss_pct",
+              "buy_date", "buy_price", "hold_days", "pnl_pct", "max_loss_pct",
               "volume", "turnover"]
     # Cột riêng từng style
     style_cols = ["trend", "supertrend", "support", "resistance",

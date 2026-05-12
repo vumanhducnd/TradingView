@@ -22,7 +22,7 @@ from typing import Optional
 import pandas as pd
 import scanner.utils  # noqa: patch SSL trước
 from scanner.data_fetcher import _set_api_key, load_all_from_db
-from scanner.database import bulk_upsert_today, get_top_liquid_tickers, get_vn100_watchlist, load_all_ohlcv_bulk, load_ohlcv, upsert_ohlcv
+from scanner.database import bulk_upsert_today, get_top300_thanh_khoan, get_vn100_watchlist, load_all_ohlcv_bulk, load_ohlcv, upsert_ohlcv
 from scanner.indicators import calc_bias_norm, calc_supertrend, calc_supertrend_next, get_supertrend_state
 from scanner.telegram_bot import send_message
 from scanner.utils import fmt_price, logger
@@ -73,7 +73,7 @@ def run_pre_session() -> None:
         return  # GitHub Actions delay quá lớn, bỏ qua báo cáo sáng
     _set_api_key()
     logger.info("=== Pre-session scan (8:30 ICT) ===")
-    vn100 = get_top_liquid_tickers(n=300)
+    vn100 = get_top300_thanh_khoan(n=300)
     if not vn100:
         logger.error("Watchlist trống")
         return
@@ -457,7 +457,7 @@ def run_session(interval: int = 180) -> None:
 
     from scanner.database import get_watchlist
     all_tickers  = get_watchlist()                  # toàn bộ để upsert DB
-    top300       = get_top_liquid_tickers(n=300)    # top 300 để tính ST + alert
+    top300       = get_top300_thanh_khoan(n=300)    # top 300 để tính ST + alert
     if not top300:
         logger.error("Watchlist trống")
         return
@@ -587,7 +587,7 @@ def _run_session_once() -> None:
     # ── Bước 1: Watchlist ─────────────────────────────────
     t1 = _time.time()
     all_tickers = get_watchlist()
-    top300      = get_top_liquid_tickers(n=300)
+    top300      = get_top300_thanh_khoan(n=300)
     today_ts    = pd.Timestamp(date.today())
     logger.info(f"[1/5] Watchlist: {len(all_tickers)} tong | {len(top300)} top-300 ({_time.time()-t1:.1f}s)")
 

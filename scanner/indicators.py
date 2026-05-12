@@ -275,14 +275,15 @@ def analyze_ticker(
         if df["buy_signal"].iloc[i]:
             last_signal_type  = "MUA"
             last_signal_date  = df.index[i]
-            # Giá mua thực tế = high của bar tín hiệu (mode realistic)
-            last_signal_price = float(df["high"].iloc[i])
+            # Giá mua = low của nến breakout
+            last_signal_price = float(df["low"].iloc[i])
             bars_since_signal = len(df) - 1 - i
             break
         elif df["sell_signal"].iloc[i]:
             last_signal_type  = "BÁN"
             last_signal_date  = df.index[i]
-            last_signal_price = float(df["low"].iloc[i])
+            # Giá bán = high của nến breakout
+            last_signal_price = float(df["high"].iloc[i])
             bars_since_signal = len(df) - 1 - i
             break
 

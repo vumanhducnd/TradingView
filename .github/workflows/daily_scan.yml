@@ -39,10 +39,12 @@ jobs:
 
       - name: Run scanner
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
-          DATABASE_URL:       ${{ secrets.DATABASE_URL }}
-          VNSTOCK_API_KEY:    ${{ secrets.VNSTOCK_API_KEY }}
+          TELEGRAM_BOT_TOKEN_LONG:  ${{ secrets.TELEGRAM_BOT_TOKEN_LONG }}
+          TELEGRAM_CHAT_ID_LONG:    ${{ secrets.TELEGRAM_CHAT_ID_LONG }}
+          TELEGRAM_BOT_TOKEN_SHORT: ${{ secrets.TELEGRAM_BOT_TOKEN_SHORT }}
+          TELEGRAM_CHAT_ID_SHORT:   ${{ secrets.TELEGRAM_CHAT_ID_SHORT }}
+          DATABASE_URL:             ${{ secrets.DATABASE_URL }}
+          VNSTOCK_API_KEY:          ${{ secrets.VNSTOCK_API_KEY }}
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.force }}" = "true" ]; then
             python -m scanner.updater --scan-only --force

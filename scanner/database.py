@@ -118,9 +118,9 @@ def get_vn100_watchlist() -> list[str]:
         return [r["ticker"] for r in cur.fetchall()]
 
 
-def get_top_liquid_tickers(n: int = 300) -> list[str]:
+def get_top300_thanh_khoan(n: int = 300) -> list[str]:
     """
-    Trả về top N mã theo avg_turnover_20d đã tính sẵn trong watchlist.
+    Trả về top N mã thanh khoản cao nhất theo avg_turnover_20d đã tính sẵn trong watchlist.
     Fallback về tính trực tiếp từ ohlcv nếu cột chưa có data.
     """
     try:
@@ -162,8 +162,8 @@ def get_top_liquid_tickers(n: int = 300) -> list[str]:
             if result:
                 return result
     except Exception as e:
-        logger.warning(f"get_top_liquid_tickers fallback failed: {e}")
-    return get_vn100_watchlist()
+        logger.warning(f"get_top300_thanh_khoan fallback failed: {e}")
+    return get_vn100_watchlist()[:n]
 
 
 def update_liquidity_stats(days: int = 20) -> int:
@@ -455,6 +455,10 @@ def save_scan_results(df: pd.DataFrame, scan_date: date | None = None) -> None:
             _v(r, "short_supertrend", float),
             r.get("long_last_signal_type"),
             r.get("short_last_signal_type"),
+            _date(r, "short_last_signal_date"),
+            _v(r, "short_last_signal_price", float),
+            _date(r, "long_last_signal_date"),
+            _v(r, "long_last_signal_price",  float),
             _v(r, "long_signal_pnl_pct",  float),
             _v(r, "short_signal_pnl_pct", float),
             _v(r, "long_bars_since_signal",  int),
@@ -485,6 +489,8 @@ def save_scan_results(df: pd.DataFrame, scan_date: date | None = None) -> None:
             long_buy_signal, short_buy_signal, long_sell_signal, short_sell_signal,
             long_supertrend, short_supertrend,
             long_last_signal_type, short_last_signal_type,
+            short_last_signal_date, short_last_signal_price,
+            long_last_signal_date, long_last_signal_price,
             long_signal_pnl_pct, short_signal_pnl_pct,
             long_bars_since_signal, short_bars_since_signal,
             both_buy, both_sell,
@@ -511,6 +517,10 @@ def save_scan_results(df: pd.DataFrame, scan_date: date | None = None) -> None:
             short_supertrend = EXCLUDED.short_supertrend,
             long_last_signal_type = EXCLUDED.long_last_signal_type,
             short_last_signal_type = EXCLUDED.short_last_signal_type,
+            short_last_signal_date = EXCLUDED.short_last_signal_date,
+            short_last_signal_price = EXCLUDED.short_last_signal_price,
+            long_last_signal_date = EXCLUDED.long_last_signal_date,
+            long_last_signal_price = EXCLUDED.long_last_signal_price,
             long_signal_pnl_pct = EXCLUDED.long_signal_pnl_pct,
             short_signal_pnl_pct = EXCLUDED.short_signal_pnl_pct,
             long_bars_since_signal = EXCLUDED.long_bars_since_signal,
@@ -526,31 +536,112 @@ def save_scan_results(df: pd.DataFrame, scan_date: date | None = None) -> None:
     logger.info(f"scan_results: saved {len(rows)} rows for {scan_date}")
 
 
+def ensure_scan_results_columns() -> None:
+    """Thêm cột short_last_signal_date/price vào scan_results nếu chưa có."""
+    migrations = [
+        "ALTER TABLE scan_results ADD COLUMN IF NOT EXISTS short_last_signal_date  DATE",
+        "ALTER TABLE scan_results ADD COLUMN IF NOT EXISTS short_last_signal_price NUMERIC(12,4)",
+        "ALTER TABLE scan_results ADD COLUMN IF NOT EXISTS long_last_signal_date   DATE",
+        "ALTER TABLE scan_results ADD COLUMN IF NOT EXISTS long_last_signal_price  NUMERIC(12,4)",
+    ]
+    with db_cursor() as cur:
+        for sql in migrations:
+            try:
+                cur.execute(sql)
+            except Exception:
+                pass
+
+
+def ensure_signals_columns() -> None:
+    """Thêm các cột mới vào bảng signals nếu chưa có (migration an toàn)."""
+    migrations = [
+        "ALTER TABLE signals ADD COLUMN IF NOT EXISTS style      VARCHAR(10)  DEFAULT 'long'",
+        "ALTER TABLE signals ADD COLUMN IF NOT EXISTS closed     BOOLEAN      DEFAULT FALSE",
+        "ALTER TABLE signals ADD COLUMN IF NOT EXISTS sell_date  DATE",
+        "ALTER TABLE signals ADD COLUMN IF NOT EXISTS sell_price NUMERIC(12,4)",
+        "ALTER TABLE signals ADD COLUMN IF NOT EXISTS pnl_pct    NUMERIC(8,2)",
+    ]
+    with db_cursor() as cur:
+        for sql in migrations:
+            try:
+                cur.execute(sql)
+            except Exception:
+                pass  # cột đã tồn tại
+
+
 def save_signals(df: pd.DataFrame, scan_date: date | None = None) -> None:
-    """Lưu chỉ những mã có tín hiệu MUA/BÁN vào bảng signals."""
+    """
+    Lưu tín hiệu MUA/BÁN vào bảng signals. Hỗ trợ dual mode (long + short).
+    - Buy signal  → INSERT vị thế MUA mới (closed=FALSE)
+    - Sell signal → đóng vị thế MUA mở gần nhất (closed=TRUE, tính P&L) + INSERT record BÁN
+    """
     if scan_date is None:
         scan_date = date.today()
 
-    rows = []
-    for _, row in df.iterrows():
-        if row.get("buy_signal"):
-            rows.append((row["ticker"], scan_date, "MUA", row.get("close"),
-                         row.get("supertrend"), row.get("bias_norm"), row.get("b_score")))
-        if row.get("sell_signal"):
-            rows.append((row["ticker"], scan_date, "BÁN", row.get("close"),
-                         row.get("supertrend"), row.get("bias_norm"), row.get("b_score")))
+    ensure_signals_columns()
 
-    if not rows:
-        return
+    is_dual = "long_buy_signal" in df.columns
+    styles = (
+        [("long",  "long_buy_signal",  "long_sell_signal",  "long_supertrend"),
+         ("short", "short_buy_signal", "short_sell_signal", "short_supertrend")]
+        if is_dual else
+        [("long",  "buy_signal",       "sell_signal",       "supertrend")]
+    )
 
-    sql = """
-        INSERT INTO signals (ticker, signal_date, signal_type, price, supertrend, bias_norm, b_score)
-        VALUES %s
-        ON CONFLICT (ticker, signal_date, signal_type) DO NOTHING
-    """
+    total = 0
     with db_cursor() as cur:
-        psycopg2.extras.execute_values(cur, sql, rows)
-    logger.info(f"signals: saved {len(rows)} signals for {scan_date}")
+        for style, buy_col, sell_col, st_col in styles:
+            for _, row in df.iterrows():
+                ticker  = row["ticker"]
+                close   = float(row.get("close") or 0)
+                st      = row.get(st_col) or row.get("supertrend")
+                bias    = row.get("bias_norm")
+                bscore  = row.get("b_score")
+
+                if row.get(buy_col):
+                    cur.execute(
+                        """
+                        INSERT INTO signals
+                            (ticker, signal_date, signal_type, style, price, supertrend, bias_norm, b_score, closed)
+                        VALUES (%s,%s,'MUA',%s,%s,%s,%s,%s,FALSE)
+                        ON CONFLICT DO NOTHING
+                        """,
+                        (ticker, scan_date, style, close, st, bias, bscore),
+                    )
+                    total += 1
+
+                if row.get(sell_col):
+                    # Đóng vị thế MUA mở gần nhất cùng style
+                    cur.execute(
+                        """
+                        UPDATE signals
+                        SET closed     = TRUE,
+                            sell_date  = %s,
+                            sell_price = %s,
+                            pnl_pct    = ROUND((%s - price) / NULLIF(price,0) * 100, 2)
+                        WHERE id = (
+                            SELECT id FROM signals
+                            WHERE ticker = %s AND style = %s
+                              AND signal_type = 'MUA' AND closed = FALSE
+                            ORDER BY signal_date DESC
+                            LIMIT 1
+                        )
+                        """,
+                        (scan_date, close, close, ticker, style),
+                    )
+                    # Lưu record BÁN để tra cứu lịch sử
+                    cur.execute(
+                        """
+                        INSERT INTO signals
+                            (ticker, signal_date, signal_type, style, price, supertrend, bias_norm, b_score, closed)
+                        VALUES (%s,%s,'BÁN',%s,%s,%s,%s,%s,TRUE)
+                        ON CONFLICT DO NOTHING
+                        """,
+                        (ticker, scan_date, style, close, st, bias, bscore),
+                    )
+                    total += 1
+
+    logger.info(f"signals: {total} bản ghi cho {scan_date} (dual={is_dual})")
 
 
 # ─── Query helpers cho Dashboard ──────────────────────────────────────────────
@@ -616,44 +707,39 @@ def load_scan_dates() -> list[date]:
         return [r["scan_date"] for r in cur.fetchall()]
 
 
-def load_open_positions() -> dict[str, dict]:
+def load_open_positions(style: str | None = None) -> list[dict]:
     """
-    Tìm vị thế đang mở: ticker có tín hiệu MUA gần nhất chưa có BÁN sau đó.
-    Returns {ticker: {buy_date, buy_price}}
+    Trả về danh sách vị thế MUA đang mở (closed=FALSE).
+    Mỗi dict: ticker, style, signal_date, price, pnl_pct (chưa tính vì chưa đóng).
     """
     sql = """
-        SELECT DISTINCT ON (ticker)
-            ticker,
-            signal_date AS buy_date,
-            price       AS buy_price
+        SELECT ticker, style, signal_date, price AS buy_price, bias_norm, b_score
         FROM signals
-        WHERE signal_type = 'MUA'
-          AND NOT EXISTS (
-              SELECT 1 FROM signals s2
-              WHERE s2.ticker      = signals.ticker
-                AND s2.signal_type = 'BÁN'
-                AND s2.signal_date > signals.signal_date
-          )
+        WHERE signal_type = 'MUA' AND closed = FALSE
+        {style_filter}
+        ORDER BY signal_date DESC
+    """.format(style_filter="AND style = %(style)s" if style else "")
+    with db_cursor(commit=False) as cur:
+        cur.execute(sql, {"style": style} if style else {})
+        return [dict(r) for r in cur.fetchall()]
+
+
+def load_last_signals(tickers: list[str], style: str | None = None) -> pd.DataFrame:
+    """
+    Lấy tín hiệu MUA đang mở gần nhất của từng ticker (closed=FALSE).
+    Dùng để gắn buy_date/buy_price vào kết quả scan.
+    """
+    style_filter = "AND style = %(style)s" if style else ""
+    sql = f"""
+        SELECT DISTINCT ON (ticker)
+            ticker, style, signal_date, price
+        FROM signals
+        WHERE ticker = ANY(%(tickers)s)
+          AND signal_type = 'MUA' AND closed = FALSE
+          {style_filter}
         ORDER BY ticker, signal_date DESC
     """
     with db_cursor(commit=False) as cur:
-        cur.execute(sql)
-        rows = cur.fetchall()
-    return {r["ticker"]: {"buy_date": r["buy_date"], "buy_price": float(r["buy_price"])} for r in rows}
-
-
-def load_last_signals(tickers: list[str]) -> pd.DataFrame:
-    """
-    Lấy tín hiệu MUA/BÁN gần nhất của từng ticker.
-    """
-    sql = """
-        SELECT DISTINCT ON (ticker, signal_type)
-            ticker, signal_type, signal_date, price
-        FROM signals
-        WHERE ticker = ANY(%s)
-        ORDER BY ticker, signal_type, signal_date DESC
-    """
-    with db_cursor(commit=False) as cur:
-        cur.execute(sql, (tickers,))
+        cur.execute(sql, {"tickers": tickers, "style": style})
         rows = cur.fetchall()
     return pd.DataFrame(rows) if rows else pd.DataFrame()

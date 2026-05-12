@@ -30,8 +30,10 @@ jobs:
 
       - name: Báo cáo đầu phiên VN100
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_BOT_TOKEN_LONG:  ${{ secrets.TELEGRAM_BOT_TOKEN_LONG }}
+          TELEGRAM_CHAT_ID_LONG:    ${{ secrets.TELEGRAM_CHAT_ID_LONG }}
+          TELEGRAM_BOT_TOKEN_SHORT: ${{ secrets.TELEGRAM_BOT_TOKEN_SHORT }}
+          TELEGRAM_CHAT_ID_SHORT:   ${{ secrets.TELEGRAM_CHAT_ID_SHORT }}
           DATABASE_URL:       ${{ secrets.DATABASE_URL }}
           VNSTOCK_API_KEY:    ${{ secrets.VNSTOCK_API_KEY }}
         run: python -m scanner.live_scanner --mode pre
