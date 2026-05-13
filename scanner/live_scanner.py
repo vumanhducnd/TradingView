@@ -72,18 +72,14 @@ _TOP_N_PRE          = 10    # số mã hiển thị mỗi nhóm
 
 
 def _fmt_pre_row(r: dict) -> str:
-    """Format 1 dòng mã: SÀNG:MÃ | Giá | ST | TK | % cách"""
-    exch    = r.get("exchange", "")
-    prefix  = f"{exch}:" if exch else ""
-    dist    = r["dist_pct"]
-    dist_str = f"{dist:+.1f}%" if dist >= 0 else f"{dist:.1f}%"
-    tk_str  = f"{r['turnover']/1e9:.1f} tỷ" if r.get("turnover") else "–"
+    """Format 1 dòng mã: SÀNG:MÃ | Giá | TK"""
+    exch   = r.get("exchange", "")
+    prefix = f"{exch}:" if exch else ""
+    tk_str = f"{r['turnover']/1e9:.1f} tỷ" if r.get("turnover") else "–"
     return (
         f"  <b>{prefix}{r['ticker']}</b> | "
         f"Giá {fmt_price(r['close'])} | "
-        f"ST {fmt_price(r['supertrend'])} | "
-        f"TK {tk_str} | "
-        f"Cách {dist_str}"
+        f"TK {tk_str}"
     )
 
 

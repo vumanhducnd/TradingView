@@ -21,7 +21,8 @@
       "Bash(python -m scanner.watchlist_builder)",
       "Bash(gh workflow *)",
       "Bash(python -c 'from dotenv import load_dotenv; import os; load_dotenv\\(\\); print\\(os.getenv\\(\\\\\"GITHUB_TOKEN\\\\\",\\\\\"\\\\\"\\)\\)')",
-      "Bash(curl -s -X POST -H 'Accept: application/vnd.github+json' -H 'Authorization: Bearer __CMDSUB_OUTPUT__' https://api.github.com/repos/vumanhducnd/TradingView/actions/workflows/update_watchlist.yml/dispatches -d '{\"ref\":\"main\"}')"
+      "Bash(curl -s -X POST -H 'Accept: application/vnd.github+json' -H 'Authorization: Bearer __CMDSUB_OUTPUT__' https://api.github.com/repos/vumanhducnd/TradingView/actions/workflows/update_watchlist.yml/dispatches -d '{\"ref\":\"main\"}')",
+      "Bash(git commit *)"
     ]
   }
 }
