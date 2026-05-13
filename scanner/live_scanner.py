@@ -633,11 +633,11 @@ def run_session(interval: int = 180, session: str = "full") -> None:
             if flip["direction"] == "buy":
                 msg = (
                     f"🟢 <b>{ticker}</b> — Cân nhắc vào lệnh\n"
-                    f"Giá vừa bứt phá ngưỡng SuperTrend lên trên\n"
+                    f"Giá vừa bứt phá ngưỡng kháng cự lên trên\n"
                     f"Giá hiện tại : <b>{fmt_price(price)}</b>\n"
-                    f"Ngưỡng ST    : {fmt_price(st)}\n"
+                    f"Ngưỡng kháng cự: {fmt_price(st)}\n"
                     f"Thanh khoản  : {tk_str}\n"
-                    f"Thời gian    : {time_str} ICT"
+                    f"Thời gian    : {time_str} GMT+7"
                 )
             else:
                 # Tính P&L từ vị thế đang mở
@@ -649,12 +649,12 @@ def run_session(interval: int = 180, session: str = "full") -> None:
                     pnl_str = f"\nVị thế       : mua {fmt_price(buy_p)} → {pnl:+.2f}%"
                 msg = (
                     f"🔴 <b>{ticker}</b> — Cân nhắc thoát lệnh\n"
-                    f"Giá vừa thủng ngưỡng hỗ trợ SuperTrend\n"
+                    f"Giá vừa thủng ngưỡng hỗ trợ\n"
                     f"Giá hiện tại : <b>{fmt_price(price)}</b>\n"
-                    f"Ngưỡng ST    : {fmt_price(st)}\n"
+                    f"Ngưỡng hỗ trợ: {fmt_price(st)}\n"
                     f"Thanh khoản  : {tk_str}"
                     f"{pnl_str}\n"
-                    f"Thời gian    : {time_str} ICT"
+                    f"Thời gian    : {time_str} GMT+7"
                 )
 
             send_message(msg)
