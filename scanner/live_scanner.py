@@ -610,19 +610,55 @@ def run_session(interval: int = 180, session: str = "full") -> None:
             # Cập nhật state với close mới nhất
             st_states[ticker] = {**new_state, "close": bar["close"]}
 
+        # ── Load TK và vị thế mở (dùng cho P&L bán) ──
+        if flips:
+            flip_tickers = [f["ticker"] for f in flips]
+            try:
+                from scanner.database import load_avg_turnover, load_open_positions
+                tk_map  = load_avg_turnover(flip_tickers)
+                pos_map = {p["ticker"]: p for p in load_open_positions(style="long")}
+                pos_map_s = {p["ticker"]: p for p in load_open_positions(style="short")}
+            except Exception:
+                tk_map, pos_map, pos_map_s = {}, {}, {}
+
         # ── Gửi Telegram cho từng flip ──
         for flip in flips:
-            emoji = "🟢" if flip["direction"] == "buy" else "🔴"
-            label = "LẬT TĂNG — XEM XÉT MUA" if flip["direction"] == "buy" else "LẬT GIẢM — XEM XÉT BÁN"
-            send_message(
-                f"{emoji} <b>{flip['ticker']}</b> | {label}\n"
-                f"Giá: <b>{fmt_price(flip['price'])}</b> | ST: {fmt_price(flip['st'])}\n"
-                f"Thời gian: {now.strftime('%H:%M')} ICT"
-            )
-            logger.info(
-                f"  FLIP {flip['direction'].upper()}: {flip['ticker']} "
-                f"giá={flip['price']:,.0f} ST={flip['st']:,.0f}"
-            )
+            ticker = flip["ticker"]
+            price  = flip["price"]
+            st     = flip["st"]
+            tk     = float(tk_map.get(ticker, 0) or 0)
+            tk_str = f"{tk/1e6:.1f} tỷ" if tk > 0 else "–"
+            time_str = now.strftime("%H:%M")
+
+            if flip["direction"] == "buy":
+                msg = (
+                    f"🟢 <b>{ticker}</b> — Cân nhắc vào lệnh\n"
+                    f"Giá vừa bứt phá ngưỡng SuperTrend lên trên\n"
+                    f"Giá hiện tại : <b>{fmt_price(price)}</b>\n"
+                    f"Ngưỡng ST    : {fmt_price(st)}\n"
+                    f"Thanh khoản  : {tk_str}\n"
+                    f"Thời gian    : {time_str} ICT"
+                )
+            else:
+                # Tính P&L từ vị thế đang mở
+                pos = pos_map.get(ticker) or pos_map_s.get(ticker)
+                pnl_str = ""
+                if pos and pos.get("buy_price") and float(pos["buy_price"]) > 0:
+                    buy_p = float(pos["buy_price"])
+                    pnl   = round((price - buy_p) / buy_p * 100, 2)
+                    pnl_str = f"\nVị thế       : mua {fmt_price(buy_p)} → {pnl:+.2f}%"
+                msg = (
+                    f"🔴 <b>{ticker}</b> — Cân nhắc thoát lệnh\n"
+                    f"Giá vừa thủng ngưỡng hỗ trợ SuperTrend\n"
+                    f"Giá hiện tại : <b>{fmt_price(price)}</b>\n"
+                    f"Ngưỡng ST    : {fmt_price(st)}\n"
+                    f"Thanh khoản  : {tk_str}"
+                    f"{pnl_str}\n"
+                    f"Thời gian    : {time_str} ICT"
+                )
+
+            send_message(msg)
+            logger.info(f"  FLIP {flip['direction'].upper()}: {ticker} giá={price:,.2f} ST={st:,.2f}")
 
         total_flips += len(flips)
         logger.info(f"  Upsert: {len(today_bars)} | Flip: {len(flips)} | Tổng: {total_flips}")
