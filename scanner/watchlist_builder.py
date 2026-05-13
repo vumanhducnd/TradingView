@@ -12,57 +12,53 @@ Quy trình:
 from __future__ import annotations
 
 import sys
-import time
 from datetime import date, timedelta
 
 import pandas as pd
 
 import scanner.utils  # noqa: F401 — phải import trước để patch SSL
-from scanner.config import FETCH_DELAY
-from scanner.database import get_connection, upsert_ohlcv, upsert_watchlist
+from scanner.database import get_connection, upsert_watchlist
 from scanner.utils import logger
 
 # Ngưỡng lọc mặc định
 MIN_PRICE = 5_000          # bỏ penny stock dưới 5,000 VND
 MIN_AVG_TURNOVER = 1e9     # thanh khoản tối thiểu 1 tỷ VND/ngày
-QUICK_CRAWL_DAYS = 30      # crawl nhanh 30 ngày để tính thanh khoản
-TOP_N_DEFAULT = 500
 
 
 def build_watchlist(
     top_n: int = 0,
-    filter_liquidity: bool = False,
-    force: bool = False,
+    filter_liquidity: bool = True,
 ) -> list[str]:
     """
     Xây dựng và lưu watchlist.
-    top_n=0 + filter_liquidity=False → lấy toàn bộ HOSE+HNX+UPCOM.
-    Returns danh sách ticker đã lưu.
+    Lấy danh sách mã từ API, tính thanh khoản từ DB (không crawl).
+    top_n=0 → lấy tất cả mã đủ điều kiện.
     """
     # Bước 1: Lấy tất cả mã từ HOSE + HNX + UPCOM
     all_tickers = _get_all_tickers()
     if not all_tickers:
         logger.error("Không lấy được danh sách mã từ API")
         sys.exit(1)
-
     logger.info(f"Tổng mã HOSE+HNX+UPCOM: {len(all_tickers)}")
 
     if not filter_liquidity:
-        # Lưu kèm exchange info
-        upsert_watchlist(all_tickers)  # all_tickers là list[(ticker, exchange)]
+        upsert_watchlist(all_tickers)
         logger.info(f"Watchlist: {len(all_tickers)} mã (không lọc)")
         return [t for t, _ in all_tickers]
 
-    # Nếu muốn lọc theo thanh khoản: crawl nhanh trước
-    _quick_crawl(all_tickers, days=QUICK_CRAWL_DAYS, force=force)
-    limit = top_n if top_n > 0 else len(all_tickers)
-    ranked = _rank_by_liquidity(all_tickers, top_n=limit)
+    # Bước 2: Tính thanh khoản từ DB (không crawl)
+    ticker_list = [t for t, _ in all_tickers]
+    limit = top_n if top_n > 0 else len(ticker_list)
+    ranked = _rank_by_liquidity(ticker_list, top_n=limit)
     if not ranked:
-        logger.error("Không có mã nào đủ điều kiện thanh khoản")
+        logger.error("Không có mã nào đủ điều kiện — DB chưa có OHLCV?")
         return []
 
-    upsert_watchlist(ranked)
-    logger.info(f"Watchlist cập nhật: {len(ranked)} mã (đã lọc thanh khoản)")
+    # Giữ lại exchange info cho các mã được chọn
+    exchange_map = {t: ex for t, ex in all_tickers}
+    ranked_with_exchange = [(t, exchange_map.get(t, "UNKNOWN")) for t in ranked]
+    upsert_watchlist(ranked_with_exchange)
+    logger.info(f"Watchlist cập nhật: {len(ranked)} mã (lọc từ DB, không crawl)")
     return ranked
 
 
@@ -148,42 +144,6 @@ def _fetch_exchange_tickers_with_info(exchange: str) -> list[str]:
     return []
 
 
-def _quick_crawl(tickers: list[str], days: int = QUICK_CRAWL_DAYS, force: bool = False) -> None:
-    """
-    Crawl nhanh N ngày gần nhất cho toàn bộ tickers.
-    Bỏ qua mã đã có data gần đây (resume friendly).
-    """
-    from scanner.database import get_all_last_dates
-    last_dates = get_all_last_dates() if not force else {}
-    cutoff = date.today() - timedelta(days=days)
-    today = date.today()
-
-    # Hỗ trợ cả list[str] và list[(ticker, exchange)]
-    ticker_list = [t if isinstance(t, str) else t[0] for t in tickers]
-    need = [t for t in ticker_list if not (last_dates.get(t) and last_dates[t] >= cutoff)]
-    skip = len(tickers) - len(need)
-    logger.info(f"Quick crawl: {len(need)} fetch, {skip} skip | est ~{len(need)*FETCH_DELAY/60:.1f} phút")
-
-    ok, fail = 0, []
-    for i, ticker in enumerate(need, 1):
-        last = last_dates.get(ticker)
-        start = (last + timedelta(days=1)) if last else cutoff
-
-        df = _fetch_ohlcv(ticker, start, today)
-        if df is not None and not df.empty:
-            upsert_ohlcv(ticker, df)
-            ok += 1
-            if i % 20 == 0:
-                logger.info(f"  [{i}/{len(need)}] {ok} OK, {len(fail)} fail")
-        else:
-            fail.append(ticker)
-
-        if i < len(need):
-            time.sleep(FETCH_DELAY)
-
-    logger.info(f"Quick crawl xong: {ok} OK, {len(fail)} thất bại")
-
-
 def _rank_by_liquidity(tickers: list[str], top_n: int) -> list[str]:
     """
     Truy vấn DB, tính avg_turnover 20 ngày, lọc và lấy top N.
@@ -228,25 +188,6 @@ def _rank_by_liquidity(tickers: list[str], top_n: int) -> list[str]:
     return df["ticker"].tolist()
 
 
-def _fetch_ohlcv(ticker: str, start: date, end: date):
-    """Fetch với fallback VCI → TCBS."""
-    for source in ["VCI", "TCBS"]:
-        try:
-            from vnstock.api.quote import Quote
-            q = Quote(symbol=ticker, source=source)
-            df = q.history(
-                start=start.strftime("%Y-%m-%d"),
-                end=end.strftime("%Y-%m-%d"),
-                interval="1D",
-            )
-            if df is not None and not df.empty:
-                from scanner.data_fetcher import _normalize_columns
-                return _normalize_columns(df)
-        except Exception:
-            continue
-    return None
-
-
 def _find_ticker_col(df: pd.DataFrame) -> str:
     for name in ["ticker", "symbol", "code", "Ticker", "Symbol", "Code"]:
         if name in df.columns:
@@ -258,16 +199,15 @@ def _find_ticker_col(df: pd.DataFrame) -> str:
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description="Build VN stock watchlist")
+    parser = argparse.ArgumentParser(description="Build VN stock watchlist từ DB")
     parser.add_argument("--top", type=int, default=0,
-                        help="Giới hạn số mã (default: 0 = tất cả)")
-    parser.add_argument("--filter-liquidity", action="store_true",
-                        help="Lọc theo thanh khoản (crawl nhanh 30 ngày trước)")
+                        help="Giới hạn số mã (default: 0 = tất cả đủ điều kiện)")
     parser.add_argument("--min-price", type=float, default=MIN_PRICE,
-                        help="Giá tối thiểu VND (chỉ dùng khi --filter-liquidity)")
+                        help="Giá tối thiểu VND")
     parser.add_argument("--min-turnover", type=float, default=MIN_AVG_TURNOVER,
                         help="Thanh khoản tối thiểu VND/ngày")
-    parser.add_argument("--force", action="store_true", help="Crawl lại dù đã có data")
+    parser.add_argument("--no-filter", action="store_true",
+                        help="Lưu toàn bộ mã, không lọc thanh khoản")
     args = parser.parse_args()
 
     MIN_PRICE = args.min_price
@@ -275,8 +215,7 @@ if __name__ == "__main__":
 
     result = build_watchlist(
         top_n=args.top,
-        filter_liquidity=args.filter_liquidity,
-        force=args.force,
+        filter_liquidity=not args.no_filter,
     )
     print(f"\nWatchlist: {len(result)} mã")
     print(result[:20], "...")
