@@ -147,7 +147,8 @@ def send_daily_report(
             return df
         return df.nlargest(TOP_N, vol_col) if vol_col and vol_col in df.columns else df.head(TOP_N)
 
-    def _signal_lines(df: pd.DataFrame, emoji: str, label: str, st_col: str) -> list[str]:
+    def _signal_lines(df: pd.DataFrame, emoji: str, label: str, st_col: str,
+                      direction: str = "buy") -> list[str]:
         top = _top_n(df)
         if top.empty:
             return []
@@ -156,14 +157,23 @@ def send_daily_report(
         count_str = f"{shown}/{total}" if shown < total else f"{shown}"
         lines = [f"{emoji} <b>{label} — {count_str} mã</b>"]
         for _, row in top.iterrows():
-            st = _val(row, st_col, "supertrend")
+            st    = _val(row, st_col, "supertrend")
             close = _val(row, "close")
-            lines.append(
-                f"  <b>{row['ticker']}</b>\n"
-                f"    Giá đóng cửa : {_fmt(close)}\n"
-                f"    Giá ST (bán) : {_fmt(st)}\n"
-                f"    Thanh khoản  : {_fmt_tk(row)}"
-            )
+            if direction == "buy":
+                # SL = ST - 2%
+                sl_str = _fmt(float(st) * 0.98) if st and float(st) > 0 else "–"
+                lines.append(
+                    f"  <b>{row['ticker']}</b>\n"
+                    f"    Giá mua       : {_fmt(close)}\n"
+                    f"    Giá SL (ST-2%): {sl_str}\n"
+                    f"    Thanh khoản   : {_fmt_tk(row)}"
+                )
+            else:
+                lines.append(
+                    f"  <b>{row['ticker']}</b>\n"
+                    f"    Giá bán    : {_fmt(close)}\n"
+                    f"    Thanh khoản: {_fmt_tk(row)}"
+                )
         return lines
 
     def _send_for_style(style: str) -> None:
@@ -230,8 +240,8 @@ def send_daily_report(
         # Tín hiệu
         st_col = f"{p}supertrend"
         for lines in [
-            _signal_lines(buy_df,  "🚀", "Tín hiệu bứt phá xác nhận", st_col),
-            _signal_lines(sell_df, "🔻", "Tín hiệu đảo chiều giảm",   st_col),
+            _signal_lines(buy_df,  "🚀", "Tín hiệu bứt phá xác nhận", st_col, direction="buy"),
+            _signal_lines(sell_df, "🔻", "Tín hiệu đảo chiều giảm",   st_col, direction="sell"),
         ]:
             if lines:
                 send_message("\n".join(lines), style=style)
@@ -264,8 +274,8 @@ def send_daily_report(
         _send_positions_summary(results, style="long")
         time.sleep(0.8)
         for lines in [
-            _signal_lines(buy_df,  "🚀", "Tín hiệu bứt phá xác nhận", "supertrend"),
-            _signal_lines(sell_df, "🔻", "Tín hiệu đảo chiều giảm",   "supertrend"),
+            _signal_lines(buy_df,  "🚀", "Tín hiệu bứt phá xác nhận", "supertrend", direction="buy"),
+            _signal_lines(sell_df, "🔻", "Tín hiệu đảo chiều giảm",   "supertrend", direction="sell"),
         ]:
             if lines:
                 send_message("\n".join(lines), style="long")
