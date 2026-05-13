@@ -151,7 +151,10 @@ def send_daily_report(
         top = _top_n(df)
         if top.empty:
             return []
-        lines = [f"{emoji} <b>{label} — {len(top)} mã</b>"]
+        total = len(df)
+        shown = len(top)
+        count_str = f"{shown}/{total}" if shown < total else f"{shown}"
+        lines = [f"{emoji} <b>{label} — {count_str} mã</b>"]
         for _, row in top.iterrows():
             st = _val(row, st_col, "supertrend")
             close = _val(row, "close")
