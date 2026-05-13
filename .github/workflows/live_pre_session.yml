@@ -5,6 +5,13 @@ on:
     # 01:00 UTC = 08:00 ICT (GMT+7), thứ 2–6
     - cron: '0 1 * * 1-5'
   workflow_dispatch:
+    inputs:
+      force:
+        description: 'Bypass kiem tra gio (de test)'
+        required: false
+        default: 'false'
+        type: choice
+        options: ['true', 'false']
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -35,4 +42,9 @@ jobs:
           TELEGRAM_CHAT_ID_SHORT:   ${{ secrets.TELEGRAM_CHAT_ID_SHORT }}
           DATABASE_URL:       ${{ secrets.DATABASE_URL }}
           VNSTOCK_API_KEY:    ${{ secrets.VNSTOCK_API_KEY }}
-        run: python -m scanner.live_scanner --mode pre
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.force }}" = "true" ]; then
+            python -m scanner.live_scanner --mode pre --force
+          else
+            python -m scanner.live_scanner --mode pre
+          fi

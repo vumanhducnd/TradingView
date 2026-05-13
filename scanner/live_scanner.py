@@ -130,9 +130,9 @@ def _build_pre_report(results: list[dict], style_label: str, today_str: str,
     return "\n".join(lines), near_buy, near_sell
 
 
-def run_pre_session() -> None:
+def run_pre_session(force: bool = False) -> None:
     """Báo cáo 8:00 ICT: tính ST riêng dài hạn & ngắn hạn, gửi 2 bot."""
-    if not _wait_until_ict(8, 0, abort_after_hour=9, abort_after_minute=15):
+    if not force and not _wait_until_ict(8, 0, abort_after_hour=9, abort_after_minute=15):
         return
     _set_api_key()
     logger.info("=== Pre-session scan (8:00 ICT) ===")
@@ -746,7 +746,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.mode == "pre":
-        run_pre_session()
+        run_pre_session(force=args.force)
     elif args.mode == "session":
         if args.force:
             _run_session_once()
