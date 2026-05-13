@@ -120,12 +120,30 @@ def get_vn100_watchlist() -> list[str]:
 
 def get_top300_thanh_khoan(n: int = 300) -> list[str]:
     """
-    Trả về top N mã thanh khoản cao nhất theo avg_turnover_20d đã tính sẵn trong watchlist.
-    Fallback về tính trực tiếp từ ohlcv nếu cột chưa có data.
+    Trả về top N mã theo vn100_rank đã đánh trong watchlist (rank 1 = TK cao nhất).
+    Fallback về avg_turnover_20d nếu chưa có rank.
     """
     try:
         with db_cursor(commit=False) as cur:
-            # Dùng cột pre-computed (nhanh)
+            # Ưu tiên dùng rank đã đánh từ watchlist_builder
+            cur.execute(
+                """
+                SELECT ticker FROM watchlist
+                WHERE vn100_rank IS NOT NULL
+                ORDER BY vn100_rank ASC
+                LIMIT %s
+                """,
+                (n,),
+            )
+            result = [r["ticker"] for r in cur.fetchall()]
+            if len(result) >= min(n, 50):
+                return result
+    except Exception:
+        pass
+
+    # Fallback: avg_turnover_20d
+    try:
+        with db_cursor(commit=False) as cur:
             cur.execute(
                 """
                 SELECT ticker FROM watchlist
@@ -136,19 +154,18 @@ def get_top300_thanh_khoan(n: int = 300) -> list[str]:
                 (n,),
             )
             result = [r["ticker"] for r in cur.fetchall()]
-            if len(result) >= min(n, 50):   # đủ data mới tin
+            if len(result) >= min(n, 50):
                 return result
     except Exception:
         pass
 
-    # Fallback: tính trực tiếp từ ohlcv
-    logger.warning("avg_turnover_20d chưa có, tính trực tiếp từ ohlcv...")
+    # Fallback cuối: tính trực tiếp từ ohlcv
+    logger.warning("Khong co rank trong watchlist, tinh tu ohlcv...")
     try:
         with db_cursor(commit=False) as cur:
             cur.execute(
                 """
-                SELECT ticker
-                FROM ohlcv
+                SELECT ticker FROM ohlcv
                 WHERE date >= CURRENT_DATE - INTERVAL '30 days'
                   AND close > 0 AND volume > 0
                 GROUP BY ticker
