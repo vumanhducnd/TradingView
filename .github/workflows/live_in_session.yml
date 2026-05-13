@@ -1,16 +1,19 @@
-name: Live Session Scanner (9:00–14:45 ICT)
+name: Live Session Scanner (GMT+7)
 
-# Quét trong phiên 9:00–14:45 ICT (5h45m < 6h free tier limit).
-# Job tự dừng khi _is_market_open() = False (14:45 ICT).
+# Chia 2 phien: Sang 9:00-11:30 va Chieu 13:00-14:45 (moi job < 3h < 6h free tier)
+# Trigger boi cron-job.org qua workflow_dispatch chinh xac hon GitHub cron
 
 on:
-  schedule:
-    # 02:00 UTC = 09:00 ICT (GMT+7), thứ 2–6
-    - cron: '0 2 * * 1-5'
   workflow_dispatch:
     inputs:
+      session:
+        description: 'Phien: morning (9:00-11:30) | afternoon (13:00-14:45) | full'
+        required: false
+        default: 'morning'
+        type: choice
+        options: ['morning', 'afternoon', 'full']
       interval:
-        description: 'Phút giữa mỗi lần quét (default: 3)'
+        description: 'Phut giua moi lan quet (default: 3)'
         required: false
         default: '3'
 
@@ -20,7 +23,7 @@ env:
 jobs:
   session:
     runs-on: ubuntu-latest
-    timeout-minutes: 360   # 6h — free tier limit
+    timeout-minutes: 200   # ~3h30m du cho ca 2 phien
 
     steps:
       - name: Checkout repo
@@ -45,5 +48,6 @@ jobs:
           VNSTOCK_API_KEY:          ${{ secrets.VNSTOCK_API_KEY }}
           SLACK_WEBHOOK_URL:        ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
+          SESSION=${{ inputs.session || 'morning' }}
           INTERVAL=${{ inputs.interval || '3' }}
-          python -m scanner.live_scanner --mode session --interval $INTERVAL
+          python -m scanner.live_scanner --mode session --session $SESSION --interval $INTERVAL

@@ -499,25 +499,31 @@ def _send_alerts(alerts: list[dict]) -> None:
         time.sleep(0.3)
 
 
-def _is_market_open() -> bool:
+_SESSION_HOURS = {
+    "morning":   ((9, 0),  (11, 30)),   # 9:00 – 11:30
+    "afternoon": ((13, 0), (14, 45)),   # 13:00 – 14:45
+    "full":      ((9, 0),  (14, 45)),   # cả ngày (backup)
+}
+
+def _is_market_open(session: str = "full") -> bool:
     now = datetime.now(ICT)
     if now.weekday() >= 5:
         return False
+    start, end = _SESSION_HOURS.get(session, _SESSION_HOURS["full"])
     t = (now.hour, now.minute)
-    return (9, 0) <= t < (14, 45)
+    return start <= t < end
 
 
 # ─── Session scanner (main mode) ─────────────────────────────────────────────
 
-def run_session(interval: int = 180) -> None:
+def run_session(interval: int = 180, session: str = "full") -> None:
     """
-    Loop chính trong phiên 9:00–15:15 ICT.
-    - Fetch toàn bộ watchlist bằng price_board (1 API call, ~0.5s) → upsert DB
-    - Tính SuperTrend real-time chỉ cho VN100 (có đủ 60 ngày lịch sử)
-    - Gửi Telegram khi có mã VN100 lật trend
+    Loop trong phiên giao dịch.
+    session: 'morning' (9:00-11:30) | 'afternoon' (13:00-14:45) | 'full' (cả ngày)
     """
+    label = {"morning": "Sáng (9:00-11:30)", "afternoon": "Chiều (13:00-14:45)", "full": "Cả ngày"}.get(session, session)
     _set_api_key()
-    logger.info(f"=== Session Scanner START (mỗi {interval//60} phút, 9:00-15:15 ICT) ===")
+    logger.info(f"=== Session Scanner [{label}] START ===")
 
     from scanner.database import get_watchlist
     all_tickers  = get_watchlist()                  # toàn bộ để upsert DB
@@ -559,7 +565,7 @@ def run_session(interval: int = 180) -> None:
     scan_count    = 0
     alerted_today: set[str] = set()  # mã đã báo trong phiên → bỏ qua
 
-    while _is_market_open():
+    while _is_market_open(session):
         now = datetime.now(ICT)
         scan_count += 1
         logger.info(f"[{now.strftime('%H:%M')}] Scan #{scan_count}...")
@@ -739,6 +745,12 @@ if __name__ == "__main__":
         help="Phút giữa mỗi lần quét (default: 3)",
     )
     parser.add_argument(
+        "--session",
+        choices=["morning", "afternoon", "full"],
+        default="full",
+        help="Phiên: morning=9:00-11:30 | afternoon=13:00-14:45 | full=cả ngày",
+    )
+    parser.add_argument(
         "--force",
         action="store_true",
         help="Chạy 1 cycle dù ngoài giờ giao dịch (để test)",
@@ -751,6 +763,6 @@ if __name__ == "__main__":
         if args.force:
             _run_session_once()
         else:
-            run_session(interval=args.interval * 60)
+            run_session(interval=args.interval * 60, session=args.session)
     else:
         run_realtime(mode=args.mode, interval=args.interval * 60)
