@@ -174,6 +174,24 @@ def send_daily_report(
 
         style_name = "Đầu tư Dài Hạn" if is_long else "Đầu tư Ngắn Hạn"
 
+        # Top tăng/giảm mạnh trong ngày theo TK
+        top_gainers, top_losers = [], []
+        try:
+            from scanner.database import load_daily_change
+            tickers_all = results["ticker"].tolist()
+            chg_map = load_daily_change(tickers_all)
+            tk_series = results.set_index("ticker")["turnover"] if "turnover" in results.columns else None
+            def _sort_by_tk(t_list):
+                if tk_series is None:
+                    return t_list
+                return sorted(t_list, key=lambda t: float(tk_series.get(t, 0) or 0), reverse=True)
+            gainers = _sort_by_tk([t for t, v in chg_map.items() if v > 0])[:5]
+            losers  = _sort_by_tk([t for t, v in chg_map.items() if v < 0])[:5]
+            top_gainers = [f"{t}({chg_map[t]:+.1f}%)" for t in gainers]
+            top_losers  = [f"{t}({chg_map[t]:+.1f}%)" for t in losers]
+        except Exception as e:
+            logger.warning(f"load_daily_change failed: {e}")
+
         # AI cuối phiên (chạy trước để gộp vào header)
         ai_end = ""
         try:
@@ -183,6 +201,8 @@ def send_daily_report(
                 buy_tickers=buy_df["ticker"].tolist() if not buy_df.empty else [],
                 sell_tickers=sell_df["ticker"].tolist() if not sell_df.empty else [],
                 style_label=style_name,
+                top_gainers=top_gainers,
+                top_losers=top_losers,
             )
         except Exception as e:
             logger.warning(f"AI cuoi phien failed: {e}")
@@ -199,8 +219,8 @@ def send_daily_report(
 
         # Siêu cổ phiếu đã bỏ khỏi Telegram (vẫn còn trong Excel)
 
-        # Vị thế — riêng từng bot
-        _send_positions_summary(results, style=style)
+        # Top 5 vùng xanh (nắm giữ) theo TK thay vị thế
+        _send_top_vung_xanh(results, style=style)
         time.sleep(0.8)
 
         # Tín hiệu
@@ -351,6 +371,38 @@ def _send_super_stocks(df: pd.DataFrame, style: str = "long") -> None:
             f"\n  Giá: {fmt_price(close)} | Bias: {bias:.0f}/100 | Bull: {b_score}/9"
             f"\n  HT: {fmt_price(sup)} ({dist_s:+.1f}%) → KC: {fmt_price(res)} ({dist_r:+.1f}%)"
         )
+
+    send_message("\n".join(lines), style=style)
+
+
+def _send_top_vung_xanh(results: pd.DataFrame, style: str = "long", top_n: int = 5) -> None:
+    """Top N mã vùng xanh (long_trend=1) theo TK cao nhất."""
+    p = f"{style}_"
+    trend_col = f"{p}trend" if f"{p}trend" in results.columns else "trend"
+    df = results[results.get(trend_col, results.get("trend", pd.Series(dtype=int))) == 1].copy()
+    if df.empty:
+        return
+    if "turnover" in df.columns:
+        df = df.sort_values("turnover", ascending=False)
+    df = df.head(top_n)
+
+    date_col  = f"{p}last_signal_date"  if f"{p}last_signal_date"  in results.columns else "last_signal_date"
+    price_col = f"{p}last_signal_price" if f"{p}last_signal_price" in results.columns else "last_signal_price"
+
+    lines = [f"<b>💼 Top {top_n} vùng xanh (TK cao nhất):</b>"]
+    for _, row in df.iterrows():
+        ticker = row.get("ticker", "")
+        close  = _val(row, "close")
+        bd     = str(row.get(date_col) or "")[:10]
+        buy_p  = _val(row, price_col)
+        tk     = float(row.get("turnover") or 0)
+        tk_str = f"{tk/1e9:.1f} tỷ" if tk > 0 else "–"
+
+        pnl = round((float(close) - float(buy_p)) / float(buy_p) * 100, 2) \
+              if close and buy_p and float(buy_p) > 0 else None
+        pnl_str = f" | {pnl:+.1f}%" if pnl is not None else ""
+
+        lines.append(f"  <b>{ticker}</b> | Giá {_fmt(close)} | TK {tk_str}{pnl_str} | Từ {bd}")
 
     send_message("\n".join(lines), style=style)
 

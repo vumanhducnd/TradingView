@@ -685,6 +685,43 @@ def save_signals(df: pd.DataFrame, scan_date: date | None = None) -> None:
 
 # ─── Query helpers cho Dashboard ──────────────────────────────────────────────
 
+def load_daily_change(tickers: list[str]) -> dict[str, float]:
+    """
+    Tính % thay đổi giá hôm nay so với hôm qua từ bảng ohlcv.
+    Trả về {ticker: pct_change}.
+    """
+    if not tickers:
+        return {}
+    try:
+        with db_cursor(commit=False) as cur:
+            cur.execute(
+                """
+                SELECT ticker,
+                       close,
+                       LAG(close) OVER (PARTITION BY ticker ORDER BY date) AS prev_close
+                FROM ohlcv
+                WHERE ticker = ANY(%s)
+                  AND date >= CURRENT_DATE - INTERVAL '5 days'
+                ORDER BY ticker, date DESC
+                """,
+                (tickers,),
+            )
+            rows = cur.fetchall()
+
+        result: dict[str, float] = {}
+        for r in rows:
+            t = r["ticker"]
+            if t in result:
+                continue
+            c, p = float(r["close"] or 0), float(r["prev_close"] or 0)
+            if c > 0 and p > 0:
+                result[t] = round((c - p) / p * 100, 2)
+        return result
+    except Exception as e:
+        logger.debug(f"load_daily_change: {e}")
+        return {}
+
+
 def load_avg_turnover(tickers: list[str]) -> dict[str, float]:
     """Lấy avg_turnover_20d (VND/1000) từ watchlist cho danh sách tickers."""
     if not tickers:

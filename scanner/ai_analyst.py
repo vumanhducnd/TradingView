@@ -177,6 +177,8 @@ def generate_end_of_session_ai(
     buy_tickers: list[str],
     sell_tickers: list[str],
     style_label: str,
+    top_gainers: list[str] | None = None,
+    top_losers: list[str]  | None = None,
 ) -> str:
     """
     Nhận định cuối phiên: đề cập top biến động, tín hiệu, theo nhân cách từng ngày.
@@ -216,10 +218,11 @@ def generate_end_of_session_ai(
         Hôm nay {today} — Tổng kết phiên giao dịch | Khung: {style_label}
 
         KẾT QUẢ NGÀY:
-        - Mã bứt phá (tín hiệu mua mới): {top_buy_str}
-        - Mã đảo chiều (tín hiệu bán mới): {top_sell_str}
-        - Mạnh nhất hôm nay: {", ".join(top_strong)}
-        - Yếu nhất hôm nay: {", ".join(top_weak)}
+        - Mã tăng mạnh nhất: {", ".join(top_gainers[:5]) if top_gainers else "–"}
+        - Mã giảm mạnh nhất: {", ".join(top_losers[:5])  if top_losers  else "–"}
+        - Bứt phá (tín hiệu mua mới): {top_buy_str}
+        - Đảo chiều (tín hiệu bán mới): {top_sell_str}
+        - Xu hướng mạnh: {", ".join(top_strong)}
         - Xu hướng tăng: {n_bull} mã | Xu hướng giảm: {n_bear} mã
 
         Yêu cầu:

@@ -77,9 +77,8 @@ def _build_workbook(
     label = "Dài hạn" if style == "long" else "Ngắn hạn"
 
     _sheet_signals(wb, signals, ai_analysis=ai_analysis, style_filter=style)  # Tab 1
-    _sheet_positions_tracking(wb, results, style=style)                         # Tab 2
-    _sheet_nam_giu(wb, results, style=style)                                    # Tab 3
-    _sheet_dung_ngoai(wb, results, style=style)                                 # Tab 4
+    _sheet_nam_giu(wb, results, style=style)                                    # Tab 2
+    _sheet_dung_ngoai(wb, results, style=style)                                 # Tab 3
     _sheet_super_stocks(wb, results, scan_date)                                 # Tab 5 — dùng results trực tiếp
 
     if style == "long" and ai_analysis:
