@@ -1,10 +1,12 @@
 name: Live Session Scanner (9:00–14:45 ICT)
 
-# Job B: được trigger bởi live_wait.yml lúc 9:00 ICT
-# Quét từ 9:00 đến 14:45 ICT = 5h45m = 345 phút < 6h free tier limit
-# Không có cron — chỉ chạy qua workflow_dispatch từ live_wait.yml
+# Quét trong phiên 9:00–14:45 ICT (5h45m < 6h free tier limit).
+# Job tự dừng khi _is_market_open() = False (14:45 ICT).
 
 on:
+  schedule:
+    # 02:00 UTC = 09:00 ICT (GMT+7), thứ 2–6
+    - cron: '0 2 * * 1-5'
   workflow_dispatch:
     inputs:
       interval:
@@ -18,7 +20,7 @@ env:
 jobs:
   session:
     runs-on: ubuntu-latest
-    timeout-minutes: 360   # 6h — đủ cho 5h45m scan + setup (free tier limit)
+    timeout-minutes: 360   # 6h — free tier limit
 
     steps:
       - name: Checkout repo
