@@ -172,21 +172,30 @@ def send_daily_report(
         sell_df = results[results[f"{p}sell_signal"].astype(bool)] if f"{p}sell_signal" in results.columns else pd.DataFrame()
         no_sig  = len(results) - len(buy_df) - len(sell_df)
 
-        # Header riêng từng bot
-        header = (
-            f"<b>📊 ManhDucCapital Scanner — {today}</b>\n"
-            f"{label}\n\n"
-            f"🟢 MUA: <b>{len(buy_df)}</b> mã\n"
-            f"🔴 BÁN: <b>{len(sell_df)}</b> mã\n"
-            f"⬜ Không tín hiệu: {no_sig} mã"
-        )
-        send_message(header, style=style)
-        time.sleep(0.8)
+        style_name = "Đầu tư Dài Hạn" if is_long else "Đầu tư Ngắn Hạn"
 
-        # AI — chỉ bot dài hạn
-        if is_long and ai_analysis and ai_analysis.get("overview"):
-            send_message(f"<b>🤖 Nhận định AI:</b>\n{ai_analysis['overview']}", style=style)
-            time.sleep(0.8)
+        # AI cuối phiên (chạy trước để gộp vào header)
+        ai_end = ""
+        try:
+            from scanner.ai_analyst import generate_end_of_session_ai
+            ai_end = generate_end_of_session_ai(
+                results=results,
+                buy_tickers=buy_df["ticker"].tolist() if not buy_df.empty else [],
+                sell_tickers=sell_df["ticker"].tolist() if not sell_df.empty else [],
+                style_label=style_name,
+            )
+        except Exception as e:
+            logger.warning(f"AI cuoi phien failed: {e}")
+
+        # Header + AI gộp 1 tin
+        header_lines = [
+            f"<b>📊 Báo cáo cuối phiên — {style_name} — {today}</b>",
+            f"🟢 Bứt phá: <b>{len(buy_df)}</b> mã  |  🔴 Đảo chiều: <b>{len(sell_df)}</b> mã",
+        ]
+        if ai_end:
+            header_lines.append(f"\n{ai_end}")
+        send_message("\n".join(header_lines), style=style)
+        time.sleep(0.8)
 
         # Siêu cổ phiếu đã bỏ khỏi Telegram (vẫn còn trong Excel)
 

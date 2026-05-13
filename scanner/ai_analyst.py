@@ -170,6 +170,70 @@ def generate_market_overview(results: pd.DataFrame) -> str:
     return _call(client, prompt, max_tokens=1024)
 
 
+# ─── End-of-session AI overview ──────────────────────────────────────────────
+
+def generate_end_of_session_ai(
+    results: "pd.DataFrame",
+    buy_tickers: list[str],
+    sell_tickers: list[str],
+    style_label: str,
+) -> str:
+    """
+    Nhận định cuối phiên: đề cập top biến động, tín hiệu, theo nhân cách từng ngày.
+    """
+    try:
+        client = _get_client()
+    except Exception as e:
+        logger.warning(f"AI không khả dụng: {e}")
+        return ""
+
+    today = date.today().strftime("%d/%m/%Y")
+    weekday = date.today().weekday()
+
+    personas = {
+        0: "Bạn là dân văn phòng vừa tan ca, mở app chứng khoán xem hôm nay lãi lỗ thế nào trước khi tắt máy.",
+        1: "Bạn là bà nội trợ vừa đi chợ về, nhẩm tính hôm nay mua bán cổ phiếu có lời không như tính tiền chợ.",
+        2: "Bạn là tiểu thương vừa đóng cửa hàng, tổng kết cuối ngày xem hàng bán có lời không, thị trường hôm nay thế nào.",
+        3: "Bạn là Gen Z vừa xong ca làm, tổng kết ngày giao dịch kiểu 'ae ơi hôm nay thị trường có toang không'.",
+        4: "Bạn là nông dân nhìn lại vụ mùa hôm nay, lúa có được giá không, thu hoạch có khá không.",
+    }
+    persona = personas.get(weekday, personas[0])
+
+    # Top biến động từ results
+    import pandas as _pd
+    top_buy_str  = ", ".join(buy_tickers[:5])  if buy_tickers  else "Không có"
+    top_sell_str = ", ".join(sell_tickers[:5]) if sell_tickers else "Không có"
+
+    n_bull = int((results["bias_norm"] >= 55).sum()) if "bias_norm" in results.columns else 0
+    n_bear = int((results["bias_norm"] <= 45).sum()) if "bias_norm" in results.columns else 0
+
+    # Top tăng/giảm theo bias_norm
+    top_strong = results.nlargest(3, "bias_norm")["ticker"].tolist() if "bias_norm" in results.columns else []
+    top_weak   = results.nsmallest(3, "bias_norm")["ticker"].tolist() if "bias_norm" in results.columns else []
+
+    prompt = textwrap.dedent(f"""
+        {persona}
+        Hôm nay {today} — Tổng kết phiên giao dịch | Khung: {style_label}
+
+        KẾT QUẢ NGÀY:
+        - Mã bứt phá (tín hiệu mua mới): {top_buy_str}
+        - Mã đảo chiều (tín hiệu bán mới): {top_sell_str}
+        - Mạnh nhất hôm nay: {", ".join(top_strong)}
+        - Yếu nhất hôm nay: {", ".join(top_weak)}
+        - Xu hướng tăng: {n_bull} mã | Xu hướng giảm: {n_bear} mã
+
+        Yêu cầu:
+        - Tiếng Việt có dấu đầy đủ, không emoji, không bullet, không markdown
+        - Đúng nhân cách được giao, tự nhiên như đang tổng kết cuối ngày
+        - Đề cập cụ thể các mã có biến động nổi bật hôm nay
+        - Tối đa 4-5 câu
+        - Câu cuối: nhìn về ngày mai — nên làm gì
+    """).strip()
+
+    logger.info(f"AI: nhận định cuối phiên [{style_label}]...")
+    return _call(client, prompt, max_tokens=400)
+
+
 # ─── Pre-session AI overview ─────────────────────────────────────────────────
 
 def _fetch_market_context() -> str:
