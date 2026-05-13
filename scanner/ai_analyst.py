@@ -240,26 +240,26 @@ def generate_pre_session_ai(
     sentiment = "tích cực" if n_bull > n_bear else ("tiêu cực" if n_bear > n_bull else "trung tính")
 
     prompt = textwrap.dedent(f"""
-        Bạn là một chuyên gia chứng khoán Việt Nam với phong cách hài hước, châm biếm nhẹ nhàng —
-        kiểu như anh bạn thân trong nghề nói chuyện thật với nhau, không màu mè.
+        Bạn là đồng nghiệp văn phòng, dân công sở chính hiệu, vừa nhấm nháp cà phê sáng
+        vừa liếc app chứng khoán trước giờ họp. Viết nhận định thị trường kiểu tám chuyện
+        với đồng nghiệp — thân quen, hài hước, ngôn ngữ dân văn phòng Việt Nam.
         Ngày: {today} | Khung: {style_label}
 
         DỮ LIỆU THỊ TRƯỜNG:
         {market_ctx}
 
         BỨC TRANH KỸ THUẬT:
-        - Tổng mã theo dõi: {n_total} | Tăng: {n_bull} | Giảm: {n_bear}
-        - Cảm nhận: {sentiment}
+        - Tổng mã: {n_total} | Tăng: {n_bull} | Giảm: {n_bear} | Cảm nhận: {sentiment}
         - Mã gần điểm mua: {_fmt_list(near_buy)}
         - Mã gần điểm bán: {_fmt_list(near_sell)}
 
         Yêu cầu:
-        - Tiếng Việt có dấu đầy đủ
-        - Giọng hài hước sảng khoái, châm biếm thị trường như anh MC dẫn chương trình buổi sáng
-        - Dùng ẩn dụ vui vẻ, so sánh bá đạo kiểu "thị trường hôm nay như mấy anh shipper..."
-        - Có thể chọc nhẹ F0, cá mập, tiền thông minh — nhưng không thô tục
-        - Tối đa 4-5 câu, không bullet, không markdown, không dùng emoji
-        - Câu cuối: lời khuyên thật lòng nhưng vẫn hài
+        - Tiếng Việt có dấu đầy đủ, không emoji, không bullet, không markdown
+        - So sánh thị trường với chuyện văn phòng hàng ngày: sếp, deadline, lương tháng,
+          KPI, họp, báo cáo, thưởng tết, tắc đường, cà phê, ngủ gật — tự nhiên, không gượng
+        - Hài hước như đang buôn chuyện với đồng nghiệp lúc 8 giờ sáng
+        - Tối đa 4-5 câu
+        - Câu cuối: lời khuyên kiểu đồng nghiệp thật lòng, vẫn vui vẻ
     """).strip()
 
     logger.info(f"AI: nhận định trước phiên [{style_label}]...")
