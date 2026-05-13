@@ -172,64 +172,99 @@ def generate_market_overview(results: pd.DataFrame) -> str:
 
 # ─── Pre-session AI overview ─────────────────────────────────────────────────
 
+def _fetch_market_context() -> str:
+    """Lấy dữ liệu thị trường thực từ internet: VNINDEX, VN30, tin tức."""
+    lines = []
+    try:
+        from vnstock import Trading
+        t = Trading(source="VCI")
+        df = t.price_board(symbols_list=["VNINDEX", "VN30", "HNX"])
+        if df is not None and not df.empty:
+            if isinstance(df.columns, __import__("pandas").MultiIndex):
+                df.columns = [f"{a}.{b}".lower() for a, b in df.columns]
+            for col_t in ["listing.symbol", "symbol"]:
+                if col_t in df.columns:
+                    ticker_col = col_t
+                    break
+            else:
+                ticker_col = df.columns[0]
+            for _, row in df.iterrows():
+                sym = str(row.get(ticker_col, "")).strip()
+                close = row.get("match.match_price") or row.get("match.close_price", 0)
+                chg = row.get("match.price_change_ratio", 0)
+                if sym and close:
+                    lines.append(f"{sym}: {float(close):,.0f} ({float(chg or 0):+.2f}%)")
+    except Exception as e:
+        logger.debug(f"fetch_market_context index: {e}")
+
+    try:
+        import requests
+        resp = requests.get(
+            "https://cafef.vn/thi-truong-chung-khoan.chn",
+            timeout=5, verify=False,
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        import re
+        titles = re.findall(r'<h3[^>]*>.*?<a[^>]*>(.*?)</a>', resp.text[:8000])
+        news = [re.sub(r'<[^>]+>', '', t).strip() for t in titles[:3] if t.strip()]
+        if news:
+            lines.append("Tin tức nổi bật: " + " | ".join(news))
+    except Exception:
+        pass
+
+    return "\n".join(lines) if lines else "Không có dữ liệu bổ sung."
+
+
 def generate_pre_session_ai(
     n_bull: int, n_bear: int, n_total: int,
     near_buy: list[dict], near_sell: list[dict],
     style_label: str,
 ) -> str:
-    """
-    Nhận định trước phiên theo phong cách broker Việt Nam.
-    near_buy/near_sell: list dict có ticker, exchange, close, turnover.
-    """
+    """Nhận định trước phiên theo phong cách broker Việt Nam, dùng data internet."""
     try:
         client = _get_client()
     except Exception as e:
-        logger.warning(f"AI khong kha dung: {e}")
+        logger.warning(f"AI không khả dụng: {e}")
         return ""
 
     today = date.today().strftime("%d/%m/%Y")
+    market_ctx = _fetch_market_context()
 
-    def _fmt_list(lst: list[dict], n: int = 8) -> str:
-        lines = []
+    def _fmt_list(lst: list[dict], n: int = 6) -> str:
+        items = []
         for r in lst[:n]:
             exch = r.get("exchange", "")
-            tk = r.get("turnover", 0)
-            tk_str = f"{tk/1e9:.0f} ty" if tk else ""
-            lines.append(f"{exch}:{r['ticker']} (gia {r['close']:.1f}, {tk_str})")
-        return ", ".join(lines) if lines else "Khong co"
+            items.append(f"{exch}:{r['ticker']} (giá {r['close']:.1f})")
+        return ", ".join(items) if items else "Không có"
 
-    near_buy_str  = _fmt_list(near_buy)
-    near_sell_str = _fmt_list(near_sell)
-    sentiment = "tich cuc" if n_bull > n_bear else ("tieu cuc" if n_bear > n_bull else "trung tinh")
+    sentiment = "tích cực" if n_bull > n_bear else ("tiêu cực" if n_bear > n_bull else "trung tính")
 
     prompt = textwrap.dedent(f"""
-        Ban la chuyen vien phan tich cua mot cong ty chung khoan Viet Nam hang dau.
-        Viet nhan dinh truoc phien giao dich cho khach hang (phong cach tu nhien, than thien, chuyen nghiep).
-        Ngay: {today} | Khung: {style_label}
+        Bạn là chuyên viên phân tích của một công ty chứng khoán Việt Nam hàng đầu.
+        Hãy viết nhận định trước phiên giao dịch cho khách hàng cá nhân.
+        Ngày: {today} | Khung phân tích: {style_label}
 
-        DU LIEU THI TRUONG (chot phien hom truoc):
-        - Tong so ma theo doi: {n_total}
-        - Dang tang (xu huong duong): {n_bull} ma
-        - Dang giam (xu huong am): {n_bear} ma
-        - Cam nhan chung: {sentiment}
+        DỮ LIỆU THỊ TRƯỜNG HIỆN TẠI:
+        {market_ctx}
 
-        MA GAN DIEM MUA (gia tiem can nguong SuperTrend tu duoi):
-        {near_buy_str}
+        BỨC TRANH KỸ THUẬT (dựa trên SuperTrend):
+        - Tổng số mã theo dõi: {n_total}
+        - Đang xu hướng tăng: {n_bull} mã
+        - Đang xu hướng giảm: {n_bear} mã
+        - Cảm nhận chung: {sentiment}
 
-        MA GAN DIEM BAN (gia tiem can nguong SuperTrend tu tren):
-        {near_sell_str}
+        Mã gần điểm mua: {_fmt_list(near_buy)}
+        Mã gần điểm bán: {_fmt_list(near_sell)}
 
-        Yeu cau:
-        - Viet bang tieng Viet tu nhien nhu broker noi voi nha dau tu
-        - Khong dung markdown, khong dung bullet point
-        - Khong lap lai so lieu kho, dien dat bang ngon ngu binh dan
-        - Dai toi da 4-5 cau, tap trung vao cam xuc thi truong va co hoi/rui ro chinh
-        - Cuoi cung ket luan 1 cau ve chien luoc ngay hom nay (nan long/giu/quan sat)
-        - Ghi ro phong cach: [{style_label}]
+        Yêu cầu viết:
+        - Hoàn toàn bằng tiếng Việt có dấu, tự nhiên như broker nói chuyện với khách
+        - Không dùng markdown, không dùng bullet point, không gạch đầu dòng
+        - Tối đa 5 câu: 2 câu nhận định thị trường chung, 1-2 câu về cơ hội/rủi ro, 1 câu kết luận chiến lược
+        - Ngôn ngữ bình dân, dễ hiểu, tránh thuật ngữ kỹ thuật khó
     """).strip()
 
-    logger.info(f"AI: nhan dinh truoc phien [{style_label}]...")
-    return _call(client, prompt, max_tokens=512)
+    logger.info(f"AI: nhận định trước phiên [{style_label}]...")
+    return _call(client, prompt, max_tokens=400)
 
 
 # ─── Signal analysis ──────────────────────────────────────────────────────────

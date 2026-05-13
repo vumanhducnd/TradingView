@@ -160,8 +160,8 @@ def run_pre_session() -> None:
     today_str = datetime.now(ICT).strftime("%d/%m/%Y")
 
     for style, style_label, bot_style in [
-        ("long",  "Dài hạn (10/3.0)",  "long"),
-        ("short", "Ngắn hạn (7/2.0)",  "short"),
+        ("long",  "Dài hạn",  "long"),
+        ("short", "Ngắn hạn", "short"),
     ]:
         results: list[dict] = []
         for ticker, df in ticker_data.items():
