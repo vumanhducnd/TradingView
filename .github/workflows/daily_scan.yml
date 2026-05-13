@@ -1,9 +1,9 @@
-name: Daily VN Stock Scanner
+name: Update Cuoi Phien (15:00 GMT+7)
 
 on:
   schedule:
-    # 8:30 AM UTC = 3:30 PM ICT (GMT+7), weekdays only
-    - cron: '30 8 * * 1-5'
+    # 08:00 UTC = 15:00 GMT+7, thu 2-6 (du phong neu cron-job.org loi)
+    - cron: '0 8 * * 1-5'
   workflow_dispatch:
     inputs:
       force:
