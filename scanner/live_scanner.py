@@ -65,83 +65,134 @@ def _wait_until_ict(hour: int, minute: int, abort_after_hour: int | None = None,
     return True
 
 
-# ─── Pre-session (8:30 ICT) ───────────────────────────────────────────────────
+# ─── Pre-session (8:00 ICT) ───────────────────────────────────────────────────
 
-def run_pre_session() -> None:
-    """Báo cáo sáng: load data DB, tính ST, gửi Telegram tóm tắt top 300."""
-    if not _wait_until_ict(8, 30, abort_after_hour=9, abort_after_minute=15):
-        return  # GitHub Actions delay quá lớn, bỏ qua báo cáo sáng
-    _set_api_key()
-    logger.info("=== Pre-session scan (8:30 ICT) ===")
-    vn100 = get_top300_thanh_khoan(n=300)
-    if not vn100:
-        logger.error("Watchlist trống")
-        return
+_NEAR_THRESHOLD_PCT = 3.0   # % cách ST để coi là "gần điểm mua/bán"
+_TOP_N_PRE          = 10    # số mã hiển thị mỗi nhóm
 
-    logger.info(f"Load OHLCV bulk {len(vn100)} mã từ DB...")
-    ticker_data = load_all_ohlcv_bulk(tickers=vn100, days=300)
-    logger.info(f"Loaded {len(ticker_data)} mã, tính ST...")
-    results: list[dict] = []
 
-    for ticker, df in ticker_data.items():
-        try:
-            if len(df) < 20:
-                continue
-            df = calc_supertrend(df)
-            df = calc_bias_norm(df)
-            last = df.iloc[-1]
-            results.append({
-                "ticker":     ticker,
-                "close":      float(last["close"]),
-                "trend":      int(last["trend"]),
-                "supertrend": float(last["supertrend"]),
-                "bias_norm":  round(float(last["bias_norm"]), 1),
-            })
-        except Exception as e:
-            logger.debug(f"{ticker}: {e}")
+def _fmt_pre_row(r: dict) -> str:
+    """Format 1 dòng mã: SÀNG:MÃ | Giá | ST | TK | % cách"""
+    exch    = r.get("exchange", "")
+    prefix  = f"{exch}:" if exch else ""
+    dist    = r["dist_pct"]
+    dist_str = f"{dist:+.1f}%" if dist >= 0 else f"{dist:.1f}%"
+    tk_str  = f"{r['turnover']/1e9:.1f} tỷ" if r.get("turnover") else "–"
+    return (
+        f"  <b>{prefix}{r['ticker']}</b> | "
+        f"Giá {fmt_price(r['close'])} | "
+        f"ST {fmt_price(r['supertrend'])} | "
+        f"TK {tk_str} | "
+        f"Cách {dist_str}"
+    )
 
-    if not results:
-        logger.error("Không có kết quả")
-        return
 
+def _build_pre_report(results: list[dict], style_label: str, today_str: str) -> str:
+    """Tạo nội dung báo cáo cho 1 style (dài hạn hoặc ngắn hạn)."""
     bull = [r for r in results if r["trend"] == 1]
     bear = [r for r in results if r["trend"] == -1]
 
-    # Mã gần ngưỡng lật nhất (dist < 2%)
-    near_flip = []
-    for r in results:
-        dist = abs(r["close"] - r["supertrend"]) / r["supertrend"] * 100 if r["supertrend"] else 99
-        if dist < 2.0:
-            near_flip.append({**r, "dist_pct": round(dist, 2)})
-    near_flip.sort(key=lambda x: x["dist_pct"])
+    # Gần điểm MUA: trend âm, giá đang tiệm cận ST từ dưới lên
+    near_buy = []
+    for r in bear:
+        st = r["supertrend"]
+        if not st:
+            continue
+        dist = (st - r["close"]) / st * 100   # % giá còn cách ST (dương = còn cách)
+        if 0 <= dist <= _NEAR_THRESHOLD_PCT:
+            near_buy.append({**r, "dist_pct": -dist})   # âm = giá thấp hơn ST
+    near_buy.sort(key=lambda x: -x.get("turnover", 0))  # sort TK giảm dần
 
-    today_str = datetime.now(ICT).strftime("%d/%m/%Y")
+    # Gần điểm BÁN: trend dương, giá đang tiệm cận ST từ trên xuống
+    near_sell = []
+    for r in bull:
+        st = r["supertrend"]
+        if not st:
+            continue
+        dist = (r["close"] - st) / r["close"] * 100   # % giá còn trên ST
+        if 0 <= dist <= _NEAR_THRESHOLD_PCT:
+            near_sell.append({**r, "dist_pct": dist})
+    near_sell.sort(key=lambda x: -x.get("turnover", 0))
+
     lines = [
-        f"🌅 <b>Báo cáo đầu phiên VN100 — {today_str}</b>\n",
-        f"📊 Xu hướng: 🟢 <b>{len(bull)}</b> tăng | 🔴 <b>{len(bear)}</b> giảm",
+        f"🌅 <b>Báo cáo 8:00 — {style_label} — {today_str}</b>",
+        f"📊 {len(bull)} tăng 🟢 | {len(bear)} giảm 🔴 | Tổng {len(results)} mã\n",
     ]
 
-    if near_flip:
-        lines.append(f"\n⚠️ <b>Gần ngưỡng lật (&lt;2%) — {len(near_flip)} mã:</b>")
-        for r in near_flip[:10]:
-            arrow = "⬇️" if r["trend"] == 1 else "⬆️"
-            lines.append(
-                f"  {arrow} <b>{r['ticker']}</b> | "
-                f"Giá {fmt_price(r['close'])} → ST {fmt_price(r['supertrend'])} "
-                f"({r['dist_pct']:.1f}%)"
-            )
+    if near_buy:
+        lines.append(f"🚀 <b>Gần điểm MUA ({len(near_buy)} mã, TK cao → thấp):</b>")
+        for r in near_buy[:_TOP_N_PRE]:
+            lines.append(_fmt_pre_row(r))
 
-    top_bull = sorted(bull, key=lambda x: -x["bias_norm"])[:5]
-    if top_bull:
-        lines.append("\n🔥 <b>Top 5 BiasNorm (xu hướng tăng):</b>")
-        for r in top_bull:
-            lines.append(
-                f"  <b>{r['ticker']}</b> | ST {fmt_price(r['supertrend'])} | "
-                f"Bias {r['bias_norm']:.0f}/100"
-            )
+    if near_sell:
+        lines.append(f"\n🔻 <b>Gần điểm BÁN ({len(near_sell)} mã, TK cao → thấp):</b>")
+        for r in near_sell[:_TOP_N_PRE]:
+            lines.append(_fmt_pre_row(r))
 
-    send_message("\n".join(lines))
-    logger.info(f"Pre-session xong: {len(bull)} tăng, {len(bear)} giảm, {len(near_flip)} gần lật")
+    if not near_buy and not near_sell:
+        lines.append("✅ Không có mã nào gần ngưỡng lật trong phiên hôm nay.")
+
+    return "\n".join(lines)
+
+
+def run_pre_session() -> None:
+    """Báo cáo 8:00 ICT: tính ST riêng dài hạn & ngắn hạn, gửi 2 bot."""
+    if not _wait_until_ict(8, 0, abort_after_hour=9, abort_after_minute=15):
+        return
+    _set_api_key()
+    logger.info("=== Pre-session scan (8:00 ICT) ===")
+
+    tickers = get_top300_thanh_khoan(n=300)
+    if not tickers:
+        logger.error("Watchlist trống")
+        return
+
+    logger.info(f"Load OHLCV {len(tickers)} mã từ DB...")
+    ticker_data = load_all_ohlcv_bulk(tickers=tickers, days=300)
+
+    # Load exchange info từ watchlist
+    try:
+        from scanner.database import db_cursor
+        with db_cursor(commit=False) as cur:
+            cur.execute("SELECT ticker, exchange FROM watchlist WHERE ticker = ANY(%s)", (tickers,))
+            exchange_map = {r["ticker"]: r["exchange"] for r in cur.fetchall()}
+    except Exception:
+        exchange_map = {}
+
+    # Load avg_turnover_20d làm TK đại diện
+    from scanner.database import load_avg_turnover
+    tk_map = load_avg_turnover(tickers)
+
+    today_str = datetime.now(ICT).strftime("%d/%m/%Y")
+
+    for style, style_label, bot_style in [
+        ("long",  "Dài hạn (10/3.0)",  "long"),
+        ("short", "Ngắn hạn (7/2.0)",  "short"),
+    ]:
+        results: list[dict] = []
+        for ticker, df in ticker_data.items():
+            try:
+                if len(df) < 20:
+                    continue
+                df_st = calc_supertrend(df, style=style)
+                last = df_st.iloc[-1]
+                avg_tk = tk_map.get(ticker, 0)
+                results.append({
+                    "ticker":     ticker,
+                    "exchange":   exchange_map.get(ticker, ""),
+                    "close":      float(last["close"]),
+                    "trend":      int(last["trend"]),
+                    "supertrend": float(last["supertrend"]),
+                    "turnover":   avg_tk * 1000,   # → VND thực để hiển thị tỷ
+                })
+            except Exception as e:
+                logger.debug(f"{ticker} [{style}]: {e}")
+
+        msg = _build_pre_report(results, style_label, today_str)
+        send_message(msg, style=bot_style)
+        logger.info(f"Pre-session [{style}]: {len(results)} mã, gửi bot {bot_style}")
+
+    logger.info("Pre-session xong")
 
 
 # ─── Real-time loop (morning / afternoon) ─────────────────────────────────────

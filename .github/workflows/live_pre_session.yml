@@ -2,9 +2,8 @@ name: Live Pre-session Scan (8:30 ICT)
 
 on:
   schedule:
-    # 00:30 UTC = 07:30 ICT (GMT+7), thứ 2–6
-    # Chạy sớm 1 tiếng — Python tự _wait_until_ict(8,30), bỏ qua nếu quá 9:15
-    - cron: '30 0 * * 1-5'
+    # 01:00 UTC = 08:00 ICT (GMT+7), thứ 2–6
+    - cron: '0 1 * * 1-5'
   workflow_dispatch:
 
 env:
