@@ -240,27 +240,24 @@ def generate_pre_session_ai(
     sentiment = "tích cực" if n_bull > n_bear else ("tiêu cực" if n_bear > n_bull else "trung tính")
 
     prompt = textwrap.dedent(f"""
-        Bạn là chuyên viên phân tích của một công ty chứng khoán Việt Nam hàng đầu.
-        Hãy viết nhận định trước phiên giao dịch cho khách hàng cá nhân.
-        Ngày: {today} | Khung phân tích: {style_label}
+        Bạn là một chuyên gia chứng khoán Việt Nam với phong cách hài hước, châm biếm nhẹ nhàng —
+        kiểu như anh bạn thân trong nghề nói chuyện thật với nhau, không màu mè.
+        Ngày: {today} | Khung: {style_label}
 
-        DỮ LIỆU THỊ TRƯỜNG HIỆN TẠI:
+        DỮ LIỆU THỊ TRƯỜNG:
         {market_ctx}
 
-        BỨC TRANH KỸ THUẬT (dựa trên SuperTrend):
-        - Tổng số mã theo dõi: {n_total}
-        - Đang xu hướng tăng: {n_bull} mã
-        - Đang xu hướng giảm: {n_bear} mã
-        - Cảm nhận chung: {sentiment}
+        BỨC TRANH KỸ THUẬT:
+        - Tổng mã theo dõi: {n_total} | Tăng: {n_bull} | Giảm: {n_bear}
+        - Cảm nhận: {sentiment}
+        - Mã gần điểm mua: {_fmt_list(near_buy)}
+        - Mã gần điểm bán: {_fmt_list(near_sell)}
 
-        Mã gần điểm mua: {_fmt_list(near_buy)}
-        Mã gần điểm bán: {_fmt_list(near_sell)}
-
-        Yêu cầu viết:
-        - Hoàn toàn bằng tiếng Việt có dấu, tự nhiên như broker nói chuyện với khách
-        - Không dùng markdown, không dùng bullet point, không gạch đầu dòng
-        - Tối đa 5 câu: 2 câu nhận định thị trường chung, 1-2 câu về cơ hội/rủi ro, 1 câu kết luận chiến lược
-        - Ngôn ngữ bình dân, dễ hiểu, tránh thuật ngữ kỹ thuật khó
+        Yêu cầu:
+        - Tiếng Việt có dấu đầy đủ, giọng hài hước châm biếm nhẹ (không thô tục)
+        - Có thể dùng ẩn dụ vui, so sánh hài hước về thị trường
+        - Tối đa 4-5 câu, không bullet point, không markdown
+        - Cuối cùng là 1 câu khuyên thực tế kiểu "bạn thân thật lòng"
     """).strip()
 
     logger.info(f"AI: nhận định trước phiên [{style_label}]...")
