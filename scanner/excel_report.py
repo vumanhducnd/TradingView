@@ -243,7 +243,7 @@ def _sheet_super_stocks(wb: Workbook, df: pd.DataFrame, scan_date: str) -> None:
     """
     ws = wb.create_sheet("Sieu co phieu (5-7 tieu chi)")
 
-    headers = ["San", "Ma", "Gia", "Score", "TK TB 20p (ty)"] + _SS_LABELS
+    headers = ["Ma", "Gia", "Score", "TK TB 20p (ty)"] + _SS_LABELS
     _write_header(ws, headers)
 
     # Load avg_turnover_20d từ watchlist
@@ -272,7 +272,6 @@ def _sheet_super_stocks(wb: Workbook, df: pd.DataFrame, scan_date: str) -> None:
 
     for i, (avg_tk, score, tk_ty, row) in enumerate(rows_data, start=2):
         vals = [
-            row.get("exchange", ""),
             row.get("ticker", ""),
             row.get("close", ""),
             f"{score}/7",
@@ -416,7 +415,7 @@ def _sheet_signals(wb: Workbook, signals: dict, ai_analysis: dict | None = None,
     today_str = date.today().strftime("%d/%m/%Y")
 
     headers = [
-        "San", "Ma", "Tin hieu", "Khung",
+        "Ma", "Tin hieu", "Khung",
         "Ngay mua", "Gia mua/ban (ST)",
         "TK (ty VND)", "BiasNorm",
     ]
@@ -448,7 +447,6 @@ def _sheet_signals(wb: Workbook, signals: dict, ai_analysis: dict | None = None,
         st  = row.get(st_col) or row.get("supertrend") or ""
 
         vals = [
-            row.get("exchange", ""),
             ticker,
             signal_label,
             khung,
@@ -614,7 +612,7 @@ def _load_signal_map(tickers: list[str], signal_type: str, style: str) -> dict[s
 def _sheet_nam_giu(wb: Workbook, results: pd.DataFrame, style: str = "long") -> None:
     """Vùng xanh: long_trend=1, ngày/giá mua từ SuperTrend flip gần nhất, sort TK↓."""
     ws = wb.create_sheet("Vung xanh (Nam giu)")
-    headers = ["San", "Ma", "Ngay Mua", "Giu Lenh (ngay)", "Gia Mua", "Gia Hien Tai", "Loi/Lo %", "TK (ty)"]
+    headers = ["Ma", "Ngay Mua", "Giu Lenh (ngay)", "Gia Mua", "Gia Hien Tai", "Loi/Lo %", "TK (ty)"]
     _write_header(ws, headers)
 
     p         = f"{style}_"
@@ -641,8 +639,7 @@ def _sheet_nam_giu(wb: Workbook, results: pd.DataFrame, style: str = "long") -> 
         pnl     = round((close - buy_p) / buy_p * 100, 2) if buy_p > 0 and close > 0 else None
         pnl_str = f"{pnl:+.2f}%" if pnl is not None else ""
 
-        exch = row.get("exchange", "")
-        vals = [exch, ticker, bd, hold, buy_p or "", close or "", pnl_str, round(tk / 1e9, 1) if tk else ""]
+        vals = [ticker, bd, hold, buy_p or "", close or "", pnl_str, round(tk / 1e9, 1) if tk else ""]
         for j, v in enumerate(vals, start=1):
             ws.cell(row=i, column=j, value=v)
         fill = GREEN_FILL if (pnl is None or pnl >= 0) else YELLOW_FILL
@@ -662,7 +659,7 @@ def _sheet_dung_ngoai(wb: Workbook, results: pd.DataFrame, style: str = "long") 
     """Vùng đỏ: long_trend=-1, ngày/giá bán từ SuperTrend flip gần nhất, sort TK↓."""
     ws = wb.create_sheet("Vung do (Dung ngoai)")
     # Cột 6 = "Tranh lo": âm % nếu giá giảm sau bán (đúng), dương % nếu giá tăng (sai)
-    headers = ["San", "Ma", "Ngay Ban", "Dung Ngoai (ngay)", "Gia Ban", "Gia Hien Tai", "Tranh lo", "TK (ty)"]
+    headers = ["Ma", "Ngay Ban", "Dung Ngoai (ngay)", "Gia Ban", "Gia Hien Tai", "Tranh lo", "TK (ty)"]
     _write_header(ws, headers)
 
     p         = f"{style}_"
@@ -694,8 +691,7 @@ def _sheet_dung_ngoai(wb: Workbook, results: pd.DataFrame, style: str = "long") 
         pnl = round((close - sell_p) / sell_p * 100, 2) if sell_p > 0 and close > 0 else None
         pnl_str = f"{pnl:+.2f}%" if pnl is not None else ""
 
-        exch = row.get("exchange", "")
-        vals = [exch, ticker, sd, hold, sell_p or "", close or "", pnl_str, round(tk / 1e9, 1) if tk else ""]
+        vals = [ticker, sd, hold, sell_p or "", close or "", pnl_str, round(tk / 1e9, 1) if tk else ""]
         for j, v in enumerate(vals, start=1):
             ws.cell(row=i, column=j, value=v)
 
