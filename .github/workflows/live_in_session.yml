@@ -1,4 +1,4 @@
-name: Live Session Scanner (GMT+7)
+name: Live In Session (09:00-14:45 GMT+7)
 
 # Chia 2 phien: Sang 9:00-11:30 va Chieu 13:00-14:45 (moi job < 3h < 6h free tier)
 # Trigger boi cron-job.org qua workflow_dispatch chinh xac hon GitHub cron
