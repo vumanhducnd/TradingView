@@ -1,8 +1,9 @@
 name: Live Pre-session Scan (08:00 GMT+7)
 
 on:
+  # Schedule do cron-job.org trigger qua workflow_dispatch (chinh xac hon GitHub cron)
+  # Schedule du phong neu cron-job.org gap su co:
   schedule:
-    # 01:00 UTC = 08:00 ICT (GMT+7), thứ 2–6
     - cron: '0 1 * * 1-5'
   workflow_dispatch:
     inputs:
