@@ -115,12 +115,12 @@ def _build_pre_report(results: list[dict], style_label: str, today_str: str,
         lines.append(f"\n{ai_text}")
 
     if near_buy:
-        lines.append(f"\n🚀 <b>Gần điểm MUA ({len(near_buy)} mã):</b>")
+        lines.append(f"\n🚀 <b>Gần điểm MUA:</b>")
         for r in near_buy[:_TOP_N_PRE]:
             lines.append(_fmt_pre_row(r))
 
     if near_sell:
-        lines.append(f"\n🔻 <b>Gần điểm BÁN ({len(near_sell)} mã):</b>")
+        lines.append(f"\n🔻 <b>Gần điểm BÁN:</b>")
         for r in near_sell[:_TOP_N_PRE]:
             lines.append(_fmt_pre_row(r))
 
