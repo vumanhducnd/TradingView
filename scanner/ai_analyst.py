@@ -258,7 +258,7 @@ def generate_pre_session_ai(
         - Giọng hài hước sảng khoái, châm biếm thị trường như anh MC dẫn chương trình buổi sáng
         - Dùng ẩn dụ vui vẻ, so sánh bá đạo kiểu "thị trường hôm nay như mấy anh shipper..."
         - Có thể chọc nhẹ F0, cá mập, tiền thông minh — nhưng không thô tục
-        - Tối đa 4-5 câu, không bullet, không markdown, có thể dùng emoji
+        - Tối đa 4-5 câu, không bullet, không markdown, không dùng emoji
         - Câu cuối: lời khuyên thật lòng nhưng vẫn hài
     """).strip()
 
