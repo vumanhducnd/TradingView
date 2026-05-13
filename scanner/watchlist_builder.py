@@ -20,9 +20,9 @@ import scanner.utils  # noqa: F401 — phải import trước để patch SSL
 from scanner.database import get_connection, upsert_watchlist
 from scanner.utils import logger
 
-# Ngưỡng lọc mặc định
-MIN_PRICE = 5_000          # bỏ penny stock dưới 5,000 VND
-MIN_AVG_TURNOVER = 1e9     # thanh khoản tối thiểu 1 tỷ VND/ngày
+# Ngưỡng lọc — DB lưu giá đơn vị VND/1000 (vd: 48,500 VND → 48.5)
+MIN_PRICE        = 5.0     # bỏ penny stock dưới 5,000 VND (= 5.0 trong DB)
+MIN_AVG_TURNOVER = 1e6     # thanh khoản tối thiểu 1 tỷ VND/ngày (volume*close trong DB = VND/1000 → 1 tỷ = 1e6)
 
 
 def build_watchlist(
@@ -181,8 +181,8 @@ def _rank_by_liquidity(tickers: list[str], top_n: int) -> list[str]:
     df = pd.DataFrame(rows, columns=["ticker", "avg_close", "avg_volume", "avg_turnover", "bar_count"])
     logger.info(f"\nTop 10 thanh khoản cao nhất:")
     for _, r in df.head(10).iterrows():
-        turnover_b = r["avg_turnover"] / 1e9
-        logger.info(f"  {r['ticker']}: {turnover_b:.1f} tỷ/ngày | giá {r['avg_close']:,.0f}")
+        turnover_b = float(r["avg_turnover"]) / 1e6   # VND/1000 * volume → chia 1e6 ra tỷ
+        logger.info(f"  {r['ticker']}: {turnover_b:.1f} tỷ/ngày | giá {float(r['avg_close'])*1000:,.0f} VND")
 
     logger.info(f"\nLoại bỏ: {len(tickers) - len(df)} mã (thanh khoản thấp / thiếu data)")
     return df["ticker"].tolist()
@@ -198,6 +198,12 @@ def _find_ticker_col(df: pd.DataFrame) -> str:
 # ─── CLI ──────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:
+        pass
+
     import argparse
     parser = argparse.ArgumentParser(description="Build VN stock watchlist từ DB")
     parser.add_argument("--top", type=int, default=0,

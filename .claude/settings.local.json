@@ -17,7 +17,8 @@
       "Bash(python sync_ohlcv.py --vn100)",
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(python -m scanner.watchlist_builder)"
     ]
   }
 }
