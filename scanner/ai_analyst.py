@@ -239,10 +239,39 @@ def generate_pre_session_ai(
 
     sentiment = "tích cực" if n_bull > n_bear else ("tiêu cực" if n_bear > n_bull else "trung tính")
 
+    # Chọn nhân cách theo thứ trong tuần (0=Mon, 4=Fri)
+    weekday = date.today().weekday()
+    personas = {
+        0: (  # Thứ 2 — Dân văn phòng
+            "Bạn là dân văn phòng chính hiệu, sáng thứ Hai vừa nhấm cà phê vừa liếc app chứng khoán "
+            "trước giờ họp. Viết kiểu tám với đồng nghiệp, so sánh thị trường với deadline, sếp, KPI, "
+            "lương tháng, thưởng Tết. Hài hước tự nhiên, đầu tuần mà thị trường như thế này thì thật sự..."
+        ),
+        1: (  # Thứ 3 — Bà nội trợ đi chợ
+            "Bạn là bà nội trợ sáng nào cũng ra chợ, tính toán chi li từng đồng. Viết nhận định "
+            "thị trường kiểu so sánh với đi chợ: giá rau, mặc cả, hàng ế, hàng đắt, bà bán thịt, "
+            "cân đong đo đếm. Hài hước kiểu người đi chợ lâu năm, biết giá biết người."
+        ),
+        2: (  # Thứ 4 — Tiểu thương buôn bán
+            "Bạn là tiểu thương buôn bán nhỏ, hiểu rõ lời lỗ từng đồng, quen với rủi ro kinh doanh. "
+            "Viết nhận định thị trường kiểu so sánh với chuyện buôn bán: hàng tồn kho, khách trả chậm, "
+            "vốn xoay vòng, đối tác, mùa đắt mùa ế. Thực tế, dân dã, hài hước kiểu người buôn."
+        ),
+        3: (  # Thứ 5 — Gen Z / Sinh viên
+            "Bạn là Gen Z, sinh viên hoặc đi làm vài năm, đang mò mẫm chứng khoán. Viết nhận định "
+            "bằng ngôn ngữ Gen Z Việt Nam: toang, ngáo giá, FOMO, all-in, cắt lỗ đau lòng, "
+            "xanh đỏ như đèn giao thông. Hài hước, tự trào, kiểu 'thôi nói thật nhé ae ơi'."
+        ),
+        4: (  # Thứ 6 — Dân quê / Nông dân
+            "Bạn là người nông dân hoặc dân quê, thật thà chất phác, hay so sánh mọi thứ với ruộng lúa, "
+            "con bò, mùa màng, thời tiết, con gà. Viết nhận định thị trường đơn giản, mộc mạc, "
+            "hài hước kiểu ông nông dân nhìn thị trường bằng con mắt chân chất của mình."
+        ),
+    }
+    persona = personas.get(weekday, personas[0])
+
     prompt = textwrap.dedent(f"""
-        Bạn là đồng nghiệp văn phòng, dân công sở chính hiệu, vừa nhấm nháp cà phê sáng
-        vừa liếc app chứng khoán trước giờ họp. Viết nhận định thị trường kiểu tám chuyện
-        với đồng nghiệp — thân quen, hài hước, ngôn ngữ dân văn phòng Việt Nam.
+        {persona}
         Ngày: {today} | Khung: {style_label}
 
         DỮ LIỆU THỊ TRƯỜNG:
@@ -253,13 +282,11 @@ def generate_pre_session_ai(
         - Mã gần điểm mua: {_fmt_list(near_buy)}
         - Mã gần điểm bán: {_fmt_list(near_sell)}
 
-        Yêu cầu:
+        Yêu cầu bắt buộc:
         - Tiếng Việt có dấu đầy đủ, không emoji, không bullet, không markdown
-        - So sánh thị trường với chuyện văn phòng hàng ngày: sếp, deadline, lương tháng,
-          KPI, họp, báo cáo, thưởng tết, tắc đường, cà phê, ngủ gật — tự nhiên, không gượng
-        - Hài hước như đang buôn chuyện với đồng nghiệp lúc 8 giờ sáng
+        - Đúng nhân cách được giao, tự nhiên không gượng gạo
         - Tối đa 4-5 câu
-        - Câu cuối: lời khuyên kiểu đồng nghiệp thật lòng, vẫn vui vẻ
+        - Câu cuối là lời khuyên thực tế theo nhân cách đó
     """).strip()
 
     logger.info(f"AI: nhận định trước phiên [{style_label}]...")
