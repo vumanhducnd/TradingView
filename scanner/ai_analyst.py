@@ -170,6 +170,68 @@ def generate_market_overview(results: pd.DataFrame) -> str:
     return _call(client, prompt, max_tokens=1024)
 
 
+# ─── Pre-session AI overview ─────────────────────────────────────────────────
+
+def generate_pre_session_ai(
+    n_bull: int, n_bear: int, n_total: int,
+    near_buy: list[dict], near_sell: list[dict],
+    style_label: str,
+) -> str:
+    """
+    Nhận định trước phiên theo phong cách broker Việt Nam.
+    near_buy/near_sell: list dict có ticker, exchange, close, turnover.
+    """
+    try:
+        client = _get_client()
+    except Exception as e:
+        logger.warning(f"AI khong kha dung: {e}")
+        return ""
+
+    today = date.today().strftime("%d/%m/%Y")
+
+    def _fmt_list(lst: list[dict], n: int = 8) -> str:
+        lines = []
+        for r in lst[:n]:
+            exch = r.get("exchange", "")
+            tk = r.get("turnover", 0)
+            tk_str = f"{tk/1e9:.0f} ty" if tk else ""
+            lines.append(f"{exch}:{r['ticker']} (gia {r['close']:.1f}, {tk_str})")
+        return ", ".join(lines) if lines else "Khong co"
+
+    near_buy_str  = _fmt_list(near_buy)
+    near_sell_str = _fmt_list(near_sell)
+    sentiment = "tich cuc" if n_bull > n_bear else ("tieu cuc" if n_bear > n_bull else "trung tinh")
+
+    prompt = textwrap.dedent(f"""
+        Ban la chuyen vien phan tich cua mot cong ty chung khoan Viet Nam hang dau.
+        Viet nhan dinh truoc phien giao dich cho khach hang (phong cach tu nhien, than thien, chuyen nghiep).
+        Ngay: {today} | Khung: {style_label}
+
+        DU LIEU THI TRUONG (chot phien hom truoc):
+        - Tong so ma theo doi: {n_total}
+        - Dang tang (xu huong duong): {n_bull} ma
+        - Dang giam (xu huong am): {n_bear} ma
+        - Cam nhan chung: {sentiment}
+
+        MA GAN DIEM MUA (gia tiem can nguong SuperTrend tu duoi):
+        {near_buy_str}
+
+        MA GAN DIEM BAN (gia tiem can nguong SuperTrend tu tren):
+        {near_sell_str}
+
+        Yeu cau:
+        - Viet bang tieng Viet tu nhien nhu broker noi voi nha dau tu
+        - Khong dung markdown, khong dung bullet point
+        - Khong lap lai so lieu kho, dien dat bang ngon ngu binh dan
+        - Dai toi da 4-5 cau, tap trung vao cam xuc thi truong va co hoi/rui ro chinh
+        - Cuoi cung ket luan 1 cau ve chien luoc ngay hom nay (nan long/giu/quan sat)
+        - Ghi ro phong cach: [{style_label}]
+    """).strip()
+
+    logger.info(f"AI: nhan dinh truoc phien [{style_label}]...")
+    return _call(client, prompt, max_tokens=512)
+
+
 # ─── Signal analysis ──────────────────────────────────────────────────────────
 
 def analyze_signals(
