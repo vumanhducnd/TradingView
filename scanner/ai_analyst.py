@@ -254,10 +254,12 @@ def generate_pre_session_ai(
         - Mã gần điểm bán: {_fmt_list(near_sell)}
 
         Yêu cầu:
-        - Tiếng Việt có dấu đầy đủ, giọng hài hước châm biếm nhẹ (không thô tục)
-        - Có thể dùng ẩn dụ vui, so sánh hài hước về thị trường
-        - Tối đa 4-5 câu, không bullet point, không markdown
-        - Cuối cùng là 1 câu khuyên thực tế kiểu "bạn thân thật lòng"
+        - Tiếng Việt có dấu đầy đủ
+        - Giọng hài hước sảng khoái, châm biếm thị trường như anh MC dẫn chương trình buổi sáng
+        - Dùng ẩn dụ vui vẻ, so sánh bá đạo kiểu "thị trường hôm nay như mấy anh shipper..."
+        - Có thể chọc nhẹ F0, cá mập, tiền thông minh — nhưng không thô tục
+        - Tối đa 4-5 câu, không bullet, không markdown, có thể dùng emoji
+        - Câu cuối: lời khuyên thật lòng nhưng vẫn hài
     """).strip()
 
     logger.info(f"AI: nhận định trước phiên [{style_label}]...")
