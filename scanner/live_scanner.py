@@ -83,8 +83,9 @@ def _fmt_pre_row(r: dict) -> str:
     )
 
 
-def _build_pre_report(results: list[dict], style_label: str, today_str: str) -> tuple[str, list[dict], list[dict]]:
-    """Tạo nội dung báo cáo cho 1 style. Trả về (msg, near_buy, near_sell)."""
+def _build_pre_report(results: list[dict], style_label: str, today_str: str,
+                      ai_text: str = "") -> tuple[str, list[dict], list[dict]]:
+    """Tạo 1 message duy nhất: header + AI + gần mua + gần bán."""
     bull = [r for r in results if r["trend"] == 1]
     bear = [r for r in results if r["trend"] == -1]
 
@@ -108,23 +109,23 @@ def _build_pre_report(results: list[dict], style_label: str, today_str: str) -> 
             near_sell.append({**r, "dist_pct": dist})
     near_sell.sort(key=lambda x: -x.get("turnover", 0))
 
-    lines = [
-        f"🌅 <b>Báo cáo 8:00 — {style_label} — {today_str}</b>",
-        f"📊 {len(bull)} tăng 🟢 | {len(bear)} giảm 🔴 | Tổng {len(results)} mã\n",
-    ]
+    lines = [f"🌅 <b>Báo cáo sáng 8:00 — Đầu tư {style_label} — {today_str}</b>"]
+
+    if ai_text:
+        lines.append(f"\n{ai_text}")
 
     if near_buy:
-        lines.append(f"🚀 <b>Gần điểm MUA ({len(near_buy)} mã, TK cao → thấp):</b>")
+        lines.append(f"\n🚀 <b>Gần điểm MUA ({len(near_buy)} mã):</b>")
         for r in near_buy[:_TOP_N_PRE]:
             lines.append(_fmt_pre_row(r))
 
     if near_sell:
-        lines.append(f"\n🔻 <b>Gần điểm BÁN ({len(near_sell)} mã, TK cao → thấp):</b>")
+        lines.append(f"\n🔻 <b>Gần điểm BÁN ({len(near_sell)} mã):</b>")
         for r in near_sell[:_TOP_N_PRE]:
             lines.append(_fmt_pre_row(r))
 
     if not near_buy and not near_sell:
-        lines.append("✅ Không có mã nào gần ngưỡng lật trong phiên hôm nay.")
+        lines.append("\n✅ Không có mã nào gần ngưỡng lật trong phiên hôm nay.")
 
     return "\n".join(lines), near_buy, near_sell
 
@@ -182,24 +183,26 @@ def run_pre_session() -> None:
             except Exception as e:
                 logger.debug(f"{ticker} [{style}]: {e}")
 
-        msg, near_buy, near_sell = _build_pre_report(results, style_label, today_str)
+        bull_cnt = sum(1 for r in results if r["trend"] == 1)
+        bear_cnt = sum(1 for r in results if r["trend"] == -1)
+
+        # Lấy near_buy/near_sell trước để truyền vào AI
+        _, near_buy_tmp, near_sell_tmp = _build_pre_report(results, style_label, today_str)
 
         # AI nhận định trước phiên
+        ai_text = ""
         try:
             from scanner.ai_analyst import generate_pre_session_ai
-            bull_cnt = sum(1 for r in results if r["trend"] == 1)
-            bear_cnt = sum(1 for r in results if r["trend"] == -1)
             ai_text = generate_pre_session_ai(
                 n_bull=bull_cnt, n_bear=bear_cnt, n_total=len(results),
-                near_buy=near_buy, near_sell=near_sell,
+                near_buy=near_buy_tmp, near_sell=near_sell_tmp,
                 style_label=style_label,
             )
-            if ai_text:
-                send_message(f"🤖 <b>Nhận định AI trước phiên:</b>\n{ai_text}", style=bot_style)
-                time.sleep(0.5)
         except Exception as e:
             logger.warning(f"AI pre-session failed: {e}")
 
+        # 1 message duy nhất: header + AI + danh sách
+        msg, _, _ = _build_pre_report(results, style_label, today_str, ai_text=ai_text)
         send_message(msg, style=bot_style)
         logger.info(f"Pre-session [{style}]: {len(results)} mã, gửi bot {bot_style}")
 
