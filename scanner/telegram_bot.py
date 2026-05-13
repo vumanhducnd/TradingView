@@ -138,7 +138,7 @@ def send_daily_report(
     today = date.today().strftime("%d/%m/%Y")
     is_dual = "long_buy_signal" in results.columns
 
-    TOP_N = 15
+    TOP_N = 5
     vol_col = "volume" if "volume" in results.columns else None
 
     def _top_n(df: pd.DataFrame) -> pd.DataFrame:
