@@ -158,6 +158,21 @@ def run_scan_only() -> None:
                 logger.info(f"=== Xong (cache): {buy_n} MUA, {sell_n} BAN ===")
                 return
 
+    # ── Bước 0: Fetch giá cuối ngày cho tất cả mã (price_board) ──────────────
+    logger.info("Buoc 0/4: Fetch gia cuoi ngay tat ca ma qua price_board...")
+    try:
+        from scanner.database import get_watchlist, bulk_upsert_today
+        from scanner.live_scanner import _fetch_via_price_board
+        all_tickers = get_watchlist()
+        today_bars = _fetch_via_price_board(all_tickers)
+        if today_bars:
+            n_upsert = bulk_upsert_today(today_bars, date.today())
+            logger.info(f"  Upsert gia cuoi ngay: {n_upsert}/{len(all_tickers)} ma")
+        else:
+            logger.warning("  price_board khong lay duoc gia — dung data DB hien co")
+    except Exception as e:
+        logger.warning(f"  Fetch gia cuoi ngay that bai: {e}")
+
     logger.info("Buoc 1/4: Load OHLCV bulk tu DB (top 300)...")
     from scanner.database import get_top300_thanh_khoan, load_all_ohlcv_bulk
     top300 = get_top300_thanh_khoan(n=300)

@@ -2,8 +2,8 @@ name: Update Cuoi Phien (15:00 GMT+7)
 
 on:
   schedule:
-    # 08:00 UTC = 15:00 GMT+7, thu 2-6 (du phong neu cron-job.org loi)
-    - cron: '0 8 * * 1-5'
+    # 08:03 UTC = 15:03 GMT+7, thu 2-6 (sau ATC, gia on dinh)
+    - cron: '3 8 * * 1-5'
   workflow_dispatch:
     inputs:
       force:
