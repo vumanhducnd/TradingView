@@ -139,7 +139,8 @@ def send_daily_report(
     is_dual = "long_buy_signal" in results.columns
 
     TOP_N = 5
-    vol_col = "volume" if "volume" in results.columns else None
+    # Ưu tiên turnover (giá trị giao dịch), fallback volume
+    vol_col = "turnover" if "turnover" in results.columns else ("volume" if "volume" in results.columns else None)
 
     def _top_n(df: pd.DataFrame) -> pd.DataFrame:
         if df.empty:
