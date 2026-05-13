@@ -125,12 +125,19 @@ def get_top300_thanh_khoan(n: int = 300) -> list[str]:
     """
     try:
         with db_cursor(commit=False) as cur:
-            # Ưu tiên dùng rank đã đánh từ watchlist_builder
+            # Ưu tiên dùng rank đã đánh, lọc thêm mã giá < 5,000 VND (close < 5.0 trong DB)
             cur.execute(
                 """
-                SELECT ticker FROM watchlist
-                WHERE vn100_rank IS NOT NULL
-                ORDER BY vn100_rank ASC
+                SELECT w.ticker
+                FROM watchlist w
+                WHERE w.vn100_rank IS NOT NULL
+                  AND EXISTS (
+                      SELECT 1 FROM ohlcv o
+                      WHERE o.ticker = w.ticker
+                        AND o.date >= CURRENT_DATE - INTERVAL '5 days'
+                        AND o.close >= 5.0
+                  )
+                ORDER BY w.vn100_rank ASC
                 LIMIT %s
                 """,
                 (n,),
