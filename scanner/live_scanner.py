@@ -632,7 +632,7 @@ def run_session(interval: int = 180, session: str = "full") -> None:
 
             if flip["direction"] == "buy":
                 msg = (
-                    f"🟢 <b>{ticker}</b> — Cân nhắc vào lệnh\n"
+                    f"🟢 <b>{ticker}</b> — Vùng mua tốt\n"
                     f"Giá vừa bứt phá ngưỡng kháng cự lên trên\n"
                     f"Giá hiện tại : <b>{fmt_price(price)}</b>\n"
                     f"Ngưỡng kháng cự: {fmt_price(st)}\n"
@@ -658,7 +658,7 @@ def run_session(interval: int = 180, session: str = "full") -> None:
                         f"\nGiá mua      : {fmt_price(buy_p)} → {pnl:+.2f}%"
                     )
                 msg = (
-                    f"🔴 <b>{ticker}</b> — Cân nhắc thoát lệnh\n"
+                    f"🔴 <b>{ticker}</b> — Vùng cân nhắc thoát lệnh\n"
                     f"Giá vừa thủng ngưỡng hỗ trợ\n"
                     f"Giá hiện tại : <b>{fmt_price(price)}</b>\n"
                     f"Ngưỡng hỗ trợ: {fmt_price(st)}\n"
