@@ -188,10 +188,7 @@ def send_daily_report(
             send_message(f"<b>🤖 Nhận định AI:</b>\n{ai_analysis['overview']}", style=style)
             time.sleep(0.8)
 
-        # Siêu cổ phiếu — chỉ bot dài hạn
-        if is_long and super_stocks is not None and not super_stocks.empty:
-            _send_super_stocks(super_stocks, style=style)
-            time.sleep(0.8)
+        # Siêu cổ phiếu đã bỏ khỏi Telegram (vẫn còn trong Excel)
 
         # Vị thế — riêng từng bot
         _send_positions_summary(results, style=style)
@@ -230,9 +227,6 @@ def send_daily_report(
         time.sleep(0.8)
         if ai_analysis and ai_analysis.get("overview"):
             send_message(f"<b>🤖 Nhận định AI:</b>\n{ai_analysis['overview']}", style="long")
-            time.sleep(0.8)
-        if super_stocks is not None and not super_stocks.empty:
-            _send_super_stocks(super_stocks, style="long")
             time.sleep(0.8)
         _send_positions_summary(results, style="long")
         time.sleep(0.8)
