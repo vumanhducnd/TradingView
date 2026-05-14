@@ -7,11 +7,10 @@ load_dotenv()
 ROOT_DIR = Path(__file__).parent.parent
 DATA_DIR = ROOT_DIR / "data"
 SIGNALS_DIR = DATA_DIR / "signals"
-BACKTEST_DIR = DATA_DIR / "backtest"
 REPORTS_DIR = ROOT_DIR / "reports"
 WATCHLIST_FILE = DATA_DIR / "watchlist.csv"
 
-for d in [SIGNALS_DIR, BACKTEST_DIR, REPORTS_DIR]:
+for d in [SIGNALS_DIR, REPORTS_DIR]:
     d.mkdir(parents=True, exist_ok=True)
 
 # SuperTrend parameters
@@ -69,7 +68,3 @@ TELEGRAM_CHAT_ID_SHORT = os.getenv("TELEGRAM_CHAT_ID_SHORT")   or TELEGRAM_CHAT_
 
 TELEGRAM_API = "https://api.telegram.org/bot{token}/sendMessage"
 
-# Backtest
-DEFAULT_CAPITAL = 100_000_000  # 100 triệu VND
-COMPOUND_MODE = True
-ENTRY_MODE = "realistic"  # "best" | "ideal" | "realistic"
