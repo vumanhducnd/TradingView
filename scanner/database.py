@@ -397,7 +397,7 @@ def get_all_last_dates() -> dict[str, date]:
 # ─── Scan Results ─────────────────────────────────────────────────────────────
 
 def save_scan_results(df: pd.DataFrame, scan_date: date | None = None) -> None:
-    """Lưu toàn bộ kết quả quét vào scan_results — đồng bộ đầy đủ các cột."""
+    """Lưu kết quả quét — 1 dòng/ticker (OVERWRITE), không giữ lịch sử theo ngày."""
     if df.empty:
         return
     if scan_date is None:
@@ -433,12 +433,13 @@ def save_scan_results(df: pd.DataFrame, scan_date: date | None = None) -> None:
     # Xác định style: single hoặc dual
     is_dual = "long_buy_signal" in df.columns
 
+    today = scan_date or date.today()
     rows = []
     for _, row in df.iterrows():
         r = dict(row)
         rows.append((
-            scan_date,
             r.get("ticker"),
+            today,
             _v(r, "close",    float),
             _v(r, "bias_norm", float),
             _v(r, "b_score",  int),
@@ -476,7 +477,7 @@ def save_scan_results(df: pd.DataFrame, scan_date: date | None = None) -> None:
 
     sql = """
         INSERT INTO scan_results (
-            scan_date, ticker, close, bias_norm, b_score, r_score,
+            ticker, updated_at, close, bias_norm, b_score, r_score,
             bull_ema, bull_vwap, bull_rsi, bull_macd, bull_adx,
             bull_obv, bull_stoch, bull_candle, bull_vol,
             volume, turnover,
@@ -492,7 +493,8 @@ def save_scan_results(df: pd.DataFrame, scan_date: date | None = None) -> None:
             ss1, ss2, ss3, ss4, ss5, ss6, ss7,
             super_score, is_super_stock
         ) VALUES %s
-        ON CONFLICT (scan_date, ticker) DO UPDATE SET
+        ON CONFLICT (ticker) DO UPDATE SET
+            updated_at = EXCLUDED.updated_at,
             close = EXCLUDED.close, bias_norm = EXCLUDED.bias_norm,
             b_score = EXCLUDED.b_score, r_score = EXCLUDED.r_score,
             volume = EXCLUDED.volume, turnover = EXCLUDED.turnover,
@@ -522,12 +524,7 @@ def save_scan_results(df: pd.DataFrame, scan_date: date | None = None) -> None:
     """
     with db_cursor() as cur:
         psycopg2.extras.execute_values(cur, sql, rows)
-        # Tự xóa data cũ hơn 7 ngày — chỉ cần 1 tuần lịch sử
-        cur.execute(
-            "DELETE FROM scan_results WHERE scan_date < CURRENT_DATE - INTERVAL '7 days'"
-        )
-        deleted = cur.rowcount
-    logger.info(f"scan_results: saved {len(rows)} rows for {scan_date} | xoa {deleted} dong cu")
+    logger.info(f"scan_results: upserted {len(rows)} tickers (updated_at={today})")
 
 
 def ensure_scan_results_columns() -> None:
@@ -699,10 +696,11 @@ def load_avg_turnover(tickers: list[str]) -> dict[str, float]:
         return {r["ticker"]: float(r["avg_turnover_20d"] or 0) for r in cur.fetchall()}
 
 
-def load_scan_results(scan_date: date) -> pd.DataFrame:
-    sql = "SELECT * FROM scan_results WHERE scan_date = %s ORDER BY bias_norm DESC"
+def load_scan_results(scan_date: date | None = None) -> pd.DataFrame:
+    """Load kết quả scan mới nhất (1 dòng/ticker, không phân biệt ngày)."""
+    sql = "SELECT * FROM scan_results ORDER BY bias_norm DESC"
     with db_cursor(commit=False) as cur:
-        cur.execute(sql, (scan_date,))
+        cur.execute(sql)
         rows = cur.fetchall()
     if not rows:
         return pd.DataFrame()
@@ -755,9 +753,11 @@ def load_signal_history(days: int = 90) -> pd.DataFrame:
 
 
 def load_scan_dates() -> list[date]:
+    """Trả về [updated_at] duy nhất từ scan_results (luôn là ngày scan gần nhất)."""
     with db_cursor(commit=False) as cur:
-        cur.execute("SELECT DISTINCT scan_date FROM scan_results ORDER BY scan_date DESC")
-        return [r["scan_date"] for r in cur.fetchall()]
+        cur.execute("SELECT MAX(updated_at) as d FROM scan_results")
+        r = cur.fetchone()
+        return [r["d"]] if r and r["d"] else []
 
 
 def load_open_positions(style: str | None = None) -> list[dict]:
