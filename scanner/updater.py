@@ -194,6 +194,8 @@ def run_scan_only() -> None:
     signals = get_current_signals(results)
 
     # Lọc bỏ tín hiệu BÁN cuối ngày nếu cùng ngày session đã báo MUA (intraday reversal)
+    # Đồng thời ghi nhận danh sách này để đề cập trong báo cáo
+    intraday_reversals: dict[str, list[str]] = {"long": [], "short": []}
     try:
         from scanner.database import db_cursor
         with db_cursor(commit=False) as cur:
@@ -206,12 +208,17 @@ def run_scan_only() -> None:
             for sig_key in ["sell", "both_sell"]:
                 df = signals.get(sig_key)
                 if df is not None and not df.empty:
-                    keep = df["ticker"].apply(
-                        lambda t: (t, "short") not in bought_today and (t, "long") not in bought_today
+                    is_reversal = df["ticker"].apply(
+                        lambda t: (t, "long") in bought_today or (t, "short") in bought_today
                     )
-                    removed = (~keep).sum()
+                    # Ghi nhận theo style
+                    for _, row in df[is_reversal].iterrows():
+                        t = row["ticker"]
+                        if (t, "long")  in bought_today: intraday_reversals["long"].append(t)
+                        if (t, "short") in bought_today: intraday_reversals["short"].append(t)
+                    removed = is_reversal.sum()
                     if removed:
-                        signals[sig_key] = df[keep]
+                        signals[sig_key] = df[~is_reversal]
                         logger.info(f"  Loc {removed} intraday reversal khoi '{sig_key}'")
     except Exception as e:
         logger.debug(f"Filter intraday reversal: {e}")
@@ -234,7 +241,8 @@ def run_scan_only() -> None:
         logger.warning(f"AI analysis failed: {e}")
 
     try:
-        send_daily_report(results, signals, ai_analysis=ai_analysis, super_stocks=super_stocks)
+        send_daily_report(results, signals, ai_analysis=ai_analysis, super_stocks=super_stocks,
+                          intraday_reversals=intraday_reversals)
     except Exception as e:
         logger.warning(f"Telegram failed: {e}")
 

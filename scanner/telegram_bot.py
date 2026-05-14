@@ -129,6 +129,7 @@ def send_daily_report(
     signals: dict[str, pd.DataFrame],
     ai_analysis: dict | None = None,
     super_stocks: pd.DataFrame | None = None,
+    intraday_reversals: dict[str, list[str]] | None = None,
 ) -> None:
     """
     Gửi báo cáo cuối ngày.
@@ -246,6 +247,17 @@ def send_daily_report(
             if lines:
                 send_message("\n".join(lines), style=style)
                 time.sleep(0.5)
+
+        # Intraday reversal — bứt phá trong phiên nhưng không giữ được cuối ngày
+        rev_tickers = (intraday_reversals or {}).get(style, [])
+        if rev_tickers:
+            rev_str = ", ".join(f"<b>{t}</b>" for t in rev_tickers)
+            send_message(
+                f"Lưu ý: {rev_str} có tín hiệu bứt phá trong phiên nhưng không giữ được đến cuối ngày — "
+                f"cẩn thận nếu đang nắm giữ.",
+                style=style,
+            )
+            time.sleep(0.5)
 
         if buy_df.empty and sell_df.empty:
             top5 = results.nlargest(5, "bias_norm")[["ticker", "bias_norm"]]
