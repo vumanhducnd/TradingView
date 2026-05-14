@@ -21,6 +21,16 @@ _RPM_DELAY  = 3.0    # giay giua cac call (30 RPM = 1 call/2s)
 
 # ─── Client ───────────────────────────────────────────────────────────────────
 
+def _parse_retry_wait(err: str) -> int:
+    """Parse 'Please try again in 45m12.9s' hoặc '30.5s' → giây (int)."""
+    m = re.search(r"Please try again in (?:(\d+)m)?(?:([\d.]+)s)?", err)
+    if not m:
+        return 35
+    minutes = int(m.group(1) or 0)
+    seconds = float(m.group(2) or 0)
+    return minutes * 60 + int(seconds) + 2
+
+
 def _get_client():
     try:
         import httpx
@@ -31,6 +41,30 @@ def _get_client():
         return Groq(api_key=GROQ_API_KEY, http_client=httpx.Client(verify=False))
     except ImportError:
         raise ImportError("pip install groq httpx")
+
+
+def _call_gemini(prompt: str, max_tokens: int = 2048) -> str:
+    """Fallback sang Gemini khi Groq 429. Model: gemini-2.0-flash (free tier)."""
+    try:
+        from google import genai
+        from google.genai import types
+        from scanner.config import GEMINI_API_KEY
+        if not GEMINI_API_KEY:
+            logger.warning("GEMINI_API_KEY chua set — bo qua fallback")
+            return ""
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        resp = client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.35,
+                max_output_tokens=max_tokens,
+            ),
+        )
+        return resp.text.strip()
+    except Exception as e:
+        logger.warning(f"Gemini fallback loi: {e}")
+        return ""
 
 
 def _call(client, prompt: str, max_tokens: int = 2048, _retry: int = 0) -> str:
@@ -44,9 +78,12 @@ def _call(client, prompt: str, max_tokens: int = 2048, _retry: int = 0) -> str:
         return resp.choices[0].message.content.strip()
     except Exception as e:
         err = str(e)
-        if "429" in err and _retry < 2:
-            m = re.search(r"Please try again in ([\d.]+)s", err)
-            wait = int(float(m.group(1))) + 2 if m else 35
+        if "429" in err:
+            wait = _parse_retry_wait(err)
+            if wait > 300 or _retry >= 2:
+                # Hết quota ngày hoặc đã retry đủ → Gemini fallback ngay
+                logger.warning(f"Groq 429 (wait={wait}s) — chuyen sang Gemini fallback...")
+                return _call_gemini(prompt, max_tokens)
             logger.warning(f"Groq 429 - cho {wait}s ({_retry+1}/2)...")
             time.sleep(wait)
             return _call(client, prompt, max_tokens, _retry + 1)
