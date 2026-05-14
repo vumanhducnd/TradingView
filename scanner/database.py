@@ -522,7 +522,12 @@ def save_scan_results(df: pd.DataFrame, scan_date: date | None = None) -> None:
     """
     with db_cursor() as cur:
         psycopg2.extras.execute_values(cur, sql, rows)
-    logger.info(f"scan_results: saved {len(rows)} rows for {scan_date}")
+        # Tự xóa data cũ hơn 7 ngày — chỉ cần 1 tuần lịch sử
+        cur.execute(
+            "DELETE FROM scan_results WHERE scan_date < CURRENT_DATE - INTERVAL '7 days'"
+        )
+        deleted = cur.rowcount
+    logger.info(f"scan_results: saved {len(rows)} rows for {scan_date} | xoa {deleted} dong cu")
 
 
 def ensure_scan_results_columns() -> None:
