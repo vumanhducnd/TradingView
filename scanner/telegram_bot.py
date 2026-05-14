@@ -80,13 +80,16 @@ def _send_raw(text: str, token: str, chat_id: str, parse_mode: str = "HTML") -> 
                 timeout=30,
                 verify=False,
             )
+            if resp.status_code == 403:
+                logger.warning(f"Telegram 403 Forbidden — chat_id={chat_id} (bot bị kick hoặc block)")
+                return False  # không retry, 403 là lỗi vĩnh viễn
             resp.raise_for_status()
             return True
         except Exception as e:
             if attempt < 2:
                 time.sleep(3)
             else:
-                logger.warning(f"Telegram send failed: {e}")
+                logger.warning(f"Telegram send failed (chat_id={chat_id}): {e}")
     return False
 
 
