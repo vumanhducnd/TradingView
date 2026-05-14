@@ -457,22 +457,43 @@ def _sheet_signals(wb: Workbook, signals: dict, ai_analysis: dict | None = None,
     ]
     combos = [c for c in all_combos if style_filter is None or c[4] == style_filter]
 
-    row_idx = 2
+    # Thu thập tất cả rows trước, sort TK cao → thấp, rồi mới ghi
+    collected: list[tuple] = []  # (turnover, ticker_key, row, signal_label, khung, st_col, fill)
     seen: set[str] = set()
 
-    def _write_row(row, signal_label, khung, st_col, fill):
-        nonlocal row_idx
+    def _collect(row, signal_label, khung, st_col, fill):
         ticker = row.get("ticker", "")
         key    = f"{ticker}_{signal_label}_{khung}"
         if key in seen:
             return
         seen.add(key)
+        tk = float(row.get("turnover") or 0)
+        collected.append((tk, key, row, signal_label, khung, st_col, fill))
 
-        tk  = row.get("turnover", 0) or 0
-        st  = row.get(st_col) or row.get("supertrend") or ""
+    if is_dual:
+        for signal_label, buy_col, _sell_col, khung, _style, st_col in combos:
+            is_buy = "But pha" in signal_label
+            src    = signals.get("buy" if is_buy else "sell", pd.DataFrame())
+            if src.empty or buy_col not in src.columns:
+                continue
+            fill = GREEN_FILL if is_buy else RED_FILL
+            for _, row in src[src[buy_col].astype(bool)].iterrows():
+                _collect(row, signal_label, khung, st_col, fill)
+    else:
+        for df, label, fill, st_col in [
+            (signals.get("buy",  pd.DataFrame()), "But pha xac nhan", GREEN_FILL, "supertrend"),
+            (signals.get("sell", pd.DataFrame()), "Dao chieu giam",   RED_FILL,   "supertrend"),
+        ]:
+            for _, row in df.iterrows():
+                _collect(row, label, "Dai han", st_col, fill)
 
+    collected.sort(key=lambda x: x[0], reverse=True)
+
+    row_idx = 2
+    for tk, _key, row, signal_label, khung, st_col, fill in collected:
+        st = row.get(st_col) or row.get("supertrend") or ""
         vals = [
-            ticker,
+            row.get("ticker", ""),
             signal_label,
             khung,
             today_str,
@@ -483,23 +504,6 @@ def _sheet_signals(wb: Workbook, signals: dict, ai_analysis: dict | None = None,
         for j, v in enumerate(vals, start=1):
             ws.cell(row=row_idx, column=j, value=v).fill = fill
         row_idx += 1
-
-    if is_dual:
-        for signal_label, buy_col, _sell_col, khung, _style, st_col in combos:
-            is_buy = "But pha" in signal_label
-            src    = signals.get("buy" if is_buy else "sell", pd.DataFrame())
-            if src.empty or buy_col not in src.columns:
-                continue
-            fill = GREEN_FILL if is_buy else RED_FILL
-            for _, row in src[src[buy_col].astype(bool)].iterrows():
-                _write_row(row, signal_label, khung, st_col, fill)
-    else:
-        for df, label, fill, st_col in [
-            (signals.get("buy",  pd.DataFrame()), "But pha xac nhan", GREEN_FILL, "supertrend"),
-            (signals.get("sell", pd.DataFrame()), "Dao chieu giam",   RED_FILL,   "supertrend"),
-        ]:
-            for _, row in df.iterrows():
-                _write_row(row, label, "Dai han", st_col, fill)
 
     # Điều chỉnh chiều cao dòng cho cột AI
     for r in range(2, row_idx):
