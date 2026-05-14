@@ -676,16 +676,13 @@ def run_session(interval: int = 180, session: str = "full") -> None:
             tk_str = f"{tk/1e6:.1f} tỷ" if tk > 0 else "–"
             time_str = now.strftime("%H:%M")
 
-            SEP = "━━━━━━━━━━━━━━━━━━━━"
             if flip["direction"] == "buy":
                 msg = (
                     f"🟢 <b>{ticker}</b> — Vùng mua tốt\n"
-                    f"{SEP}\n"
                     f"Giá vừa bứt phá ngưỡng kháng cự lên trên\n"
                     f"Giá hiện tại  : <b>{fmt_price(price)}</b>\n"
                     f"Kháng cự      : {fmt_price(st)}\n"
                     f"Thanh khoản   : {tk_str}\n"
-                    f"{SEP}\n"
                     f"⏰ {time_str} GMT+7"
                 )
             else:
@@ -709,13 +706,11 @@ def run_session(interval: int = 180, session: str = "full") -> None:
                     )
                 msg = (
                     f"🔴 <b>{ticker}</b> — Vùng cân nhắc thoát lệnh\n"
-                    f"{SEP}\n"
                     f"Giá vừa thủng ngưỡng hỗ trợ\n"
                     f"Giá hiện tại  : <b>{fmt_price(price)}</b>\n"
                     f"Hỗ trợ        : {fmt_price(st)}\n"
                     f"Thanh khoản   : {tk_str}"
                     f"{pnl_str}\n"
-                    f"{SEP}\n"
                     f"⏰ {time_str} GMT+7"
                 )
 
