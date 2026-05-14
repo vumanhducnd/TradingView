@@ -53,15 +53,21 @@ def _call_gemini(prompt: str, max_tokens: int = 2048) -> str:
             logger.warning("GEMINI_API_KEY chua set — bo qua fallback")
             return ""
         client = genai.Client(api_key=GEMINI_API_KEY)
-        resp = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=0.35,
-                max_output_tokens=max_tokens,
-            ),
-        )
-        return resp.text.strip()
+        for model_name in ("gemini-1.5-flash", "gemini-1.5-flash-8b"):
+            try:
+                resp = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        temperature=0.35,
+                        max_output_tokens=max_tokens,
+                    ),
+                )
+                logger.info(f"Gemini fallback OK [{model_name}]")
+                return resp.text.strip()
+            except Exception as e:
+                logger.warning(f"Gemini [{model_name}] loi: {e}")
+        return ""
     except Exception as e:
         logger.warning(f"Gemini fallback loi: {e}")
         return ""
