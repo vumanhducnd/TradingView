@@ -1,9 +1,6 @@
 name: Update Watchlist (monthly)
 
 on:
-  schedule:
-    # Ngày 1 hàng tháng lúc 16:00 ICT (09:00 UTC)
-    - cron: '0 9 1 * *'
   workflow_dispatch:
 
 env:
