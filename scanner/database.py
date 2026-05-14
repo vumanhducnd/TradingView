@@ -626,6 +626,22 @@ def save_signals(df: pd.DataFrame, scan_date: date | None = None) -> None:
                     total += 1
 
     logger.info(f"signals: {total} bản ghi cho {scan_date} (dual={is_dual})")
+    _purge_old_signals(keep_days=3)
+
+
+def _purge_old_signals(keep_days: int = 3) -> None:
+    """Xóa signals cũ hơn keep_days ngày, chỉ giữ lại dữ liệu gần nhất."""
+    try:
+        with db_cursor() as cur:
+            cur.execute(
+                "DELETE FROM signals WHERE signal_date < CURRENT_DATE - %s::int",
+                (keep_days,),
+            )
+            deleted = cur.rowcount
+        if deleted:
+            logger.info(f"signals: da xoa {deleted} ban ghi cu (> {keep_days} ngay)")
+    except Exception as e:
+        logger.warning(f"_purge_old_signals failed: {e}")
 
 
 # ─── Query helpers cho Dashboard ──────────────────────────────────────────────
