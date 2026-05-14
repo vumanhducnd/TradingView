@@ -62,9 +62,16 @@ TELEGRAM_TOKEN    = os.getenv("TELEGRAM_BOT_TOKEN_LONG") or os.getenv("TELEGRAM_
 TELEGRAM_CHAT_ID  = os.getenv("TELEGRAM_CHAT_ID_LONG")  or os.getenv("TELEGRAM_CHAT_ID", "")
 
 # Telegram — bot ngắn hạn (short, 7/2.0)
-# Nếu chưa set → fallback về bot dài hạn (gửi chung 1 bot)
 TELEGRAM_TOKEN_SHORT   = os.getenv("TELEGRAM_BOT_TOKEN_SHORT") or TELEGRAM_TOKEN
 TELEGRAM_CHAT_ID_SHORT = os.getenv("TELEGRAM_CHAT_ID_SHORT")   or TELEGRAM_CHAT_ID
+
+# Multi-channel: TELEGRAM_CHAT_ID_LONG / SHORT có thể là nhiều ID cách nhau bằng dấu phẩy
+# Ví dụ: TELEGRAM_CHAT_ID_LONG=-100123456,-100789012
+def _parse_chat_ids(raw: str) -> list[str]:
+    return [c.strip() for c in raw.split(",") if c.strip()] if raw else []
+
+TELEGRAM_CHAT_IDS_LONG  = _parse_chat_ids(TELEGRAM_CHAT_ID)
+TELEGRAM_CHAT_IDS_SHORT = _parse_chat_ids(TELEGRAM_CHAT_ID_SHORT)
 
 TELEGRAM_API = "https://api.telegram.org/bot{token}/sendMessage"
 

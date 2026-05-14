@@ -16,6 +16,7 @@ from datetime import date
 from scanner.config import (
     TELEGRAM_API, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID,
     TELEGRAM_TOKEN_SHORT, TELEGRAM_CHAT_ID_SHORT,
+    TELEGRAM_CHAT_IDS_LONG, TELEGRAM_CHAT_IDS_SHORT,
 )
 from scanner.utils import bias_label, fmt_price, logger
 
@@ -59,11 +60,11 @@ _CRITERIA_LABELS = {
 }
 
 
-def _credentials(style: str) -> tuple[str, str]:
-    """Trả về (token, chat_id) theo style: 'long' | 'short'."""
+def _chat_ids(style: str) -> tuple[str, list[str]]:
+    """Trả về (token, [chat_id, ...]) theo style: 'long' | 'short'."""
     if style == "short":
-        return TELEGRAM_TOKEN_SHORT, TELEGRAM_CHAT_ID_SHORT
-    return TELEGRAM_TOKEN, TELEGRAM_CHAT_ID
+        return TELEGRAM_TOKEN_SHORT, TELEGRAM_CHAT_IDS_SHORT or [TELEGRAM_CHAT_ID_SHORT]
+    return TELEGRAM_TOKEN, TELEGRAM_CHAT_IDS_LONG or [TELEGRAM_CHAT_ID]
 
 
 def _send_raw(text: str, token: str, chat_id: str, parse_mode: str = "HTML") -> bool:
@@ -90,39 +91,53 @@ def _send_raw(text: str, token: str, chat_id: str, parse_mode: str = "HTML") -> 
 
 
 def send_message(text: str, style: str = "long", parse_mode: str = "HTML") -> bool:
-    """Gửi tin nhắn đến bot theo style ('long' | 'short'). Returns True on success."""
-    token, chat_id = _credentials(style)
-    return _send_raw(text, token, chat_id, parse_mode)
+    """Gửi tin nhắn đến tất cả channel theo style ('long' | 'short')."""
+    token, chat_ids = _chat_ids(style)
+    results = []
+    for cid in chat_ids:
+        ok = _send_raw(text, token, cid, parse_mode)
+        results.append(ok)
+        if len(chat_ids) > 1:
+            time.sleep(0.3)
+    return any(results)
 
 
 def send_message_both(text: str, parse_mode: str = "HTML") -> None:
-    """Gửi cùng 1 tin đến cả 2 bot (dùng cho header/summary chung)."""
-    _send_raw(text, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, parse_mode)
-    # Chỉ gửi lần 2 nếu short bot khác long bot
+    """Gửi cùng 1 tin đến tất cả channel của cả 2 style."""
+    send_message(text, style="long", parse_mode=parse_mode)
     if TELEGRAM_TOKEN_SHORT != TELEGRAM_TOKEN or TELEGRAM_CHAT_ID_SHORT != TELEGRAM_CHAT_ID:
         time.sleep(0.2)
-        _send_raw(text, TELEGRAM_TOKEN_SHORT, TELEGRAM_CHAT_ID_SHORT, parse_mode)
+        send_message(text, style="short", parse_mode=parse_mode)
 
 
 def send_file(file_path: str, caption: str = "", style: str = "long") -> bool:
-    """Gửi file qua Telegram Bot."""
-    token, chat_id = _credentials(style)
-    if not token or not chat_id:
+    """Gửi file đến tất cả channel theo style."""
+    token, chat_ids = _chat_ids(style)
+    if not token or not chat_ids:
         logger.warning("Telegram credentials not set — skipping file send")
         return False
     url = f"https://api.telegram.org/bot{token}/sendDocument"
-    try:
-        with open(file_path, "rb") as f:
-            resp = requests.post(
-                url,
-                data={"chat_id": chat_id, "caption": caption, "parse_mode": "HTML"},
-                files={"document": (file_path.split("\\")[-1].split("/")[-1], f)},
-                timeout=60,
-                verify=False,
-            )
-        resp.raise_for_status()
+    fname = file_path.split("\\")[-1].split("/")[-1]
+    ok_any = False
+    for cid in chat_ids:
+        try:
+            with open(file_path, "rb") as f:
+                resp = requests.post(
+                    url,
+                    data={"chat_id": cid, "caption": caption, "parse_mode": "HTML"},
+                    files={"document": (fname, f)},
+                    timeout=60,
+                    verify=False,
+                )
+            resp.raise_for_status()
+            ok_any = True
+            if len(chat_ids) > 1:
+                time.sleep(0.5)
+        except Exception as e:
+            logger.warning(f"Telegram send_file failed ({cid}): {e}")
+    if ok_any:
         logger.info(f"File sent: {file_path}")
-        return True
+    return ok_any
     except Exception as e:
         logger.warning(f"Telegram send_file failed: {e}")
         return False
