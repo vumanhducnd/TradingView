@@ -193,33 +193,55 @@ def run_scan_only() -> None:
 
     signals = get_current_signals(results)
 
-    # Lọc bỏ tín hiệu BÁN cuối ngày nếu cùng ngày session đã báo MUA (intraday reversal)
-    # Đồng thời ghi nhận danh sách này để đề cập trong báo cáo
-    intraday_reversals: dict[str, list[str]] = {"long": [], "short": []}
+    # Lọc + ghi nhận intraday reversal để đề cập trong báo cáo
+    # - fake_breakout: MUA trong phiên nhưng cuối ngày không giữ được (BÁN cuối ngày)
+    # - fake_breakdown: BÁN trong phiên nhưng cuối ngày giá hồi (MUA cuối ngày)
+    intraday_reversals: dict[str, dict[str, list[str]]] = {
+        "long":  {"fake_breakout": [], "fake_breakdown": []},
+        "short": {"fake_breakout": [], "fake_breakdown": []},
+    }
     try:
         from scanner.database import db_cursor
         with db_cursor(commit=False) as cur:
             cur.execute(
-                "SELECT ticker, style FROM signals WHERE signal_date = CURRENT_DATE AND signal_type = 'MUA'"
+                "SELECT ticker, style, signal_type FROM signals WHERE signal_date = CURRENT_DATE"
             )
-            bought_today = {(r["ticker"], r["style"]) for r in cur.fetchall()}
+            rows = cur.fetchall()
+        bought_today = {(r["ticker"], r["style"]) for r in rows if r["signal_type"] == "MUA"}
+        sold_today   = {(r["ticker"], r["style"]) for r in rows if r["signal_type"] == "BÁN"}
 
+        # Fake breakout: MUA trong phiên → cuối ngày lại BÁN
         if bought_today:
             for sig_key in ["sell", "both_sell"]:
                 df = signals.get(sig_key)
                 if df is not None and not df.empty:
-                    is_reversal = df["ticker"].apply(
+                    is_fake = df["ticker"].apply(
                         lambda t: (t, "long") in bought_today or (t, "short") in bought_today
                     )
-                    # Ghi nhận theo style
-                    for _, row in df[is_reversal].iterrows():
+                    for _, row in df[is_fake].iterrows():
                         t = row["ticker"]
-                        if (t, "long")  in bought_today: intraday_reversals["long"].append(t)
-                        if (t, "short") in bought_today: intraday_reversals["short"].append(t)
-                    removed = is_reversal.sum()
-                    if removed:
-                        signals[sig_key] = df[~is_reversal]
-                        logger.info(f"  Loc {removed} intraday reversal khoi '{sig_key}'")
+                        if (t, "long")  in bought_today: intraday_reversals["long"]["fake_breakout"].append(t)
+                        if (t, "short") in bought_today: intraday_reversals["short"]["fake_breakout"].append(t)
+                    if is_fake.sum():
+                        signals[sig_key] = df[~is_fake]
+                        logger.info(f"  Loc {is_fake.sum()} fake breakout khoi '{sig_key}'")
+
+        # Fake breakdown: BÁN trong phiên → cuối ngày lại MUA
+        if sold_today:
+            for sig_key in ["buy", "both_buy"]:
+                df = signals.get(sig_key)
+                if df is not None and not df.empty:
+                    is_fake = df["ticker"].apply(
+                        lambda t: (t, "long") in sold_today or (t, "short") in sold_today
+                    )
+                    for _, row in df[is_fake].iterrows():
+                        t = row["ticker"]
+                        if (t, "long")  in sold_today: intraday_reversals["long"]["fake_breakdown"].append(t)
+                        if (t, "short") in sold_today: intraday_reversals["short"]["fake_breakdown"].append(t)
+                    if is_fake.sum():
+                        signals[sig_key] = df[~is_fake]
+                        logger.info(f"  Loc {is_fake.sum()} fake breakdown khoi '{sig_key}'")
+
     except Exception as e:
         logger.debug(f"Filter intraday reversal: {e}")
 

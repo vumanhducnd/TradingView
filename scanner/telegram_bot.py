@@ -248,15 +248,23 @@ def send_daily_report(
                 send_message("\n".join(lines), style=style)
                 time.sleep(0.5)
 
-        # Intraday reversal — bứt phá trong phiên nhưng không giữ được cuối ngày
-        rev_tickers = (intraday_reversals or {}).get(style, [])
-        if rev_tickers:
-            rev_str = ", ".join(f"<b>{t}</b>" for t in rev_tickers)
-            send_message(
-                f"Lưu ý: {rev_str} có tín hiệu bứt phá trong phiên nhưng không giữ được đến cuối ngày — "
-                f"cẩn thận nếu đang nắm giữ.",
-                style=style,
+        # Intraday reversal — đề cập cả 2 chiều
+        rev = (intraday_reversals or {}).get(style, {})
+        fake_breakout  = rev.get("fake_breakout",  [])
+        fake_breakdown = rev.get("fake_breakdown", [])
+        rev_lines = []
+        if fake_breakout:
+            tickers_str = ", ".join(f"<b>{t}</b>" for t in fake_breakout)
+            rev_lines.append(
+                f"Bứt phá không giữ được: {tickers_str} — có tín hiệu mua trong phiên nhưng cuối ngày lại thủng hỗ trợ. Cẩn thận nếu đang nắm giữ."
             )
+        if fake_breakdown:
+            tickers_str = ", ".join(f"<b>{t}</b>" for t in fake_breakdown)
+            rev_lines.append(
+                f"Rút chân giả: {tickers_str} — có tín hiệu bán trong phiên nhưng cuối ngày giá hồi lại. Chưa cần lo."
+            )
+        if rev_lines:
+            send_message("\n\n".join(rev_lines), style=style)
             time.sleep(0.5)
 
         if buy_df.empty and sell_df.empty:
