@@ -74,10 +74,11 @@ def calc_supertrend(
     df["trend"] = trend
     df["supertrend"] = np.where(trend == 1, up, dn)
 
-    # Signals: flip on last bar
+    # Signals: 2-bar confirmation — chỉ fire vào ngày thứ 2 của trend flip
+    # Tránh false signal khi giá chỉ vượt ST đúng 1 ngày rồi quay lại
     trend_s = pd.Series(trend, index=df.index)
-    df["buy_signal"] = (trend_s == 1) & (trend_s.shift(1) == -1)
-    df["sell_signal"] = (trend_s == -1) & (trend_s.shift(1) == 1)
+    df["buy_signal"]  = (trend_s == 1) & (trend_s.shift(1) == 1) & (trend_s.shift(2) == -1)
+    df["sell_signal"] = (trend_s == -1) & (trend_s.shift(1) == -1) & (trend_s.shift(2) == 1)
 
     return df
 
@@ -90,16 +91,18 @@ def get_supertrend_state(df: pd.DataFrame, style: str = "long") -> dict:
     df = calc_supertrend(df, style=style)
     last = df.iloc[-1]
     prev = df.iloc[-2] if len(df) >= 2 else last
+    prev2 = df.iloc[-3] if len(df) >= 3 else prev
     period = ST_PERIOD_LONG if style == "long" else ST_PERIOD_SHORT
     mult   = ST_MULT_LONG   if style == "long" else ST_MULT_SHORT
     return {
-        "atr":       float(last["atr"]),
-        "up":        float(last["st_up"]),
-        "dn":        float(last["st_dn"]),
-        "trend":     int(last["trend"]),
-        "close":     float(last["close"]),
-        "period":    period,
-        "mult":      mult,
+        "atr":        float(last["atr"]),
+        "up":         float(last["st_up"]),
+        "dn":         float(last["st_dn"]),
+        "trend":      int(last["trend"]),
+        "prev_trend": int(prev["trend"]),
+        "close":      float(last["close"]),
+        "period":     period,
+        "mult":       mult,
     }
 
 
@@ -139,17 +142,21 @@ def calc_supertrend_next(
     else:
         trend = prev_trend
 
+    # 2-bar confirmation: signal fire vào ngày thứ 2 của trend flip
+    prev2_trend = state.get("prev_trend", prev_trend)
+
     return {
         "atr":        atr,
         "up":         up,
         "dn":         dn,
         "trend":      trend,
+        "prev_trend": prev_trend,
         "close":      close,
         "period":     period,
         "mult":       mult,
         "supertrend": up if trend == 1 else dn,
-        "buy_signal": trend == 1 and prev_trend == -1,
-        "sell_signal":trend == -1 and prev_trend == 1,
+        "buy_signal":  trend == 1 and prev_trend == 1 and prev2_trend == -1,
+        "sell_signal": trend == -1 and prev_trend == -1 and prev2_trend == 1,
     }
 
 
@@ -274,17 +281,18 @@ def analyze_ticker(
     for i in range(len(df) - 1, -1, -1):
         if df["buy_signal"].iloc[i]:
             last_signal_type  = "MUA"
-            last_signal_date  = df.index[i]
-            # Giá mua = low của nến breakout
-            last_signal_price = float(df["low"].iloc[i])
-            bars_since_signal = len(df) - 1 - i
+            # Signal fire ngày thứ 2 → ngày mua thực tế là ngày thứ 1 (i-1)
+            flip_i = i - 1 if i > 0 else i
+            last_signal_date  = df.index[flip_i]
+            last_signal_price = float(df["low"].iloc[flip_i])
+            bars_since_signal = len(df) - 1 - flip_i
             break
         elif df["sell_signal"].iloc[i]:
             last_signal_type  = "BÁN"
-            last_signal_date  = df.index[i]
-            # Giá bán = high của nến breakout
-            last_signal_price = float(df["high"].iloc[i])
-            bars_since_signal = len(df) - 1 - i
+            flip_i = i - 1 if i > 0 else i
+            last_signal_date  = df.index[flip_i]
+            last_signal_price = float(df["high"].iloc[flip_i])
+            bars_since_signal = len(df) - 1 - flip_i
             break
 
     # PnL từ giá tín hiệu đến hiện tại
