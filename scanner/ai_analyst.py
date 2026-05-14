@@ -240,7 +240,9 @@ def generate_end_of_session_ai(
         Yêu cầu:
         - Tiếng Việt có dấu đầy đủ, không emoji, không bullet, không markdown
         - Đúng nhân cách được giao, tự nhiên như đang tổng kết cuối ngày
-        - Đề cập cụ thể các mã có biến động nổi bật hôm nay, nếu có bứt phá không giữ hoặc rút chân giả thì nhắc ngắn gọn
+        - Đề cập cụ thể các mã có biến động nổi bật hôm nay
+        - Nếu có mã "bứt phá không giữ được": dùng đúng cụm từ "bứt phá thất bại" hoặc "bứt lên rồi rớt lại", KHÔNG dùng "đảo chiều"
+        - Nếu có mã "rút chân giả": dùng đúng cụm từ "rút chân giả" hoặc "giả vờ giảm rồi hồi lại", KHÔNG dùng "đảo chiều"
         - Tối đa 4-5 câu
         - Câu cuối: nhìn về ngày mai — nên làm gì
     """).strip()
