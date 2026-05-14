@@ -746,17 +746,6 @@ def _sheet_history(wb: Workbook, results: pd.DataFrame, style: str = "long") -> 
         for j in range(1, len(headers) + 1):
             ws.cell(row=i, column=j).fill = fill
 
-    # Tổng kết cuối
-    if rows:
-        pnls = [float(r["pnl_pct"]) for r in rows if r.get("pnl_pct") is not None]
-        if pnls:
-            summary_row = len(rows) + 3
-            wins = sum(1 for p in pnls if p >= 0)
-            avg  = sum(pnls) / len(pnls)
-            ws.cell(row=summary_row, column=1, value=f"Tong {len(rows)} lenh | Thang: {wins} | Thua: {len(pnls)-wins}").font = BOLD
-            ws.cell(row=summary_row, column=7, value=round(avg, 2)).font = BOLD
-            ws.cell(row=summary_row - 1, column=7, value="Loi/Lo TB %").font = BOLD
-
     _auto_width(ws)
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = ws.dimensions
