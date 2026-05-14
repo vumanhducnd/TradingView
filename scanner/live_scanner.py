@@ -560,18 +560,18 @@ def run_session(interval: int = 180, session: str = "full") -> None:
     _wd = datetime.now(ICT).weekday()
     _open_lines = {
         "morning": {
-            0: "Thứ Hai rồi, phiên sáng bắt đầu. Cà phê cầm tay, mắt dán bảng điện, tuần mới chiến thôi anh em.",
-            1: "Thứ Ba, phiên sáng mở cửa. Hôm qua mua bán sao rồi — hôm nay tiếp tục theo dõi nhé.",
-            2: "Thứ Tư giữa tuần, phiên sáng vào rồi. Nửa đường rồi, cố lên anh em.",
-            3: "Thứ Năm, phiên sáng khai trương. Cuối tuần gần kề, tập trung thêm tí nữa thôi.",
-            4: "Thứ Sáu rồi anh em ơi, phiên sáng bắt đầu. Chốt tuần đẹp là nghỉ cuối tuần vui.",
+            0: "Tuần mới bắt đầu rồi. Cà phê cầm tay, mắt dán bảng điện, chiến thôi.",
+            1: "Vào phiên sáng rồi anh em. Hôm qua thế nào thì hôm nay làm lại, theo dõi nhé.",
+            2: "Nửa tuần rồi đấy. Phiên sáng mở cửa, cố lên nào.",
+            3: "Sắp cuối tuần rồi, còn hai phiên nữa thôi. Tập trung vào đi.",
+            4: "Phiên sáng cuối tuần đây. Chốt đẹp hôm nay là nghỉ ngơi thoải mái.",
         },
         "afternoon": {
-            0: "Nghỉ trưa Thứ Hai đủ chưa? Phiên chiều mở rồi — vào tiếp thôi.",
-            1: "Thứ Ba chiều, phiên chiều bắt đầu. Ăn cơm xong chưa, vào theo dõi tiếp đi.",
-            2: "Thứ Tư chiều, phiên chiều khai cuộc. Giữa tuần mà có tín hiệu đẹp là quá ổn.",
-            3: "Thứ Năm chiều rồi, phiên chiều vào. Sắp cuối tuần, tranh thủ chốt lời nếu có.",
-            4: "Thứ Sáu chiều — phiên cuối tuần đây. Chốt đẹp rồi tắt máy nghỉ ngơi anh em.",
+            0: "Nghỉ trưa đủ chưa? Vào phiên chiều thôi, tuần mới còn dài.",
+            1: "Cơm xong rồi, phiên chiều mở cửa. Vào tiếp đi anh em.",
+            2: "Phiên chiều giữa tuần đây. Có tín hiệu đẹp là quá ổn.",
+            3: "Phiên chiều cuối tuần gần kề. Tranh thủ nếu có cơ hội.",
+            4: "Phiên chiều cuối cùng của tuần rồi. Chốt xong tắt máy nghỉ ngơi.",
         },
     }
     _start_text = _open_lines.get(session, {}).get(_wd, "Phiên giao dịch bắt đầu. Có tín hiệu sẽ báo ngay.")
@@ -734,18 +734,18 @@ def run_session(interval: int = 180, session: str = "full") -> None:
     short_flips = sum(1 for k in alerted_today if k.endswith("_short"))
     _close_lines = {
         "morning": {
-            0: "Phiên sáng Thứ Hai xong rồi. Nghỉ trưa đi, 13:00 chiều gặp lại.",
-            1: "Hết phiên sáng Thứ Ba. Đi ăn cơm đi, chiều vào tiếp.",
-            2: "Phiên sáng Thứ Tư kết thúc. Nghỉ ngơi tí, chiều còn dài.",
-            3: "Xong phiên sáng Thứ Năm. Tranh thủ nghỉ trưa, 13:00 chiều gặp lại.",
-            4: "Phiên sáng Thứ Sáu xong. Nghỉ trưa ngắn thôi, chiều chốt tuần luôn.",
+            0: "Phiên sáng xong rồi. Đi ăn cơm đi, 13:00 chiều vào tiếp nhé.",
+            1: "Nghỉ trưa thôi anh em, chiều gặp lại.",
+            2: "Xong buổi sáng rồi. Tranh thủ nghỉ ngơi, chiều còn một phiên nữa.",
+            3: "Hết phiên sáng rồi. Ăn gì ngon ngon đi, chiều về vào tiếp.",
+            4: "Phiên sáng cuối tuần kết thúc. Nghỉ trưa nhanh, chiều chốt tuần luôn.",
         },
         "afternoon": {
-            0: "Phiên chiều Thứ Hai kết thúc. Về nhà nghỉ ngơi, ngày mai chiến tiếp.",
-            1: "Xong Thứ Ba rồi. Về nhà đi anh em, báo cáo cuối ngày gửi sau.",
-            2: "Phiên chiều Thứ Tư kết thúc. Giữa tuần vậy là ổn, mai tiếp tục.",
-            3: "Hết Thứ Năm rồi. Một ngày nữa là cuối tuần — cố nốt ngày mai nhé.",
-            4: "Thứ Sáu xong rồi anh em ơi. Tắt máy, nghỉ cuối tuần — báo cáo cuối ngày gửi sau.",
+            0: "Xong ngày đầu tuần. Về nhà nghỉ ngơi, mai chiến tiếp.",
+            1: "Phiên chiều kết thúc. Về nhà thôi, báo cáo cuối ngày gửi sau.",
+            2: "Qua được giữa tuần rồi. Về nhà đi, mai tiếp tục.",
+            3: "Xong rồi, còn một ngày nữa là cuối tuần. Cố nốt ngày mai nhé.",
+            4: "Tuần này xong rồi anh em ơi. Tắt máy, nghỉ cuối tuần — báo cáo cuối ngày gửi sau.",
         },
     }
     _end_text = _close_lines.get(session, {}).get(_wd, "Phiên giao dịch kết thúc. Hẹn gặp lại phiên sau.")
