@@ -43,6 +43,7 @@ jobs:
           DATABASE_URL:             ${{ secrets.DATABASE_URL }}
           VNSTOCK_API_KEY:          ${{ secrets.VNSTOCK_API_KEY }}
           GROQ_API_KEY:             ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY:           ${{ secrets.GEMINI_API_KEY }}
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.force }}" = "true" ]; then
             python -m scanner.updater --scan-only --force
