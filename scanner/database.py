@@ -760,8 +760,9 @@ def load_trade_history_from_ohlcv(style: str = "long", tickers: list[str] | None
     from scanner.indicators import calc_supertrend
 
     try:
+        # ohlcv không có cột turnover — chỉ lấy OHLCV để tính SuperTrend
         sql = (
-            "SELECT ticker, date, open, high, low, close, volume, turnover "
+            "SELECT ticker, date, open, high, low, close, volume "
             "FROM ohlcv "
             + ("WHERE ticker = ANY(%s) " if tickers else "")
             + "ORDER BY ticker, date ASC"
@@ -785,7 +786,8 @@ def load_trade_history_from_ohlcv(style: str = "long", tickers: list[str] | None
             continue
         try:
             df = calc_supertrend(df, style=style)
-        except Exception:
+        except Exception as e:
+            logger.warning(f"load_trade_history_from_ohlcv: calc_supertrend failed [{ticker}]: {e}")
             continue
 
         buy_idx_series = df.index[df["buy_signal"] == True]

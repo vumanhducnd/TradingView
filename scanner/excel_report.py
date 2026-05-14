@@ -123,7 +123,7 @@ def _build_workbook(
     _sheet_dung_ngoai(wb, results, style=style)                                 # Tab 3
     _sheet_super_stocks(wb, results, scan_date)                                 # Tab 5 — dùng results trực tiếp
 
-    if style == "long" and ai_analysis:
+    if style == "long" and ai_analysis is not None:
         _sheet_ai(wb, ai_analysis, scan_date)                                   # Tab 6 — chỉ DH
 
     _sheet_history(wb, results=results, style=style)                            # Tab cuối
@@ -384,7 +384,7 @@ def _sheet_ai(wb: Workbook, ai_analysis: dict, scan_date: str) -> None:
     ws.cell(row=1, column=1).font = Font(bold=True, size=13, color="FFFFFF")
     ws.merge_cells("A1:D1")
 
-    overview = ai_analysis.get("overview", "")
+    overview = ai_analysis.get("overview", "") or "(AI khong phan tich duoc — kiem tra GROQ_API_KEY / GEMINI_API_KEY)"
     ws.cell(row=2, column=1, value=overview).alignment = WRAP
     ws.merge_cells("A2:D2")
     ws.row_dimensions[2].height = max(60, len(overview) // 5)
@@ -726,7 +726,7 @@ def _sheet_history(wb: Workbook, results: pd.DataFrame, style: str = "long") -> 
         logger.warning(f"_sheet_history: load_trade_history_from_ohlcv failed: {e}")
 
     if trade_df.empty:
-        ws.cell(row=2, column=1, value="Chua co du lieu lich su lenh (signals table trong)")
+        ws.cell(row=2, column=1, value="Khong tinh duoc lich su lenh — kiem tra log de biet ly do")
         return
 
     # Gắn turnover → sort TK cao → thấp
