@@ -179,6 +179,7 @@ def generate_end_of_session_ai(
     style_label: str,
     top_gainers: list[str] | None = None,
     top_losers: list[str]  | None = None,
+    intraday_reversals: dict | None = None,
 ) -> str:
     """
     Nhận định cuối phiên: đề cập top biến động, tín hiệu, theo nhân cách từng ngày.
@@ -213,6 +214,17 @@ def generate_end_of_session_ai(
     top_strong = results.nlargest(3, "bias_norm")["ticker"].tolist() if "bias_norm" in results.columns else []
     top_weak   = results.nsmallest(3, "bias_norm")["ticker"].tolist() if "bias_norm" in results.columns else []
 
+    # Intraday reversal context
+    style_key = "long" if "Dài" in style_label else "short"
+    rev = (intraday_reversals or {}).get(style_key, {})
+    fake_breakout  = rev.get("fake_breakout",  [])
+    fake_breakdown = rev.get("fake_breakdown", [])
+    reversal_ctx = ""
+    if fake_breakout:
+        reversal_ctx += f"\n        - Bứt phá không giữ được: {', '.join(fake_breakout[:5])} (mua trong phiên nhưng cuối ngày thủng hỗ trợ)"
+    if fake_breakdown:
+        reversal_ctx += f"\n        - Rút chân giả: {', '.join(fake_breakdown[:5])} (bán trong phiên nhưng cuối ngày giá hồi)"
+
     prompt = textwrap.dedent(f"""
         {persona}
         Hôm nay {today} — Tổng kết phiên giao dịch | Khung: {style_label}
@@ -223,12 +235,12 @@ def generate_end_of_session_ai(
         - Bứt phá (tín hiệu mua mới): {top_buy_str}
         - Đảo chiều (tín hiệu bán mới): {top_sell_str}
         - Xu hướng mạnh: {", ".join(top_strong)}
-        - Xu hướng tăng: {n_bull} mã | Xu hướng giảm: {n_bear} mã
+        - Xu hướng tăng: {n_bull} mã | Xu hướng giảm: {n_bear} mã{reversal_ctx}
 
         Yêu cầu:
         - Tiếng Việt có dấu đầy đủ, không emoji, không bullet, không markdown
         - Đúng nhân cách được giao, tự nhiên như đang tổng kết cuối ngày
-        - Đề cập cụ thể các mã có biến động nổi bật hôm nay
+        - Đề cập cụ thể các mã có biến động nổi bật hôm nay, nếu có bứt phá không giữ hoặc rút chân giả thì nhắc ngắn gọn
         - Tối đa 4-5 câu
         - Câu cuối: nhìn về ngày mai — nên làm gì
     """).strip()

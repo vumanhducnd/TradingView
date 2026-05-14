@@ -218,6 +218,7 @@ def send_daily_report(
                 style_label=style_name,
                 top_gainers=top_gainers,
                 top_losers=top_losers,
+                intraday_reversals=intraday_reversals,
             )
         except Exception as e:
             logger.warning(f"AI cuoi phien failed: {e}")
@@ -247,25 +248,6 @@ def send_daily_report(
             if lines:
                 send_message("\n".join(lines), style=style)
                 time.sleep(0.5)
-
-        # Intraday reversal — đề cập cả 2 chiều
-        rev = (intraday_reversals or {}).get(style, {})
-        fake_breakout  = rev.get("fake_breakout",  [])
-        fake_breakdown = rev.get("fake_breakdown", [])
-        rev_lines = []
-        if fake_breakout:
-            tickers_str = ", ".join(f"<b>{t}</b>" for t in fake_breakout)
-            rev_lines.append(
-                f"Bứt phá không giữ được: {tickers_str} — có tín hiệu mua trong phiên nhưng cuối ngày lại thủng hỗ trợ. Cẩn thận nếu đang nắm giữ."
-            )
-        if fake_breakdown:
-            tickers_str = ", ".join(f"<b>{t}</b>" for t in fake_breakdown)
-            rev_lines.append(
-                f"Rút chân giả: {tickers_str} — có tín hiệu bán trong phiên nhưng cuối ngày giá hồi lại. Chưa cần lo."
-            )
-        if rev_lines:
-            send_message("\n\n".join(rev_lines), style=style)
-            time.sleep(0.5)
 
         if buy_df.empty and sell_df.empty:
             top5 = results.nlargest(5, "bias_norm")[["ticker", "bias_norm"]]
