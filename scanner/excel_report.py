@@ -717,13 +717,13 @@ def _sheet_history(wb: Workbook, results: pd.DataFrame, style: str = "long") -> 
     tk_map  = results.set_index("ticker")["turnover"].to_dict() if "turnover" in results.columns else {}
     close_map = results.set_index("ticker")["close"].to_dict() if "close" in results.columns else {}
 
-    # Lấy lịch sử từ DB — chỉ với các mã trong scan hiện tại
+    # Tính SuperTrend từ OHLCV, lấy vùng xanh gần nhất mỗi mã
     trade_df = pd.DataFrame()
     try:
-        from scanner.database import load_trade_history
-        trade_df = load_trade_history(style=style, tickers=tickers or None)
+        from scanner.database import load_trade_history_from_ohlcv
+        trade_df = load_trade_history_from_ohlcv(style=style, tickers=tickers or None)
     except Exception as e:
-        logger.warning(f"_sheet_history: load_trade_history failed: {e}")
+        logger.warning(f"_sheet_history: load_trade_history_from_ohlcv failed: {e}")
 
     if trade_df.empty:
         ws.cell(row=2, column=1, value="Chua co du lieu lich su lenh (signals table trong)")

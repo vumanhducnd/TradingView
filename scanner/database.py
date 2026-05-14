@@ -736,6 +736,83 @@ def load_signal_history(days: int = 90) -> pd.DataFrame:
     return pd.DataFrame(rows) if rows else pd.DataFrame()
 
 
+def load_trade_history_from_ohlcv(style: str = "long", tickers: list[str] | None = None) -> pd.DataFrame:
+    """
+    Tính SuperTrend từ OHLCV, trả về 1 giao dịch gần nhất (vùng xanh gần nhất) mỗi mã.
+    Điểm mua = bar trend flip -1→1, điểm bán = bar trend flip 1→-1 kế tiếp (hoặc None nếu đang giữ).
+    """
+    from scanner.indicators import calc_supertrend
+
+    try:
+        sql = (
+            "SELECT ticker, date, open, high, low, close, volume, turnover "
+            "FROM ohlcv "
+            + ("WHERE ticker = ANY(%s) " if tickers else "")
+            + "ORDER BY ticker, date ASC"
+        )
+        with db_cursor(commit=False) as cur:
+            cur.execute(sql, (tickers,) if tickers else ())
+            rows = cur.fetchall()
+    except Exception as e:
+        logger.warning(f"load_trade_history_from_ohlcv: query failed: {e}")
+        return pd.DataFrame()
+
+    if not rows:
+        return pd.DataFrame()
+
+    all_ohlcv = pd.DataFrame(rows)
+    records: list[dict] = []
+
+    for ticker, grp in all_ohlcv.groupby("ticker", sort=False):
+        df = grp.sort_values("date").reset_index(drop=True)
+        if len(df) < 20:
+            continue
+        try:
+            df = calc_supertrend(df, style=style)
+        except Exception:
+            continue
+
+        buy_idx_series = df.index[df["buy_signal"] == True]
+        if len(buy_idx_series) == 0:
+            continue
+
+        last_buy_idx  = buy_idx_series[-1]
+        buy_date  = df.loc[last_buy_idx, "date"]
+        buy_price = float(df.loc[last_buy_idx, "close"])
+
+        sell_after = df[(df.index > last_buy_idx) & (df["sell_signal"] == True)]
+        if sell_after.empty:
+            sell_date  = None
+            sell_price = None
+            status     = "Dang giu"
+        else:
+            first_sell = sell_after.iloc[0]
+            sell_date  = first_sell["date"]
+            sell_price = float(first_sell["close"])
+            status     = "Da dong"
+
+        records.append({
+            "ticker":     ticker,
+            "buy_date":   buy_date,
+            "buy_price":  buy_price,
+            "sell_date":  sell_date,
+            "sell_price": sell_price,
+            "status":     status,
+        })
+
+    if not records:
+        return pd.DataFrame()
+
+    result = pd.DataFrame(records)
+    mask = result["sell_price"].notna() & (result["buy_price"].astype(float) > 0)
+    result["pnl_pct"] = None
+    result.loc[mask, "pnl_pct"] = (
+        (result.loc[mask, "sell_price"].astype(float) - result.loc[mask, "buy_price"].astype(float))
+        / result.loc[mask, "buy_price"].astype(float) * 100
+    ).round(2)
+    return result
+
+
 def load_trade_history(style: str = "long", tickers: list[str] | None = None) -> pd.DataFrame:
     """
     Mỗi mã: 1 giao dịch gần nhất = lệnh MUA gần nhất + lệnh BÁN đầu tiên sau đó.
