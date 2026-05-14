@@ -703,7 +703,7 @@ CLOSED_FILL = PatternFill("solid", fgColor="F2F2F2")   # xám nhạt — đã đ
 
 
 def _sheet_history(wb: Workbook, results: pd.DataFrame, style: str = "long") -> None:
-    """Tab lịch sử lệnh: lệnh mua gần nhất + lệnh bán kế tiếp, sort theo TK."""
+    """Tab lịch sử lệnh: 1 giao dịch gần nhất/mã (MUA→BÁN), sort theo TK cao→thấp."""
     ws = wb.create_sheet("Lich su lenh")
 
     headers = [
@@ -713,53 +713,38 @@ def _sheet_history(wb: Workbook, results: pd.DataFrame, style: str = "long") -> 
     ]
     _write_header(ws, headers)
 
-    # Lấy lịch sử từ DB
+    tickers = results["ticker"].tolist() if "ticker" in results.columns else []
+    tk_map  = results.set_index("ticker")["turnover"].to_dict() if "turnover" in results.columns else {}
+    close_map = results.set_index("ticker")["close"].to_dict() if "close" in results.columns else {}
+
+    # Lấy lịch sử từ DB — chỉ với các mã trong scan hiện tại
     trade_df = pd.DataFrame()
     try:
         from scanner.database import load_trade_history
-        trade_df = load_trade_history(style=style, days=180)
+        trade_df = load_trade_history(style=style, tickers=tickers or None)
     except Exception as e:
         logger.warning(f"_sheet_history: load_trade_history failed: {e}")
 
-    # Fallback: dùng last_signal từ results nếu DB trống
     if trade_df.empty:
-        p = f"{style}_"
-        date_col  = f"{p}last_signal_date"  if f"{p}last_signal_date"  in results.columns else "last_signal_date"
-        price_col = f"{p}last_signal_price" if f"{p}last_signal_price" in results.columns else "last_signal_price"
-        pnl_col   = f"{p}signal_pnl_pct"   if f"{p}signal_pnl_pct"   in results.columns else "signal_pnl_pct"
-        rows_fb = []
-        for _, row in results.iterrows():
-            rows_fb.append({
-                "ticker":    row.get("ticker", ""),
-                "buy_date":  str(row.get(date_col) or "")[:10],
-                "buy_price": row.get(price_col),
-                "sell_date": None,
-                "sell_price": None,
-                "pnl_pct":   row.get(pnl_col),
-                "status":    "Đang giữ",
-            })
-        trade_df = pd.DataFrame(rows_fb)
+        ws.cell(row=2, column=1, value="Chua co du lieu lich su lenh (signals table trong)")
+        return
 
-    # Gắn turnover từ results để sort
-    tk_map = results.set_index("ticker")["turnover"].to_dict() if "turnover" in results.columns else {}
+    # Gắn turnover → sort TK cao → thấp
     trade_df["_tk"] = trade_df["ticker"].map(tk_map).fillna(0)
-    trade_df = trade_df.sort_values("_tk", ascending=False)
-
-    # Lấy close hiện tại cho lệnh đang mở
-    close_map = results.set_index("ticker")["close"].to_dict() if "close" in results.columns else {}
+    trade_df = trade_df.sort_values("_tk", ascending=False).reset_index(drop=True)
 
     for i, (_, row) in enumerate(trade_df.iterrows(), start=2):
-        ticker    = row.get("ticker", "")
-        buy_date  = str(row.get("buy_date") or "")[:10]
-        buy_price = row.get("buy_price")
-        sell_date = str(row.get("sell_date") or "")[:10] if row.get("sell_date") else ""
+        ticker     = row.get("ticker", "")
+        buy_date   = str(row.get("buy_date")  or "")[:10]
+        sell_date  = str(row.get("sell_date") or "")[:10] if pd.notna(row.get("sell_date")) else ""
+        buy_price  = row.get("buy_price")
         sell_price = row.get("sell_price")
-        pnl       = row.get("pnl_pct")
-        status    = row.get("status", "")
-        tk_ty     = round(float(row.get("_tk") or 0) / 1e9, 1)
+        status     = row.get("status", "")
+        tk_ty      = round(float(row.get("_tk") or 0) / 1e9, 1)
 
-        # Lệnh đang mở: dùng giá hiện tại tính P&L
-        if status == "Đang giữ" and (pnl is None or pnl != pnl):
+        # P&L: đã đóng → dùng sell_price; đang giữ → dùng close hiện tại
+        pnl = row.get("pnl_pct")
+        if status == "Dang giu":
             cur_close = close_map.get(ticker)
             if cur_close and buy_price and float(buy_price) > 0:
                 pnl = round((float(cur_close) - float(buy_price)) / float(buy_price) * 100, 2)
@@ -769,33 +754,32 @@ def _sheet_history(wb: Workbook, results: pd.DataFrame, style: str = "long") -> 
         except Exception:
             pnl = None
 
-        pnl_str = f"{pnl:+.2f}%" if pnl is not None else ""
+        pnl_str    = f"{pnl:+.2f}%" if pnl is not None else ""
+        status_str = "Dang giu" if status == "Dang giu" else "Da dong"
 
         vals = [
             ticker,
             buy_date,
-            round(float(buy_price), 2) if buy_price else "",
+            round(float(buy_price), 2)  if buy_price  else "",
             sell_date,
             round(float(sell_price), 2) if sell_price else "",
             pnl_str,
-            status,
-            tk_ty if tk_ty else "",
+            status_str,
+            tk_ty or "",
         ]
         for j, v in enumerate(vals, start=1):
             ws.cell(row=i, column=j, value=v)
 
-        # Màu: đang giữ → xanh/đỏ theo P&L; đã đóng → xám nhạt
-        if status == "Đang giữ":
-            fill = GREEN_FILL if (pnl is None or pnl >= 0) else RED_FILL
+        # Màu hàng
+        if status == "Dang giu":
+            row_fill = GREEN_FILL if (pnl is None or pnl >= 0) else RED_FILL
+            for j in range(1, len(headers) + 1):
+                ws.cell(row=i, column=j).fill = row_fill
         else:
-            fill = CLOSED_FILL
-            # Cột lời/lỗ tô màu riêng
-            pnl_fill = GREEN_FILL if (pnl is not None and pnl >= 0) else RED_FILL
-            ws.cell(row=i, column=6).fill = pnl_fill
-
-        for j in range(1, len(headers) + 1):
-            if not (status != "Đang giữ" and j == 6):  # cột P&L đã tô riêng
-                ws.cell(row=i, column=j).fill = fill
+            for j in range(1, len(headers) + 1):
+                ws.cell(row=i, column=j).fill = CLOSED_FILL
+            # Cột P&L tô riêng theo lời/lỗ
+            ws.cell(row=i, column=6).fill = GREEN_FILL if (pnl is not None and pnl >= 0) else RED_FILL
 
     _auto_width(ws)
     ws.freeze_panes = "A2"

@@ -736,15 +736,14 @@ def load_signal_history(days: int = 90) -> pd.DataFrame:
     return pd.DataFrame(rows) if rows else pd.DataFrame()
 
 
-def load_trade_history(style: str = "long", days: int = 180) -> pd.DataFrame:
+def load_trade_history(style: str = "long", tickers: list[str] | None = None) -> pd.DataFrame:
     """
-    Trả về lịch sử lệnh theo cặp MUA→BÁN cho từng mã.
-    Mỗi hàng = 1 lần vào lệnh mua gần nhất + lệnh bán kế tiếp (nếu có).
-    Giá lấy từ bảng ohlcv (close ngày tín hiệu).
-    Trả về columns: ticker, buy_date, buy_price, sell_date, sell_price, pnl_pct, status
+    Mỗi mã: 1 giao dịch gần nhất = lệnh MUA gần nhất + lệnh BÁN đầu tiên sau đó.
+    Không giới hạn ngày để không bỏ sót lệnh mua cũ.
+    Giá lấy từ ohlcv (close của ngày tín hiệu).
     """
-    since = date.today() - timedelta(days=days)
-    sql = """
+    ticker_filter = "AND s.ticker = ANY(%(tickers)s)" if tickers else ""
+    sql = f"""
         WITH sig_prices AS (
             SELECT s.ticker,
                    s.signal_date,
@@ -754,7 +753,7 @@ def load_trade_history(style: str = "long", days: int = 180) -> pd.DataFrame:
             LEFT JOIN ohlcv o
                    ON o.ticker = s.ticker AND o.date = s.signal_date
             WHERE s.style = %(style)s
-              AND s.signal_date >= %(since)s
+              {ticker_filter}
         ),
         latest_buy AS (
             SELECT DISTINCT ON (ticker)
@@ -766,40 +765,43 @@ def load_trade_history(style: str = "long", days: int = 180) -> pd.DataFrame:
             ORDER BY ticker, signal_date DESC
         ),
         next_sell AS (
-            SELECT DISTINCT ON (lb.ticker)
-                   lb.ticker,
-                   sp.signal_date AS sell_date,
-                   sp.price        AS sell_price
-            FROM latest_buy lb
-            JOIN sig_prices sp
-                 ON sp.ticker = lb.ticker
-                AND sp.signal_type IN ('BÁN', 'BAN')
-                AND sp.signal_date > lb.buy_date
-            ORDER BY lb.ticker, sp.signal_date ASC
+            SELECT DISTINCT ON (b.ticker)
+                   b.ticker,
+                   s.signal_date AS sell_date,
+                   s.price        AS sell_price
+            FROM latest_buy b
+            JOIN sig_prices s
+                 ON s.ticker      = b.ticker
+                AND s.signal_date > b.buy_date
+                AND s.signal_type != 'MUA'
+            ORDER BY b.ticker, s.signal_date ASC
         )
-        SELECT lb.ticker,
-               lb.buy_date,
-               lb.buy_price,
-               ns.sell_date,
-               ns.sell_price
-        FROM latest_buy lb
-        LEFT JOIN next_sell ns ON ns.ticker = lb.ticker
-        ORDER BY lb.ticker
+        SELECT b.ticker,
+               b.buy_date,
+               b.buy_price,
+               s.sell_date,
+               s.sell_price
+        FROM latest_buy b
+        LEFT JOIN next_sell s ON s.ticker = b.ticker
+        ORDER BY b.ticker
     """
     try:
+        params: dict = {"style": style}
+        if tickers:
+            params["tickers"] = tickers
         with db_cursor(commit=False) as cur:
-            cur.execute(sql, {"style": style, "since": since})
+            cur.execute(sql, params)
             rows = cur.fetchall()
         if not rows:
             return pd.DataFrame()
         df = pd.DataFrame(rows)
+        mask = df["sell_price"].notna() & df["buy_price"].notna() & (df["buy_price"].astype(float) > 0)
         df["pnl_pct"] = None
-        mask_closed = df["sell_price"].notna() & df["buy_price"].notna() & (df["buy_price"] > 0)
-        df.loc[mask_closed, "pnl_pct"] = (
-            (df.loc[mask_closed, "sell_price"] - df.loc[mask_closed, "buy_price"])
-            / df.loc[mask_closed, "buy_price"] * 100
+        df.loc[mask, "pnl_pct"] = (
+            (df.loc[mask, "sell_price"].astype(float) - df.loc[mask, "buy_price"].astype(float))
+            / df.loc[mask, "buy_price"].astype(float) * 100
         ).round(2)
-        df["status"] = df["sell_date"].apply(lambda x: "Đã đóng" if pd.notna(x) else "Đang giữ")
+        df["status"] = df["sell_date"].apply(lambda x: "Da dong" if pd.notna(x) else "Dang giu")
         return df
     except Exception as e:
         logger.warning(f"load_trade_history failed: {e}")
