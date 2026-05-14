@@ -413,26 +413,32 @@ def analyze_signals(
             for _, row in batch.iterrows()
         )
 
+        action_word = "mua vào" if signal_type == "MUA" else "chốt lời / cắt vị thế"
         prompt = textwrap.dedent(f"""
-            Ban la chuyen gia phan tich ky thuat chung khoan Viet Nam.
-            Phan tich CHI TIET tung ma co tin hieu {signal_type} duoi day.
+            Bạn là chuyên gia phân tích kỹ thuật chứng khoán Việt Nam với hơn 15 năm kinh nghiệm,
+            từng làm việc tại các công ty chứng khoán lớn. Phong cách viết tự nhiên, chuyên nghiệp,
+            gần gũi — như đang nói chuyện trực tiếp với nhà đầu tư, không dùng khuôn mẫu cứng nhắc.
 
-            Du lieu moi ma gom: gia, SuperTrend 2 khung, xu huong, BiasNorm,
-            ho tro/khang cu, ATR, thanh khoan, cac chi bao bullish/bearish.
+            Dưới đây là dữ liệu kỹ thuật của {len(batch)} mã có tín hiệu {signal_type}:
 
             {ticker_blocks}
 
-            Voi TUNG ma, tra loi theo dung format sau (tieng Viet):
+            Với TỪNG mã, viết nhận định liền mạch 3-4 câu theo phong cách chuyên gia thực thụ:
+            — Câu đầu: nhận xét tổng thể về xu hướng và sức mạnh hiện tại (có thể đề cập thanh khoản, momentum)
+            — Câu giữa: phân tích điểm mạnh/yếu nổi bật nhất từ các chỉ báo (không liệt kê, nói bằng lời)
+            — Câu cuối: khuyến nghị cụ thể — {action_word} ở vùng nào, cắt lỗ / mục tiêu ở đâu
 
-            === [TEN MA] ===
-            XU HUONG: [Nhan dinh xu huong tong the va suc manh cua xu huong]
-            DONG LUC: [Chi bao nao xac nhan tin hieu, diem manh chinh]
-            RUI RO: [Chi bao chua xac nhan, diem yeu, dieu kien can chu y]
-            MUC GIA: Ho tro [X] | Khang cu [Y] | ATR [Z]
-            KHUYEN NGHI: [Nen mua/ban/cho o muc gia nao, cat lo o dau, muc tieu]
+            Quy tắc bắt buộc:
+            - Tiếng Việt có dấu đầy đủ, văn xuôi liền mạch, KHÔNG dùng tiêu đề XU HUONG / DONG LUC / RUI RO
+            - KHÔNG liệt kê chỉ báo theo dạng danh sách — phân tích bằng lời tự nhiên
+            - Mỗi mã có cá tính riêng, tránh viết na ná nhau
+            - Đề cập số liệu cụ thể (giá, %, vùng hỗ trợ/kháng cự) ít nhất 1 lần
+            - Tối đa 80 từ mỗi mã
+
+            Format output (giữ nguyên dấu ===):
+            === [TÊN MÃ] ===
+            [Đoạn phân tích tự nhiên 3-4 câu]
             ===
-
-            Viet thuc chat, cu the, tranh chung chung. Khong dung markdown ngoai format tren.
         """).strip()
 
         logger.info(f"AI: batch {batch_idx+1}/{len(batches)} ({signal_type}, {len(batch)} ma)...")
@@ -482,29 +488,10 @@ def _parse_analysis(text: str, tickers: list[str]) -> list[dict]:
 
 def _format_for_telegram(body: str) -> str:
     """Chuyen analysis text thanh HTML Telegram-friendly."""
-    lines = []
-    for line in body.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        if ":" in line:
-            key, _, val = line.partition(":")
-            key = key.strip()
-            val = val.strip()
-            if key in ("XU HUONG", "DONG LUC", "RUI RO", "MUC GIA", "KHUYEN NGHI"):
-                emoji = {
-                    "XU HUONG":   "📈",
-                    "DONG LUC":   "💪",
-                    "RUI RO":     "⚠️",
-                    "MUC GIA":    "🎯",
-                    "KHUYEN NGHI":"💡",
-                }.get(key, "•")
-                lines.append(f"{emoji} <b>{key}:</b> {val}")
-            else:
-                lines.append(line)
-        else:
-            lines.append(line)
-    return "\n".join(lines)
+    # Format moi: van xuoi lien mach — giu nguyen, chi escape HTML co ban
+    body = body.strip()
+    body = body.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return body
 
 
 # ─── Full pipeline ─────────────────────────────────────────────────────────────
