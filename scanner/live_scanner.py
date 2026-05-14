@@ -544,26 +544,36 @@ def run_session(interval: int = 180, session: str = "full") -> None:
     }
     logger.info(f"DB full: {len(all_tickers)} mã | ST cache: {len(hist_cache)} mã top 300")
 
-    # ── Init ST state từ lịch sử (1 lần, O(n_bars × n_tickers)) ──
-    st_states: dict[str, dict] = {}
+    # ── Init ST state cho cả LONG và SHORT ──
+    st_states_long:  dict[str, dict] = {}
+    st_states_short: dict[str, dict] = {}
     for ticker, hist_df in hist_cache.items():
         try:
-            st_states[ticker] = get_supertrend_state(hist_df)
+            st_states_long[ticker]  = get_supertrend_state(hist_df, style="long")
+            st_states_short[ticker] = get_supertrend_state(hist_df, style="short")
         except Exception:
             pass
-    bull = sum(1 for s in st_states.values() if s["trend"] == 1)
-    bear = sum(1 for s in st_states.values() if s["trend"] == -1)
-    logger.info(f"Init ST state: {len(st_states)} mã | Tang={bull} Giam={bear}")
+    bull_l = sum(1 for s in st_states_long.values()  if s["trend"] == 1)
+    bull_s = sum(1 for s in st_states_short.values() if s["trend"] == 1)
+    logger.info(f"Init ST: {len(st_states_long)} mã | DH tang={bull_l} | NH tang={bull_s}")
 
     send_message(
         f"📡 <b>Session Scanner BẮT ĐẦU</b>\n"
-        f"Update DB: {len(all_tickers)} mã | Tín hiệu ST: {len(hist_cache)} mã top 300\n"
-        f"Quét mỗi {interval//60} phút | Phiên: 09:00 – 15:15 ICT"
+        f"Dài hạn 🟢{bull_l} | Ngắn hạn 🟢{bull_s} | {len(hist_cache)} mã\n"
+        f"Quét mỗi {interval//60} phút",
+        style="long"
+    )
+    send_message(
+        f"📡 <b>Session Scanner BẮT ĐẦU</b>\n"
+        f"Ngắn hạn 🟢{bull_s} | {len(hist_cache)} mã\n"
+        f"Quét mỗi {interval//60} phút",
+        style="short"
     )
 
     total_flips   = 0
     scan_count    = 0
-    alerted_today: set[str] = set()  # mã đã báo trong phiên → bỏ qua
+    # Key: f"{ticker}_long" hoặc f"{ticker}_short"
+    alerted_today: set[str] = set()
 
     while _is_market_open(session):
         now = datetime.now(ICT)
@@ -580,35 +590,38 @@ def run_session(interval: int = 180, session: str = "full") -> None:
 
         flips: list[dict] = []
 
-        # ── Tính ST incremental O(1)/mã ──
-        for ticker, state in st_states.items():
-            bar = today_bars.get(ticker)
-            if not bar:
-                continue
-            try:
-                new_state = calc_supertrend_next(
-                    state,
-                    high=bar["high"], low=bar["low"], close=bar["close"],
-                )
-            except Exception:
-                continue
+        # ── Tính ST incremental cho cả LONG và SHORT ──
+        for style_key, st_states in [("long", st_states_long), ("short", st_states_short)]:
+            for ticker, state in st_states.items():
+                bar = today_bars.get(ticker)
+                if not bar:
+                    continue
+                try:
+                    new_state = calc_supertrend_next(
+                        state,
+                        high=bar["high"], low=bar["low"], close=bar["close"],
+                    )
+                except Exception:
+                    continue
 
-            if ticker not in alerted_today:
-                if new_state["buy_signal"]:
-                    flips.append({
-                        "ticker": ticker, "direction": "buy",
-                        "price": bar["close"], "st": new_state["supertrend"],
-                    })
-                    alerted_today.add(ticker)
-                elif new_state["sell_signal"]:
-                    flips.append({
-                        "ticker": ticker, "direction": "sell",
-                        "price": bar["close"], "st": new_state["supertrend"],
-                    })
-                    alerted_today.add(ticker)
+                alert_key = f"{ticker}_{style_key}"
+                if alert_key not in alerted_today:
+                    if new_state["buy_signal"]:
+                        flips.append({
+                            "ticker": ticker, "direction": "buy",
+                            "price": bar["close"], "st": new_state["supertrend"],
+                            "style": style_key,
+                        })
+                        alerted_today.add(alert_key)
+                    elif new_state["sell_signal"]:
+                        flips.append({
+                            "ticker": ticker, "direction": "sell",
+                            "price": bar["close"], "st": new_state["supertrend"],
+                            "style": style_key,
+                        })
+                        alerted_today.add(alert_key)
 
-            # Cập nhật state với close mới nhất
-            st_states[ticker] = {**new_state, "close": bar["close"]}
+                st_states[ticker] = {**new_state, "close": bar["close"]}
 
         # ── Load TK và vị thế mở (dùng cho P&L bán) ──
         if flips:
@@ -671,8 +684,8 @@ def run_session(interval: int = 180, session: str = "full") -> None:
                     f"⏰ {time_str} GMT+7"
                 )
 
-            send_message(msg)
-            logger.info(f"  FLIP {flip['direction'].upper()}: {ticker} giá={price:,.2f} ST={st:,.2f}")
+            send_message(msg, style=flip["style"])
+            logger.info(f"  FLIP {flip['style'].upper()} {flip['direction'].upper()}: {ticker} giá={price:,.2f} ST={st:,.2f}")
 
         total_flips += len(flips)
         logger.info(f"  Upsert: {len(today_bars)} | Flip: {len(flips)} | Tổng: {total_flips}")
@@ -682,10 +695,10 @@ def run_session(interval: int = 180, session: str = "full") -> None:
         if sleep_sec > 0:
             time.sleep(sleep_sec)
 
-    send_message(
-        f"🔔 <b>Session Scanner KẾT THÚC</b> (15:15 ICT)\n"
-        f"Tổng tín hiệu trong phiên: {total_flips}"
-    )
+    long_flips  = sum(1 for k in alerted_today if k.endswith("_long"))
+    short_flips = sum(1 for k in alerted_today if k.endswith("_short"))
+    send_message(f"🔔 <b>Session KẾT THÚC</b> — Dài hạn: {long_flips} tín hiệu", style="long")
+    send_message(f"🔔 <b>Session KẾT THÚC</b> — Ngắn hạn: {short_flips} tín hiệu", style="short")
     logger.info(f"=== Session Scanner KẾT THÚC — {total_flips} flips trong phiên ===")
 
 
