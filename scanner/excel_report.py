@@ -101,7 +101,7 @@ def _build_workbook(
     if style == "long" and ai_analysis:
         _sheet_ai(wb, ai_analysis, scan_date)                                   # Tab 6 — chỉ DH
 
-    _sheet_history(wb, style=style)                                             # Tab cuối
+    _sheet_history(wb, results=results, style=style)                            # Tab cuối
 
     if "Sheet" in wb.sheetnames:
         del wb["Sheet"]
@@ -487,127 +487,6 @@ def _sheet_signals(wb: Workbook, signals: dict, ai_analysis: dict | None = None,
     ws.auto_filter.ref = ws.dimensions
 
 
-def _sheet_positions_tracking(wb: Workbook, results: pd.DataFrame, style: str = "long") -> None:
-    """
-    Tab 2: Theo dõi vị thế — đang nắm giữ + đã đóng gần đây.
-    Cột: Mã | Xu hướng | Ngày mua/bán | Giá mua/bán | Giá hiện tại | Số phiên | Lời/Lỗ %
-    """
-    ws = wb.create_sheet("Vi the")
-
-    headers = [
-        "Ma", "Xu huong",
-        "Ngay mua/ban", "Gia mua/ban",
-        "Gia hien tai", "So phien",
-        "Loi / Lo %",
-    ]
-    _write_header(ws, headers)
-
-    close_map = dict(zip(results["ticker"], results["close"])) if "close" in results.columns else {}
-
-    try:
-        from scanner.database import load_open_positions, db_cursor
-        open_pos = load_open_positions(style=style)
-
-        # Vị thế đã đóng gần đây (30 ngày)
-        with db_cursor(commit=False) as cur:
-            cur.execute(
-                """
-                SELECT ticker, signal_date AS buy_date, price AS buy_price,
-                       sell_date, sell_price, pnl_pct
-                FROM signals
-                WHERE signal_type = 'MUA' AND closed = TRUE AND style = %s
-                  AND sell_date >= CURRENT_DATE - INTERVAL '30 days'
-                ORDER BY sell_date DESC
-                """,
-                (style,),
-            )
-            closed_pos = [dict(r) for r in cur.fetchall()]
-    except Exception as e:
-        logger.warning(f"_sheet_positions_tracking DB error: {e}")
-        open_pos, closed_pos = [], []
-
-    row_idx = 2
-
-    # ── Đang nắm giữ ──────────────────────────────────────────────────────────
-    for p in sorted(open_pos, key=lambda x: x.get("signal_date") or "", reverse=True):
-        ticker  = p["ticker"]
-        buy_p   = float(p.get("buy_price") or 0)
-        bd      = str(p.get("signal_date") or "")[:10]
-        close   = float(close_map.get(ticker) or 0)
-
-        try:
-            hold = (date.today() - pd.to_datetime(bd).date()).days
-        except Exception:
-            hold = ""
-
-        pnl = round((close - buy_p) / buy_p * 100, 2) if buy_p > 0 and close > 0 else None
-
-        vals = [ticker, "Nam giu", bd, buy_p, close, hold,
-                pnl if pnl is not None else ""]
-        for j, v in enumerate(vals, start=1):
-            ws.cell(row=row_idx, column=j, value=v)
-
-        fill = GREEN_FILL if (pnl is not None and pnl >= 0) else YELLOW_FILL
-        for j in range(1, len(headers) + 1):
-            ws.cell(row=row_idx, column=j).fill = fill
-        row_idx += 1
-
-    # ── Đã đóng (đứng ngoài) ──────────────────────────────────────────────────
-    for p in closed_pos:
-        ticker    = p["ticker"]
-        bd        = str(p.get("buy_date")  or "")[:10]
-        sd        = str(p.get("sell_date") or "")[:10]
-        buy_p     = float(p.get("buy_price")  or 0)
-        sell_p    = float(p.get("sell_price") or 0)
-        close     = float(close_map.get(ticker) or 0)
-        pnl       = float(p["pnl_pct"]) if p.get("pnl_pct") is not None else None
-
-        try:
-            hold = (pd.to_datetime(sd).date() - pd.to_datetime(bd).date()).days
-        except Exception:
-            hold = ""
-
-        label_pnl = f"{pnl:+.2f}%" if pnl is not None else ""
-        ngay_str  = f"{bd} → {sd}"
-
-        vals = [ticker, "Dung ngoai", ngay_str, sell_p, close, hold, label_pnl]
-        for j, v in enumerate(vals, start=1):
-            ws.cell(row=row_idx, column=j, value=v)
-
-        fill = GREEN_FILL if (pnl is not None and pnl >= 0) else RED_FILL
-        for j in range(1, len(headers) + 1):
-            ws.cell(row=row_idx, column=j).fill = fill
-        row_idx += 1
-
-    _auto_width(ws)
-    ws.freeze_panes = "A2"
-
-
-def _load_signal_map(tickers: list[str], signal_type: str, style: str) -> dict[str, dict]:
-    """
-    Query bảng signals lấy tín hiệu gần nhất (MUA hoặc BÁN) cho danh sách tickers.
-    Trả về {ticker: {signal_date, price}}.
-    """
-    if not tickers:
-        return {}
-    try:
-        from scanner.database import db_cursor
-        with db_cursor(commit=False) as cur:
-            cur.execute(
-                """
-                SELECT DISTINCT ON (ticker)
-                    ticker, signal_date, price
-                FROM signals
-                WHERE ticker = ANY(%s) AND signal_type = %s AND style = %s
-                ORDER BY ticker, signal_date DESC
-                """,
-                (tickers, signal_type, style),
-            )
-            return {r["ticker"]: {"signal_date": r["signal_date"], "price": float(r["price"] or 0)}
-                    for r in cur.fetchall()}
-    except Exception:
-        return {}
-
 
 def _sheet_nam_giu(wb: Workbook, results: pd.DataFrame, style: str = "long") -> None:
     """Vùng xanh: long_trend=1, ngày/giá mua từ SuperTrend flip gần nhất, sort TK↓."""
@@ -855,56 +734,51 @@ def _sheet_backtest(wb: Workbook, df: pd.DataFrame) -> None:
     ws.auto_filter.ref = ws.dimensions
 
 
-def _sheet_history(wb: Workbook, style: str = "long", limit: int = 30) -> None:
-    """Tab cuối: Lịch sử 30 lệnh đóng gần nhất có lời/lỗ."""
+def _sheet_history(wb: Workbook, results: pd.DataFrame, style: str = "long") -> None:
+    """Tab cuối: Lịch sử tín hiệu gần nhất — tính từ ohlcv (last_signal từ indicators)."""
     ws = wb.create_sheet("Lich su lenh")
 
     headers = [
-        "Ma", "Ngay Mua", "Ngay Ban",
-        "Gia Mua", "Gia Ban", "Giu Lenh (ngay)",
-        "Loi / Lo %", "Ket qua",
+        "Ma", "Loai tin hieu", "Ngay tin hieu",
+        "Gia tin hieu", "Gia hien tai",
+        "So phien", "Loi / Lo %",
     ]
     _write_header(ws, headers)
 
-    try:
-        from scanner.database import db_cursor
-        with db_cursor(commit=False) as cur:
-            cur.execute(
-                """
-                SELECT ticker, signal_date AS buy_date, price AS buy_price,
-                       sell_date, sell_price, pnl_pct
-                FROM signals
-                WHERE signal_type = 'MUA' AND closed = TRUE AND style = %s
-                  AND sell_date IS NOT NULL
-                ORDER BY sell_date DESC
-                LIMIT %s
-                """,
-                (style, limit),
-            )
-            rows = [dict(r) for r in cur.fetchall()]
-    except Exception as e:
-        logger.warning(f"_sheet_history error: {e}")
-        rows = []
+    p = f"{style}_"
+    trend_col    = f"{p}trend"          if f"{p}trend"          in results.columns else "trend"
+    sig_type_col = f"{p}last_signal_type"  if f"{p}last_signal_type"  in results.columns else "last_signal_type"
+    sig_date_col = f"{p}last_signal_date"  if f"{p}last_signal_date"  in results.columns else "last_signal_date"
+    sig_price_col = f"{p}last_signal_price" if f"{p}last_signal_price" in results.columns else "last_signal_price"
+    bars_col     = f"{p}bars_since_signal" if f"{p}bars_since_signal" in results.columns else "bars_since_signal"
+    pnl_col      = f"{p}signal_pnl_pct"   if f"{p}signal_pnl_pct"   in results.columns else "signal_pnl_pct"
 
-    for i, p in enumerate(rows, start=2):
-        bd     = str(p.get("buy_date")   or "")[:10]
-        sd     = str(p.get("sell_date")  or "")[:10]
-        buy_p  = float(p.get("buy_price")  or 0)
-        sell_p = float(p.get("sell_price") or 0)
-        pnl    = float(p["pnl_pct"]) if p.get("pnl_pct") is not None else None
+    df = results.copy()
+    if "turnover" in df.columns:
+        df = df.sort_values("turnover", ascending=False)
+
+    for i, (_, row) in enumerate(df.iterrows(), start=2):
+        sig_type  = row.get(sig_type_col) or ""
+        sig_date  = str(row.get(sig_date_col) or "")[:10]
+        sig_price = float(row.get(sig_price_col) or 0)
+        close     = float(row.get("close") or 0)
+        bars      = row.get(bars_col)
+        pnl       = row.get(pnl_col)
 
         try:
-            hold = (pd.to_datetime(sd).date() - pd.to_datetime(bd).date()).days
+            pnl = float(pnl) if pnl is not None else None
         except Exception:
-            hold = ""
+            pnl = None
 
-        if pnl is not None:
-            ket_qua = f"Loi {pnl:.2f}%" if pnl >= 0 else f"Lo {abs(pnl):.2f}%"
-        else:
-            ket_qua = ""
-
-        vals = [p["ticker"], bd, sd, buy_p, sell_p, hold,
-                round(pnl, 2) if pnl is not None else "", ket_qua]
+        vals = [
+            row.get("ticker", ""),
+            sig_type,
+            sig_date,
+            sig_price or "",
+            close or "",
+            int(bars) if bars is not None else "",
+            round(pnl, 2) if pnl is not None else "",
+        ]
         for j, v in enumerate(vals, start=1):
             ws.cell(row=i, column=j, value=v)
 

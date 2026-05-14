@@ -637,22 +637,33 @@ def run_session(interval: int = 180, session: str = "full") -> None:
 
                 st_states[ticker] = {**new_state, "close": bar["close"]}
 
-        # ── Load TK và vị thế mở (dùng cho P&L bán) ──
+        # ── Load TK và thông tin vị thế từ scan_results (dùng cho P&L bán) ──
         if flips:
             flip_tickers = [f["ticker"] for f in flips]
             try:
-                from scanner.database import load_avg_turnover, load_open_positions
-                tk_map  = load_avg_turnover(flip_tickers)
-                pos_map = {p["ticker"]: p for p in load_open_positions(style="long")}
-                pos_map_s = {p["ticker"]: p for p in load_open_positions(style="short")}
+                from scanner.database import load_avg_turnover, db_cursor
+                tk_map = load_avg_turnover(flip_tickers)
+                # Đọc giá mua gần nhất từ scan_results (trạng thái trước khi flip)
+                with db_cursor(commit=False) as _cur:
+                    _cur.execute(
+                        """
+                        SELECT ticker,
+                               long_last_signal_date,  long_last_signal_price,
+                               short_last_signal_date, short_last_signal_price
+                        FROM scan_results WHERE ticker = ANY(%s)
+                        """,
+                        (flip_tickers,),
+                    )
+                    pos_map = {r["ticker"]: dict(r) for r in _cur.fetchall()}
             except Exception:
-                tk_map, pos_map, pos_map_s = {}, {}, {}
+                tk_map, pos_map = {}, {}
 
         # ── Gửi Telegram cho từng flip ──
         for flip in flips:
             ticker = flip["ticker"]
             price  = flip["price"]
             st     = flip["st"]
+            style  = flip["style"]
             tk     = float(tk_map.get(ticker, 0) or 0)
             tk_str = f"{tk/1e6:.1f} tỷ" if tk > 0 else "–"
             time_str = now.strftime("%H:%M")
@@ -670,12 +681,14 @@ def run_session(interval: int = 180, session: str = "full") -> None:
                     f"⏰ {time_str} GMT+7"
                 )
             else:
-                pos = pos_map.get(ticker) or pos_map_s.get(ticker)
                 pnl_str = ""
-                if pos and pos.get("buy_price") and float(pos["buy_price"]) > 0:
-                    buy_p  = float(pos["buy_price"])
-                    buy_dt = str(pos.get("signal_date") or "")[:10]
-                    pnl    = round((price - buy_p) / buy_p * 100, 2)
+                pos = pos_map.get(ticker, {})
+                buy_price_key = f"{style}_last_signal_price"
+                buy_date_key  = f"{style}_last_signal_date"
+                buy_p  = float(pos.get(buy_price_key) or 0)
+                buy_dt = str(pos.get(buy_date_key) or "")[:10]
+                if buy_p > 0:
+                    pnl = round((price - buy_p) / buy_p * 100, 2)
                     try:
                         from datetime import date as _date
                         hold = (_date.today() - pd.Timestamp(buy_dt).date()).days if buy_dt else 0

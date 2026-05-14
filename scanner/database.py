@@ -553,92 +553,75 @@ def ensure_scan_results_columns() -> None:
                 pass
 
 
-def ensure_signals_columns() -> None:
-    """Thêm các cột mới vào bảng signals nếu chưa có (migration an toàn)."""
-    migrations = [
-        "ALTER TABLE signals ADD COLUMN IF NOT EXISTS style      VARCHAR(10)  DEFAULT 'long'",
-        "ALTER TABLE signals ADD COLUMN IF NOT EXISTS closed     BOOLEAN      DEFAULT FALSE",
-        "ALTER TABLE signals ADD COLUMN IF NOT EXISTS sell_date  DATE",
-        "ALTER TABLE signals ADD COLUMN IF NOT EXISTS sell_price NUMERIC(12,4)",
-        "ALTER TABLE signals ADD COLUMN IF NOT EXISTS pnl_pct    NUMERIC(8,2)",
-    ]
+def _ensure_signals_schema() -> None:
+    """Migration: đơn giản hoá bảng signals — chỉ giữ 4 cột thiết yếu."""
+    drop_cols = ["price", "supertrend", "bias_norm", "b_score",
+                 "closed", "sell_date", "sell_price", "pnl_pct"]
     with db_cursor() as cur:
-        for sql in migrations:
+        # Thêm cột style nếu chưa có (DB cũ)
+        cur.execute("ALTER TABLE signals ADD COLUMN IF NOT EXISTS style VARCHAR(10) DEFAULT 'long'")
+        for col in drop_cols:
             try:
-                cur.execute(sql)
+                cur.execute(f"ALTER TABLE signals DROP COLUMN IF EXISTS {col}")
             except Exception:
-                pass  # cột đã tồn tại
+                pass
+        # Unique constraint
+        cur.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = 'signals_ticker_date_type_style_key'
+                ) THEN
+                    ALTER TABLE signals
+                    ADD CONSTRAINT signals_ticker_date_type_style_key
+                    UNIQUE (ticker, signal_date, signal_type, style);
+                END IF;
+            END$$;
+        """)
 
 
 def save_signals(df: pd.DataFrame, scan_date: date | None = None) -> None:
     """
-    Lưu tín hiệu MUA/BÁN vào bảng signals. Hỗ trợ dual mode (long + short).
-    - Buy signal  → INSERT vị thế MUA mới (closed=FALSE)
-    - Sell signal → đóng vị thế MUA mở gần nhất (closed=TRUE, tính P&L) + INSERT record BÁN
+    Lưu tín hiệu MUA/BÁN vào bảng signals.
+    Mục đích duy nhất: chống alert trùng giữa phiên sáng/chiều trong cùng ngày.
     """
     if scan_date is None:
         scan_date = date.today()
 
-    ensure_signals_columns()
+    _ensure_signals_schema()
 
     is_dual = "long_buy_signal" in df.columns
     styles = (
-        [("long",  "long_buy_signal",  "long_sell_signal",  "long_supertrend"),
-         ("short", "short_buy_signal", "short_sell_signal", "short_supertrend")]
+        [("long",  "long_buy_signal",  "long_sell_signal"),
+         ("short", "short_buy_signal", "short_sell_signal")]
         if is_dual else
-        [("long",  "buy_signal",       "sell_signal",       "supertrend")]
+        [("long",  "buy_signal",       "sell_signal")]
     )
 
     total = 0
     with db_cursor() as cur:
-        for style, buy_col, sell_col, st_col in styles:
+        for style, buy_col, sell_col in styles:
             for _, row in df.iterrows():
-                ticker  = row["ticker"]
-                close   = float(row.get("close") or 0)
-                st      = row.get(st_col) or row.get("supertrend")
-                bias    = row.get("bias_norm")
-                bscore  = row.get("b_score")
-
+                ticker = row["ticker"]
                 if row.get(buy_col):
                     cur.execute(
                         """
-                        INSERT INTO signals
-                            (ticker, signal_date, signal_type, style, price, supertrend, bias_norm, b_score, closed)
-                        VALUES (%s,%s,'MUA',%s,%s,%s,%s,%s,FALSE)
-                        ON CONFLICT DO NOTHING
+                        INSERT INTO signals (ticker, signal_date, signal_type, style)
+                        VALUES (%s, %s, 'MUA', %s)
+                        ON CONFLICT ON CONSTRAINT signals_ticker_date_type_style_key DO NOTHING
                         """,
-                        (ticker, scan_date, style, close, st, bias, bscore),
+                        (ticker, scan_date, style),
                     )
                     total += 1
-
                 if row.get(sell_col):
-                    # Đóng vị thế MUA mở gần nhất cùng style
                     cur.execute(
                         """
-                        UPDATE signals
-                        SET closed     = TRUE,
-                            sell_date  = %s,
-                            sell_price = %s,
-                            pnl_pct    = ROUND((%s - price) / NULLIF(price,0) * 100, 2)
-                        WHERE id = (
-                            SELECT id FROM signals
-                            WHERE ticker = %s AND style = %s
-                              AND signal_type = 'MUA' AND closed = FALSE
-                            ORDER BY signal_date DESC
-                            LIMIT 1
-                        )
+                        INSERT INTO signals (ticker, signal_date, signal_type, style)
+                        VALUES (%s, %s, 'BÁN', %s)
+                        ON CONFLICT ON CONSTRAINT signals_ticker_date_type_style_key DO NOTHING
                         """,
-                        (scan_date, close, close, ticker, style),
-                    )
-                    # Lưu record BÁN để tra cứu lịch sử
-                    cur.execute(
-                        """
-                        INSERT INTO signals
-                            (ticker, signal_date, signal_type, style, price, supertrend, bias_norm, b_score, closed)
-                        VALUES (%s,%s,'BÁN',%s,%s,%s,%s,%s,TRUE)
-                        ON CONFLICT DO NOTHING
-                        """,
-                        (ticker, scan_date, style, close, st, bias, bscore),
+                        (ticker, scan_date, style),
                     )
                     total += 1
 
@@ -748,6 +731,7 @@ def load_signal_history(days: int = 90) -> pd.DataFrame:
     since = date.today() - timedelta(days=days)
     sql = "SELECT * FROM signals WHERE signal_date >= %s ORDER BY signal_date DESC"
     with db_cursor(commit=False) as cur:
+        cur.execute(sql, (since,))
         rows = cur.fetchall()
     return pd.DataFrame(rows) if rows else pd.DataFrame()
 
@@ -760,39 +744,3 @@ def load_scan_dates() -> list[date]:
         return [r["d"]] if r and r["d"] else []
 
 
-def load_open_positions(style: str | None = None) -> list[dict]:
-    """
-    Trả về danh sách vị thế MUA đang mở (closed=FALSE).
-    Mỗi dict: ticker, style, signal_date, price, pnl_pct (chưa tính vì chưa đóng).
-    """
-    sql = """
-        SELECT ticker, style, signal_date, price AS buy_price, bias_norm, b_score
-        FROM signals
-        WHERE signal_type = 'MUA' AND closed = FALSE
-        {style_filter}
-        ORDER BY signal_date DESC
-    """.format(style_filter="AND style = %(style)s" if style else "")
-    with db_cursor(commit=False) as cur:
-        cur.execute(sql, {"style": style} if style else {})
-        return [dict(r) for r in cur.fetchall()]
-
-
-def load_last_signals(tickers: list[str], style: str | None = None) -> pd.DataFrame:
-    """
-    Lấy tín hiệu MUA đang mở gần nhất của từng ticker (closed=FALSE).
-    Dùng để gắn buy_date/buy_price vào kết quả scan.
-    """
-    style_filter = "AND style = %(style)s" if style else ""
-    sql = f"""
-        SELECT DISTINCT ON (ticker)
-            ticker, style, signal_date, price
-        FROM signals
-        WHERE ticker = ANY(%(tickers)s)
-          AND signal_type = 'MUA' AND closed = FALSE
-          {style_filter}
-        ORDER BY ticker, signal_date DESC
-    """
-    with db_cursor(commit=False) as cur:
-        cur.execute(sql, {"tickers": tickers, "style": style})
-        rows = cur.fetchall()
-    return pd.DataFrame(rows) if rows else pd.DataFrame()

@@ -54,55 +54,6 @@ def run_scan(
     results = pd.DataFrame(rows)
     results["bias_label"] = results["bias_norm"].apply(bias_label)
 
-    # Gắn vị thế MUA đang mở (closed=FALSE) theo đúng style
-    try:
-        from scanner.database import load_last_signals
-        tickers = results["ticker"].tolist()
-        sig_df = load_last_signals(tickers, style=style)
-
-        def _get(ticker, field):
-            if sig_df.empty:
-                return None
-            row = sig_df[sig_df["ticker"] == ticker]
-            return row.iloc[0][field] if not row.empty else None
-
-        results["buy_date"]  = results["ticker"].map(lambda t: _get(t, "signal_date"))
-        results["buy_price"] = results["ticker"].map(lambda t: _get(t, "price"))
-
-        def _pnl(row):
-            bp = row.get("buy_price")
-            if not bp or bp <= 0:
-                return None
-            return round((float(row.get("close", 0)) - bp) / bp * 100, 2)
-
-        results["pnl_pct"] = results.apply(_pnl, axis=1)
-
-        def _max_loss(row):
-            bp = row.get("buy_price")
-            st = row.get("support")
-            if not bp or not st or bp <= 0:
-                return None
-            return round((bp - st) / bp * 100, 2)
-
-        results["max_loss_pct"] = results.apply(_max_loss, axis=1)
-
-        # Số phiên đang giữ lệnh
-        def _hold_days(row):
-            bd = row.get("buy_date")
-            if not bd:
-                return None
-            from datetime import date as _date
-            try:
-                start = bd if isinstance(bd, _date) else pd.to_datetime(bd).date()
-                return (_date.today() - start).days
-            except Exception:
-                return None
-
-        results["hold_days"] = results.apply(_hold_days, axis=1)
-
-    except Exception as e:
-        logger.debug(f"load_last_signals failed: {e}")
-
     results = _rank(results)
     return results
 
@@ -124,7 +75,6 @@ def run_scan_dual(
 
     # Cột dùng chung (không prefix)
     shared = ["ticker", "close", "bias_norm", "bias_label", "b_score", "r_score",
-              "buy_date", "buy_price", "hold_days", "pnl_pct", "max_loss_pct",
               "volume", "turnover",
               "ss1", "ss2", "ss3", "ss4", "ss5", "ss6", "ss7",
               "super_score", "is_super_stock"]
