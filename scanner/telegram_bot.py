@@ -138,9 +138,6 @@ def send_file(file_path: str, caption: str = "", style: str = "long") -> bool:
     if ok_any:
         logger.info(f"File sent: {file_path}")
     return ok_any
-    except Exception as e:
-        logger.warning(f"Telegram send_file failed: {e}")
-        return False
 
 
 def send_daily_report(
