@@ -53,7 +53,7 @@ def _call_gemini(prompt: str, max_tokens: int = 2048) -> str:
             logger.warning("GEMINI_API_KEY chua set — bo qua fallback")
             return ""
         client = genai.Client(api_key=GEMINI_API_KEY)
-        for model_name in ("gemini-1.5-flash", "gemini-1.5-flash-8b"):
+        for model_name in ("gemini-1.5-flash", "gemini-2.0-flash-lite"):
             try:
                 resp = client.models.generate_content(
                     model=model_name,
