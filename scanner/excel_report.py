@@ -694,57 +694,104 @@ def _sheet_stats(wb: Workbook, df: pd.DataFrame, scan_date: str, style: str | No
 
 
 
+OPEN_FILL   = PatternFill("solid", fgColor="DDEBF7")   # xanh nhạt — đang giữ
+CLOSED_FILL = PatternFill("solid", fgColor="F2F2F2")   # xám nhạt — đã đóng
+
+
 def _sheet_history(wb: Workbook, results: pd.DataFrame, style: str = "long") -> None:
-    """Tab cuối: Lịch sử tín hiệu gần nhất — tính từ ohlcv (last_signal từ indicators)."""
+    """Tab lịch sử lệnh: lệnh mua gần nhất + lệnh bán kế tiếp, sort theo TK."""
     ws = wb.create_sheet("Lich su lenh")
 
     headers = [
-        "Ma", "Loai tin hieu", "Ngay tin hieu",
-        "Gia tin hieu", "Gia hien tai",
-        "So phien", "Loi / Lo %",
+        "Ma", "Ngay Mua", "Gia Mua",
+        "Ngay Ban", "Gia Ban",
+        "Loi/Lo %", "Trang Thai", "TK (ty)",
     ]
     _write_header(ws, headers)
 
-    p = f"{style}_"
-    trend_col    = f"{p}trend"          if f"{p}trend"          in results.columns else "trend"
-    sig_type_col = f"{p}last_signal_type"  if f"{p}last_signal_type"  in results.columns else "last_signal_type"
-    sig_date_col = f"{p}last_signal_date"  if f"{p}last_signal_date"  in results.columns else "last_signal_date"
-    sig_price_col = f"{p}last_signal_price" if f"{p}last_signal_price" in results.columns else "last_signal_price"
-    bars_col     = f"{p}bars_since_signal" if f"{p}bars_since_signal" in results.columns else "bars_since_signal"
-    pnl_col      = f"{p}signal_pnl_pct"   if f"{p}signal_pnl_pct"   in results.columns else "signal_pnl_pct"
+    # Lấy lịch sử từ DB
+    trade_df = pd.DataFrame()
+    try:
+        from scanner.database import load_trade_history
+        trade_df = load_trade_history(style=style, days=180)
+    except Exception as e:
+        logger.warning(f"_sheet_history: load_trade_history failed: {e}")
 
-    df = results.copy()
-    if "turnover" in df.columns:
-        df = df.sort_values("turnover", ascending=False)
+    # Fallback: dùng last_signal từ results nếu DB trống
+    if trade_df.empty:
+        p = f"{style}_"
+        date_col  = f"{p}last_signal_date"  if f"{p}last_signal_date"  in results.columns else "last_signal_date"
+        price_col = f"{p}last_signal_price" if f"{p}last_signal_price" in results.columns else "last_signal_price"
+        pnl_col   = f"{p}signal_pnl_pct"   if f"{p}signal_pnl_pct"   in results.columns else "signal_pnl_pct"
+        rows_fb = []
+        for _, row in results.iterrows():
+            rows_fb.append({
+                "ticker":    row.get("ticker", ""),
+                "buy_date":  str(row.get(date_col) or "")[:10],
+                "buy_price": row.get(price_col),
+                "sell_date": None,
+                "sell_price": None,
+                "pnl_pct":   row.get(pnl_col),
+                "status":    "Đang giữ",
+            })
+        trade_df = pd.DataFrame(rows_fb)
 
-    for i, (_, row) in enumerate(df.iterrows(), start=2):
-        sig_type  = row.get(sig_type_col) or ""
-        sig_date  = str(row.get(sig_date_col) or "")[:10]
-        sig_price = float(row.get(sig_price_col) or 0)
-        close     = float(row.get("close") or 0)
-        bars      = row.get(bars_col)
-        pnl       = row.get(pnl_col)
+    # Gắn turnover từ results để sort
+    tk_map = results.set_index("ticker")["turnover"].to_dict() if "turnover" in results.columns else {}
+    trade_df["_tk"] = trade_df["ticker"].map(tk_map).fillna(0)
+    trade_df = trade_df.sort_values("_tk", ascending=False)
+
+    # Lấy close hiện tại cho lệnh đang mở
+    close_map = results.set_index("ticker")["close"].to_dict() if "close" in results.columns else {}
+
+    for i, (_, row) in enumerate(trade_df.iterrows(), start=2):
+        ticker    = row.get("ticker", "")
+        buy_date  = str(row.get("buy_date") or "")[:10]
+        buy_price = row.get("buy_price")
+        sell_date = str(row.get("sell_date") or "")[:10] if row.get("sell_date") else ""
+        sell_price = row.get("sell_price")
+        pnl       = row.get("pnl_pct")
+        status    = row.get("status", "")
+        tk_ty     = round(float(row.get("_tk") or 0) / 1e9, 1)
+
+        # Lệnh đang mở: dùng giá hiện tại tính P&L
+        if status == "Đang giữ" and (pnl is None or pnl != pnl):
+            cur_close = close_map.get(ticker)
+            if cur_close and buy_price and float(buy_price) > 0:
+                pnl = round((float(cur_close) - float(buy_price)) / float(buy_price) * 100, 2)
 
         try:
-            pnl = float(pnl) if pnl is not None else None
+            pnl = round(float(pnl), 2) if pnl is not None else None
         except Exception:
             pnl = None
 
+        pnl_str = f"{pnl:+.2f}%" if pnl is not None else ""
+
         vals = [
-            row.get("ticker", ""),
-            sig_type,
-            sig_date,
-            sig_price or "",
-            close or "",
-            int(bars) if bars is not None else "",
-            round(pnl, 2) if pnl is not None else "",
+            ticker,
+            buy_date,
+            round(float(buy_price), 2) if buy_price else "",
+            sell_date,
+            round(float(sell_price), 2) if sell_price else "",
+            pnl_str,
+            status,
+            tk_ty if tk_ty else "",
         ]
         for j, v in enumerate(vals, start=1):
             ws.cell(row=i, column=j, value=v)
 
-        fill = GREEN_FILL if (pnl is not None and pnl >= 0) else RED_FILL
+        # Màu: đang giữ → xanh/đỏ theo P&L; đã đóng → xám nhạt
+        if status == "Đang giữ":
+            fill = GREEN_FILL if (pnl is None or pnl >= 0) else RED_FILL
+        else:
+            fill = CLOSED_FILL
+            # Cột lời/lỗ tô màu riêng
+            pnl_fill = GREEN_FILL if (pnl is not None and pnl >= 0) else RED_FILL
+            ws.cell(row=i, column=6).fill = pnl_fill
+
         for j in range(1, len(headers) + 1):
-            ws.cell(row=i, column=j).fill = fill
+            if not (status != "Đang giữ" and j == 6):  # cột P&L đã tô riêng
+                ws.cell(row=i, column=j).fill = fill
 
     _auto_width(ws)
     ws.freeze_panes = "A2"

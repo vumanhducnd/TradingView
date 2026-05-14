@@ -736,6 +736,76 @@ def load_signal_history(days: int = 90) -> pd.DataFrame:
     return pd.DataFrame(rows) if rows else pd.DataFrame()
 
 
+def load_trade_history(style: str = "long", days: int = 180) -> pd.DataFrame:
+    """
+    Trả về lịch sử lệnh theo cặp MUA→BÁN cho từng mã.
+    Mỗi hàng = 1 lần vào lệnh mua gần nhất + lệnh bán kế tiếp (nếu có).
+    Giá lấy từ bảng ohlcv (close ngày tín hiệu).
+    Trả về columns: ticker, buy_date, buy_price, sell_date, sell_price, pnl_pct, status
+    """
+    since = date.today() - timedelta(days=days)
+    sql = """
+        WITH sig_prices AS (
+            SELECT s.ticker,
+                   s.signal_date,
+                   s.signal_type,
+                   o.close AS price
+            FROM signals s
+            LEFT JOIN ohlcv o
+                   ON o.ticker = s.ticker AND o.date = s.signal_date
+            WHERE s.style = %(style)s
+              AND s.signal_date >= %(since)s
+        ),
+        latest_buy AS (
+            SELECT DISTINCT ON (ticker)
+                   ticker,
+                   signal_date AS buy_date,
+                   price        AS buy_price
+            FROM sig_prices
+            WHERE signal_type = 'MUA'
+            ORDER BY ticker, signal_date DESC
+        ),
+        next_sell AS (
+            SELECT DISTINCT ON (lb.ticker)
+                   lb.ticker,
+                   sp.signal_date AS sell_date,
+                   sp.price        AS sell_price
+            FROM latest_buy lb
+            JOIN sig_prices sp
+                 ON sp.ticker = lb.ticker
+                AND sp.signal_type IN ('BÁN', 'BAN')
+                AND sp.signal_date > lb.buy_date
+            ORDER BY lb.ticker, sp.signal_date ASC
+        )
+        SELECT lb.ticker,
+               lb.buy_date,
+               lb.buy_price,
+               ns.sell_date,
+               ns.sell_price
+        FROM latest_buy lb
+        LEFT JOIN next_sell ns ON ns.ticker = lb.ticker
+        ORDER BY lb.ticker
+    """
+    try:
+        with db_cursor(commit=False) as cur:
+            cur.execute(sql, {"style": style, "since": since})
+            rows = cur.fetchall()
+        if not rows:
+            return pd.DataFrame()
+        df = pd.DataFrame(rows)
+        df["pnl_pct"] = None
+        mask_closed = df["sell_price"].notna() & df["buy_price"].notna() & (df["buy_price"] > 0)
+        df.loc[mask_closed, "pnl_pct"] = (
+            (df.loc[mask_closed, "sell_price"] - df.loc[mask_closed, "buy_price"])
+            / df.loc[mask_closed, "buy_price"] * 100
+        ).round(2)
+        df["status"] = df["sell_date"].apply(lambda x: "Đã đóng" if pd.notna(x) else "Đang giữ")
+        return df
+    except Exception as e:
+        logger.warning(f"load_trade_history failed: {e}")
+        return pd.DataFrame()
+
+
 def load_scan_dates() -> list[date]:
     """Trả về [updated_at] duy nhất từ scan_results (luôn là ngày scan gần nhất)."""
     with db_cursor(commit=False) as cur:
