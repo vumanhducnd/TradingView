@@ -2,7 +2,7 @@
 Live scanner — chạy trong phiên giao dịch (9:00–15:15 ICT).
 
 Modes:
-  pre       — 8:30 ICT: báo cáo sáng dùng data DB hôm qua (1 lần, thoát)
+  pre       — 7:00 ICT: báo cáo sáng dùng data DB hôm qua (1 lần, thoát)
   session   — 9:00–15:15 ICT: loop 3 phút, price_board batch, upsert DB, Slack flip alert
   morning   — 9:00–12:00 ICT: loop cũ (giữ tương thích)
   afternoon — 12:00–15:15 ICT: loop cũ (giữ tương thích)
@@ -65,7 +65,7 @@ def _wait_until_ict(hour: int, minute: int, abort_after_hour: int | None = None,
     return True
 
 
-# ─── Pre-session (8:00 ICT) ───────────────────────────────────────────────────
+# ─── Pre-session (7:00 ICT) ───────────────────────────────────────────────────
 
 _NEAR_THRESHOLD_PCT = 3.0   # % cách ST để coi là "gần điểm mua/bán"
 _TOP_N_PRE          = 10    # số mã hiển thị mỗi nhóm
@@ -109,7 +109,7 @@ def _build_pre_report(results: list[dict], style_label: str, today_str: str,
             near_sell.append({**r, "dist_pct": dist})
     near_sell.sort(key=lambda x: -x.get("turnover", 0))
 
-    lines = [f"🌅 <b>Báo cáo sáng 8:00 — Đầu tư {style_label} — {today_str}</b>"]
+    lines = [f"🌅 <b>Báo cáo sáng 7:00 — Đầu tư {style_label} — {today_str}</b>"]
 
     if ai_text:
         lines.append(f"\n{ai_text}")
@@ -131,11 +131,11 @@ def _build_pre_report(results: list[dict], style_label: str, today_str: str,
 
 
 def run_pre_session(force: bool = False) -> None:
-    """Báo cáo 8:00 ICT: tính ST riêng dài hạn & ngắn hạn, gửi 2 bot."""
-    if not force and not _wait_until_ict(8, 0, abort_after_hour=9, abort_after_minute=15):
+    """Báo cáo 7:00 ICT: tính ST riêng dài hạn & ngắn hạn, gửi 2 bot."""
+    if not force and not _wait_until_ict(7, 0, abort_after_hour=8, abort_after_minute=30):
         return
     _set_api_key()
-    logger.info("=== Pre-session scan (8:00 ICT) ===")
+    logger.info("=== Pre-session scan (7:00 ICT) ===")
 
     tickers = get_top300_thanh_khoan(n=300)
     if not tickers:

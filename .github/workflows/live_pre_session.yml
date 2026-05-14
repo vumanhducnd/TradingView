@@ -1,4 +1,4 @@
-name: Live Pre-session Scan (08:00 GMT+7)
+name: Live Pre-session Scan (07:00 GMT+7)
 
 on:
   workflow_dispatch:
