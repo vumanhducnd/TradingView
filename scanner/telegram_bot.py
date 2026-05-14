@@ -173,23 +173,44 @@ def send_daily_report(
         shown = len(top)
         count_str = f"{shown}/{total}" if shown < total else f"{shown}"
         lines = [f"{emoji} <b>{label} — {count_str} mã</b>"]
+
+        # Xác định prefix (long_ / short_ / "") để lấy đúng cột date/price
+        if st_col.startswith("long_"):
+            _pfx = "long_"
+        elif st_col.startswith("short_"):
+            _pfx = "short_"
+        else:
+            _pfx = ""
+
         for _, row in top.iterrows():
             st    = _val(row, st_col, "supertrend")
             close = _val(row, "close")
             if direction == "buy":
-                # SL = ST - 2%
                 sl_str = _fmt(float(st) * 0.98) if st and float(st) > 0 else "–"
                 lines.append(
                     f"  <b>{row['ticker']}</b>\n"
                     f"    Giá mua       : {_fmt(close)}\n"
-                    f"    Giá SL (ST-2%): {sl_str}\n"
+                    f"    Giá SL         : {sl_str}\n"
                     f"    Thanh khoản   : {_fmt_tk(row)}"
                 )
             else:
+                buy_date  = str(_val(row, f"{_pfx}last_signal_date",  "last_signal_date")  or "")[:10]
+                buy_price = _val(row, f"{_pfx}last_signal_price", "last_signal_price")
+                try:
+                    c_f = float(close) if close else None
+                    b_f = float(buy_price) if buy_price else None
+                    pnl = round((c_f - b_f) / b_f * 100, 2) if c_f and b_f and b_f > 0 else None
+                except Exception:
+                    pnl = None
+                pnl_str  = (f"{'🟢' if pnl >= 0 else '🔴'} {pnl:+.2f}%") if pnl is not None else "–"
+                date_str = buy_date if buy_date and buy_date != "N" else "–"
                 lines.append(
                     f"  <b>{row['ticker']}</b>\n"
-                    f"    Giá bán    : {_fmt(close)}\n"
-                    f"    Thanh khoản: {_fmt_tk(row)}"
+                    f"    Ngày mua      : {date_str}\n"
+                    f"    Giá mua       : {_fmt(buy_price)}\n"
+                    f"    Giá bán       : {_fmt(close)}\n"
+                    f"    Lời/Lỗ        : {pnl_str}\n"
+                    f"    Thanh khoản   : {_fmt_tk(row)}"
                 )
         return lines
 
