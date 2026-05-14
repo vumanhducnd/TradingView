@@ -71,18 +71,22 @@ def _send_raw(text: str, token: str, chat_id: str, parse_mode: str = "HTML") -> 
         logger.warning("Telegram credentials not set — skipping")
         return False
     url = TELEGRAM_API.format(token=token)
-    try:
-        resp = requests.post(
-            url,
-            json={"chat_id": chat_id, "text": text, "parse_mode": parse_mode},
-            timeout=10,
-            verify=False,
-        )
-        resp.raise_for_status()
-        return True
-    except Exception as e:
-        logger.warning(f"Telegram send failed: {e}")
-        return False
+    for attempt in range(3):
+        try:
+            resp = requests.post(
+                url,
+                json={"chat_id": chat_id, "text": text, "parse_mode": parse_mode},
+                timeout=30,
+                verify=False,
+            )
+            resp.raise_for_status()
+            return True
+        except Exception as e:
+            if attempt < 2:
+                time.sleep(3)
+            else:
+                logger.warning(f"Telegram send failed: {e}")
+    return False
 
 
 def send_message(text: str, style: str = "long", parse_mode: str = "HTML") -> bool:
