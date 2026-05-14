@@ -192,6 +192,30 @@ def run_scan_only() -> None:
     logger.info(f"  Super co phieu vung mua: {len(super_stocks)} ma")
 
     signals = get_current_signals(results)
+
+    # Lọc bỏ tín hiệu BÁN cuối ngày nếu cùng ngày session đã báo MUA (intraday reversal)
+    try:
+        from scanner.database import db_cursor
+        with db_cursor(commit=False) as cur:
+            cur.execute(
+                "SELECT ticker, style FROM signals WHERE signal_date = CURRENT_DATE AND signal_type = 'MUA'"
+            )
+            bought_today = {(r["ticker"], r["style"]) for r in cur.fetchall()}
+
+        if bought_today:
+            for sig_key in ["sell", "both_sell"]:
+                df = signals.get(sig_key)
+                if df is not None and not df.empty:
+                    keep = df["ticker"].apply(
+                        lambda t: (t, "short") not in bought_today and (t, "long") not in bought_today
+                    )
+                    removed = (~keep).sum()
+                    if removed:
+                        signals[sig_key] = df[keep]
+                        logger.info(f"  Loc {removed} intraday reversal khoi '{sig_key}'")
+    except Exception as e:
+        logger.debug(f"Filter intraday reversal: {e}")
+
     buy_n   = len(signals.get("buy",  []))
     sell_n  = len(signals.get("sell", []))
     both_n  = len(signals.get("both_buy", [])) + len(signals.get("both_sell", []))

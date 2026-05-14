@@ -570,10 +570,24 @@ def run_session(interval: int = 180, session: str = "full") -> None:
         style="short"
     )
 
-    total_flips   = 0
-    scan_count    = 0
-    # Key: f"{ticker}_long" hoặc f"{ticker}_short"
-    alerted_today: set[str] = set()
+    total_flips = 0
+    scan_count  = 0
+
+    # Load từ DB: những mã đã báo hôm nay (tránh báo lại khi phiên chiều start)
+    def _load_alerted_from_db() -> set[str]:
+        try:
+            from scanner.database import db_cursor
+            with db_cursor(commit=False) as cur:
+                cur.execute(
+                    """SELECT ticker, style FROM signals
+                       WHERE signal_date = CURRENT_DATE""",
+                )
+                return {f"{r['ticker']}_{r['style']}" for r in cur.fetchall()}
+        except Exception:
+            return set()
+
+    alerted_today: set[str] = _load_alerted_from_db()
+    logger.info(f"Loaded {len(alerted_today)} ma da bao hom nay tu DB")
 
     while _is_market_open(session):
         now = datetime.now(ICT)
