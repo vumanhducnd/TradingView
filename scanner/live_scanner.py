@@ -557,12 +557,24 @@ def run_session(interval: int = 180, session: str = "full") -> None:
     bull_s = sum(1 for s in st_states_short.values() if s["trend"] == 1)
     logger.info(f"Init ST: {len(st_states_long)} mã | DH tang={bull_l} | NH tang={bull_s}")
 
-    _start_lines = {
-        "morning": "Phiên sáng bắt đầu rồi, anh em ơi. Ngồi vào chỗ, cà phê cầm tay, mắt dán vào bảng điện đi nhé.",
-        "afternoon": "Nghỉ trưa đã đủ chưa? Phiên chiều mở cửa rồi — vào tiếp thôi.",
-        "full":     "Phiên giao dịch bắt đầu. Theo dõi tín hiệu, có biến báo ngay.",
+    _wd = datetime.now(ICT).weekday()
+    _open_lines = {
+        "morning": {
+            0: "Thứ Hai rồi, phiên sáng bắt đầu. Cà phê cầm tay, mắt dán bảng điện, tuần mới chiến thôi anh em.",
+            1: "Thứ Ba, phiên sáng mở cửa. Hôm qua mua bán sao rồi — hôm nay tiếp tục theo dõi nhé.",
+            2: "Thứ Tư giữa tuần, phiên sáng vào rồi. Nửa đường rồi, cố lên anh em.",
+            3: "Thứ Năm, phiên sáng khai trương. Cuối tuần gần kề, tập trung thêm tí nữa thôi.",
+            4: "Thứ Sáu rồi anh em ơi, phiên sáng bắt đầu. Chốt tuần đẹp là nghỉ cuối tuần vui.",
+        },
+        "afternoon": {
+            0: "Nghỉ trưa Thứ Hai đủ chưa? Phiên chiều mở rồi — vào tiếp thôi.",
+            1: "Thứ Ba chiều, phiên chiều bắt đầu. Ăn cơm xong chưa, vào theo dõi tiếp đi.",
+            2: "Thứ Tư chiều, phiên chiều khai cuộc. Giữa tuần mà có tín hiệu đẹp là quá ổn.",
+            3: "Thứ Năm chiều rồi, phiên chiều vào. Sắp cuối tuần, tranh thủ chốt lời nếu có.",
+            4: "Thứ Sáu chiều — phiên cuối tuần đây. Chốt đẹp rồi tắt máy nghỉ ngơi anh em.",
+        },
     }
-    _start_text = _start_lines.get(session, _start_lines["full"])
+    _start_text = _open_lines.get(session, {}).get(_wd, "Phiên giao dịch bắt đầu. Có tín hiệu sẽ báo ngay.")
     send_message(_start_text, style="long")
     send_message(_start_text, style="short")
 
@@ -720,12 +732,23 @@ def run_session(interval: int = 180, session: str = "full") -> None:
 
     long_flips  = sum(1 for k in alerted_today if k.endswith("_long"))
     short_flips = sum(1 for k in alerted_today if k.endswith("_short"))
-    _end_lines = {
-        "morning":   "Phiên sáng kết thúc — nghỉ trưa đi anh em, 13:00 chiều gặp lại nhé.",
-        "afternoon": "Xong phiên chiều rồi — về nhà thôi, báo cáo cuối ngày gửi sau.",
-        "full":      "Phiên giao dịch kết thúc. Hẹn gặp lại phiên sau.",
+    _close_lines = {
+        "morning": {
+            0: "Phiên sáng Thứ Hai xong rồi. Nghỉ trưa đi, 13:00 chiều gặp lại.",
+            1: "Hết phiên sáng Thứ Ba. Đi ăn cơm đi, chiều vào tiếp.",
+            2: "Phiên sáng Thứ Tư kết thúc. Nghỉ ngơi tí, chiều còn dài.",
+            3: "Xong phiên sáng Thứ Năm. Tranh thủ nghỉ trưa, 13:00 chiều gặp lại.",
+            4: "Phiên sáng Thứ Sáu xong. Nghỉ trưa ngắn thôi, chiều chốt tuần luôn.",
+        },
+        "afternoon": {
+            0: "Phiên chiều Thứ Hai kết thúc. Về nhà nghỉ ngơi, ngày mai chiến tiếp.",
+            1: "Xong Thứ Ba rồi. Về nhà đi anh em, báo cáo cuối ngày gửi sau.",
+            2: "Phiên chiều Thứ Tư kết thúc. Giữa tuần vậy là ổn, mai tiếp tục.",
+            3: "Hết Thứ Năm rồi. Một ngày nữa là cuối tuần — cố nốt ngày mai nhé.",
+            4: "Thứ Sáu xong rồi anh em ơi. Tắt máy, nghỉ cuối tuần — báo cáo cuối ngày gửi sau.",
+        },
     }
-    _end_text = _end_lines.get(session, _end_lines["full"])
+    _end_text = _close_lines.get(session, {}).get(_wd, "Phiên giao dịch kết thúc. Hẹn gặp lại phiên sau.")
     send_message(_end_text, style="long")
     send_message(_end_text, style="short")
     logger.info(f"=== Session Scanner KẾT THÚC — {total_flips} flips trong phiên ===")
