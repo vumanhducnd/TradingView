@@ -210,8 +210,12 @@ def run_scan_only() -> None:
         bought_today = {(r["ticker"], r["style"]) for r in rows if r["signal_type"] == "MUA"}
         sold_today   = {(r["ticker"], r["style"]) for r in rows if r["signal_type"] == "BÁN"}
 
-        # Fake breakout: MUA trong phiên → cuối ngày lại BÁN
+        # Fake breakout: MUA trong phiên → cuối ngày trend vẫn âm (không giữ được)
+        # Bắt cả 2 trường hợp:
+        #   1. Cuối ngày có sell_signal mới (flip)
+        #   2. Cuối ngày trend âm (quay về xu hướng giảm cũ, không tạo flip mới)
         if bought_today:
+            # Case 1: có sell_signal cuối ngày → lọc khỏi signals
             for sig_key in ["sell", "both_sell"]:
                 df = signals.get(sig_key)
                 if df is not None and not df.empty:
@@ -225,6 +229,21 @@ def run_scan_only() -> None:
                     if is_fake.sum():
                         signals[sig_key] = df[~is_fake]
                         logger.info(f"  Loc {is_fake.sum()} fake breakout khoi '{sig_key}'")
+
+            # Case 2: trend âm cuối ngày (không có sell_signal mới, chỉ ghi nhận để báo)
+            already_noted = (
+                set(intraday_reversals["long"]["fake_breakout"]) |
+                set(intraday_reversals["short"]["fake_breakout"])
+            )
+            for style in ["long", "short"]:
+                trend_col = f"{style}_trend"
+                if trend_col not in results.columns:
+                    continue
+                neg_trend = set(results[results[trend_col] == -1]["ticker"])
+                for (t, s) in bought_today:
+                    if s == style and t in neg_trend and t not in already_noted:
+                        intraday_reversals[style]["fake_breakout"].append(t)
+                        logger.info(f"  Fake breakout (trend am): {t} [{style}]")
 
         # Fake breakdown: BÁN trong phiên → cuối ngày lại MUA
         if sold_today:
