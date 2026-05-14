@@ -1,50 +1,82 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+## Dự án gồm 2 phần độc lập
 
-## Project Overview
+1. **`ManhDucCapital.pine`** — TradingView indicator (Pine Script v5), dùng trực tiếp trên chart, không build
+2. **`scanner/`** — Python system nhân bản logic Pine Script, chạy tự động trên GitHub Actions
 
-This is a single-file TradingView Pine Script v5 indicator: `ManhDucCapital.pine`. There is no build system, no tests, and no package manager — editing the `.pine` file and pasting it into TradingView's Pine Editor is the entire workflow.
+---
 
-## Architecture
+## Python Scanner — Luồng dữ liệu
 
-The file is organized into sequential sections (Pine Script executes top-to-bottom on every bar):
+```
+vnstock API → data_fetcher.py → ohlcv (PostgreSQL)
+                                     ↓
+                              indicators.py → scanner.py → scan_results + signals (DB)
+                                                                  ↓
+                              telegram_bot.py ← excel_report.py ← ai_analyst.py
+```
 
-| Section | Purpose |
+**Entry point:** `scanner/updater.py` (cuối phiên) và `scanner/live_scanner.py` (trong phiên)
+
+---
+
+## Các file quan trọng
+
+| File | Vai trò |
 |---|---|
-| Inputs | All `input.*` declarations grouped by UI group |
-| Utility functions | `f_pad`, `f_price`, `f_million`, `f_sign`, `f_buyPrice`, `f_sellPrice` |
-| Palette | Theme-aware color constants (`T_BG_DRK`, `T_GRN`, `T_RED`, etc.) |
-| Technical indicators | EMA, VWAP, RSI, MACD, ADX, OBV, Stochastic — computed once, reused everywhere |
-| Dual Score Logic | Bull/bear 9-point scoring → `biasNorm` (0–100), `biasColor`, `biasTextVN` |
-| SuperTrend | ATR-based trend line with optional strength filter; produces `buySignal` / `sellSignal` |
-| Bollinger Band | Optional overlay, color follows `trend` |
-| Signal tracking | Tracks most recent signal: `signalPrice`, `signalType`, `signalDate`, `signalCount`, `pnl` |
-| Volume accumulation | `trend_buy_vol` / `trend_sell_vol` reset on trend flip; `delta_vol_pct` |
-| Support/Resistance | Single dashed line + label that follows the SuperTrend level |
-| Backtest zone lines | Vertical start/end lines for backtest period |
-| Backtest engine | Simulates buy-on-`buySignal` / sell-on-`sellSignal`; tracks capital, PnL, drawdown |
-| History table (`htbl`) | Full trade log, rendered only on `barstate.islast` |
-| Signal table (`stbl`) | Top-right summary box, rendered only on `barstate.islast` |
-| Star label (`lbStar`) | `✪` marker at current SuperTrend level |
-| Analysis label (`lbVol`) | Floating multi-line analysis box with risk targets and recommendation |
-| Alerts | Three `alertcondition` calls at the bottom |
+| `scanner/config.py` | Tham số ST, chỉ báo, API keys từ `.env` |
+| `scanner/database.py` | CRUD cho 3 bảng chính: `ohlcv`, `scan_results`, `signals` |
+| `scanner/indicators.py` | Tính EMA/VWAP/RSI/MACD/ADX/OBV/Stoch/SuperTrend từ OHLCV |
+| `scanner/scanner.py` | BiasNorm (9 điểm), tín hiệu MUA/BÁN, last_signal tracking |
+| `scanner/telegram_bot.py` | Gửi báo cáo cuối phiên + tín hiệu real-time |
+| `scanner/excel_report.py` | Xuất 6-tab Excel: tín hiệu, vùng xanh/đỏ, AI, lịch sử lệnh |
+| `scanner/ai_analyst.py` | Gọi Groq API (LLaMA 3.3 70B) phân tích từng tín hiệu |
 
-## Key Design Decisions
+---
 
-**Price formatting (`f_price`):** Assumes Vietnamese stock prices. Values `< 10000` are treated as USD-style decimals; values `≥ 10000` are divided by 1000 to convert from VNĐ units (e.g., `25500 → 25.5`).
+## Dual Mode
 
-**biasNorm:** Normalised bull/bear score in range `[0, 100]`. Values ≥ 55 = bullish, ≤ 45 = bearish, 45–55 = neutral. Used both in the signal table and as an optional flip-filter for SuperTrend.
+Hệ thống chạy 2 bộ SuperTrend song song, mỗi cái có cột riêng trong DB:
 
-**Backtest engine limitations:** Only one position at a time (buy on `buySignal` if flat, sell on `sellSignal` if long). No stop-loss. `compoundMode` toggles whether PnL compounds on the running capital.
+- **long**: ATR=10, mult=3.0 — cột prefix `long_*` — bot `TELEGRAM_BOT_TOKEN_LONG`
+- **short**: ATR=7, mult=2.0 — cột prefix `short_*` — bot `TELEGRAM_BOT_TOKEN_SHORT`
 
-**`var` vs non-`var`:** Tables and persistent state use `var`. All indicator calculations are non-`var` and recompute every bar.
+Khi `long_buy_signal` tồn tại trong DataFrame → đang ở dual mode. Tất cả code phân nhánh theo flag này.
 
-**Performance:** All table rendering is gated on `barstate.islast` to avoid redundant cell updates on every historical bar.
+---
 
-## Pine Script Conventions Used
+## Database schema (3 bảng chính)
 
-- `nz(x, default)` — null-safe previous value access
-- `ta.change(trend)` — detects trend flip for volume reset
-- `extend.right` on SR line — line extends forward automatically
-- `last_bar_index + 1` as x-position for the analysis label — places it just beyond the last candle
+**`ohlcv`**: `ticker, date, open, high, low, close, volume, turnover`
+
+**`scan_results`**: 1 hàng/ticker, upsert mỗi phiên. Cột quan trọng:
+- `long_last_signal_type` / `long_last_signal_date` / `long_last_signal_price` — tín hiệu gần nhất
+- `long_signal_pnl_pct` — P&L từ tín hiệu đó đến giá hiện tại
+- Tương tự với prefix `short_`
+
+**`signals`**: log lịch sử tín hiệu. `ticker, signal_date, signal_type (MUA/BÁN), style (long/short)`
+- Không lưu giá — giá tra từ `ohlcv` theo `signal_date`
+
+---
+
+## Quy tắc giá (fmt_price)
+
+Giá chứng khoán VN lưu dạng nguyên (VD: `25500`). Hàm `fmt_price` trong `utils.py`:
+- `< 1000`: giữ nguyên (giá USD-style)
+- `≥ 1000`: chia 1000 → hiển thị `25.5`
+
+---
+
+## BiasNorm
+
+9 chỉ báo bull/bear → `bull_score/9 × 100`. Ngưỡng: ≥55 bullish, ≤45 bearish. Tên cột trong DB: `bias_norm`, `b_score`, `r_score`.
+
+---
+
+## Conventions
+
+- Tên cột DB dùng snake_case, prefix `long_`/`short_` cho dual mode
+- `_val(row, col1, col2)` — helper lấy giá trị đầu tiên không-NaN (fallback giữa dual/single mode)
+- `turnover` đơn vị VND thô (×10⁹ = 1 tỷ) — luôn chia `1e9` khi hiển thị
+- Mọi render bảng Excel/Telegram gated sau khi có đủ data, không sửa logic tính toán ở đó
