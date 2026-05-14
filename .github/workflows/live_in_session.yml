@@ -16,6 +16,12 @@ on:
         description: 'Phut giua moi lan quet (default: 3)'
         required: false
         default: '3'
+      force:
+        description: 'Chay 1 cycle de test (bo qua kiem tra gio giao dich)'
+        required: false
+        default: 'false'
+        type: choice
+        options: ['false', 'true']
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -50,4 +56,9 @@ jobs:
         run: |
           SESSION=${{ inputs.session || 'morning' }}
           INTERVAL=${{ inputs.interval || '3' }}
-          python -m scanner.live_scanner --mode session --session $SESSION --interval $INTERVAL
+          FORCE=${{ inputs.force || 'false' }}
+          if [ "$FORCE" = "true" ]; then
+            python -m scanner.live_scanner --mode session --session $SESSION --interval $INTERVAL --force
+          else
+            python -m scanner.live_scanner --mode session --session $SESSION --interval $INTERVAL
+          fi
