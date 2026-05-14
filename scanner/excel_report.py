@@ -78,7 +78,32 @@ def build_excel_report(
             del wb["Sheet"]
         paths["long"] = _save_workbook(wb, REPORTS_DIR / f"report_{scan_date}.xlsx")
 
+    _cleanup_old_reports(keep_days=3)
     return paths
+
+
+def _cleanup_old_reports(keep_days: int = 3) -> None:
+    """Xóa file Excel cũ, chỉ giữ lại keep_days ngày gần nhất cho mỗi style."""
+    import re
+    pattern = re.compile(r"report(?:_(?:long|short))?_(\d{4}-\d{2}-\d{2})\.xlsx$")
+    files: dict[str, list] = {}
+    for f in REPORTS_DIR.glob("report*.xlsx"):
+        m = pattern.match(f.name)
+        if not m:
+            continue
+        day = m.group(1)
+        # Nhóm theo prefix (long/short/single) để giữ đủ ngày cho mỗi style
+        prefix = f.name.replace(f"_{day}.xlsx", "")
+        files.setdefault(prefix, []).append((day, f))
+
+    for prefix, items in files.items():
+        items.sort(key=lambda x: x[0], reverse=True)  # mới nhất trước
+        for day, f in items[keep_days:]:
+            try:
+                f.unlink()
+                logger.info(f"Xoa report cu: {f.name}")
+            except Exception:
+                pass
 
 
 def _build_workbook(
