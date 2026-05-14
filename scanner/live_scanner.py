@@ -558,21 +558,9 @@ def run_session(interval: int = 180, session: str = "full") -> None:
     logger.info(f"Init ST: {len(st_states_long)} mã | DH tang={bull_l} | NH tang={bull_s}")
 
     _start_lines = {
-        "morning": (
-            f"Chuẩn bị vào phiên sáng rồi — {len(hist_cache)} mã đang được theo dõi.\n"
-            f"Xu hướng tăng: Dài hạn 🟢{bull_l} mã | Ngắn hạn 🟢{bull_s} mã.\n"
-            f"Quét mỗi {interval//60} phút, có tín hiệu sẽ báo ngay."
-        ),
-        "afternoon": (
-            f"Phiên chiều bắt đầu — {len(hist_cache)} mã đang trực chiến.\n"
-            f"Xu hướng tăng: Dài hạn 🟢{bull_l} mã | Ngắn hạn 🟢{bull_s} mã.\n"
-            f"Quét mỗi {interval//60} phút, có biến sẽ thông báo liền."
-        ),
-        "full": (
-            f"Phiên giao dịch bắt đầu — theo dõi {len(hist_cache)} mã.\n"
-            f"Xu hướng tăng: Dài hạn 🟢{bull_l} mã | Ngắn hạn 🟢{bull_s} mã.\n"
-            f"Quét mỗi {interval//60} phút."
-        ),
+        "morning": "Phiên sáng bắt đầu rồi, anh em ơi. Ngồi vào chỗ, cà phê cầm tay, mắt dán vào bảng điện đi nhé.",
+        "afternoon": "Nghỉ trưa đã đủ chưa? Phiên chiều mở cửa rồi — vào tiếp thôi.",
+        "full":     "Phiên giao dịch bắt đầu. Theo dõi tín hiệu, có biến báo ngay.",
     }
     _start_text = _start_lines.get(session, _start_lines["full"])
     send_message(_start_text, style="long")
@@ -733,20 +721,9 @@ def run_session(interval: int = 180, session: str = "full") -> None:
     long_flips  = sum(1 for k in alerted_today if k.endswith("_long"))
     short_flips = sum(1 for k in alerted_today if k.endswith("_short"))
     _end_lines = {
-        "morning": (
-            f"Phiên sáng kết thúc rồi — nghỉ trưa tí nhé.\n"
-            f"Tổng tín hiệu: Dài hạn {long_flips} | Ngắn hạn {short_flips}.\n"
-            f"Phiên chiều 13:00 gặp lại."
-        ),
-        "afternoon": (
-            f"Xong phiên chiều — về nhà thôi.\n"
-            f"Tổng tín hiệu hôm nay: Dài hạn {long_flips} | Ngắn hạn {short_flips}.\n"
-            f"Báo cáo chi tiết cuối ngày gửi sau."
-        ),
-        "full": (
-            f"Phiên giao dịch kết thúc.\n"
-            f"Tổng tín hiệu: Dài hạn {long_flips} | Ngắn hạn {short_flips}."
-        ),
+        "morning":   "Phiên sáng kết thúc — nghỉ trưa đi anh em, 13:00 chiều gặp lại nhé.",
+        "afternoon": "Xong phiên chiều rồi — về nhà thôi, báo cáo cuối ngày gửi sau.",
+        "full":      "Phiên giao dịch kết thúc. Hẹn gặp lại phiên sau.",
     }
     _end_text = _end_lines.get(session, _end_lines["full"])
     send_message(_end_text, style="long")
