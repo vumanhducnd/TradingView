@@ -557,18 +557,26 @@ def run_session(interval: int = 180, session: str = "full") -> None:
     bull_s = sum(1 for s in st_states_short.values() if s["trend"] == 1)
     logger.info(f"Init ST: {len(st_states_long)} mã | DH tang={bull_l} | NH tang={bull_s}")
 
-    send_message(
-        f"📡 <b>Session Scanner BẮT ĐẦU</b>\n"
-        f"Dài hạn 🟢{bull_l} | Ngắn hạn 🟢{bull_s} | {len(hist_cache)} mã\n"
-        f"Quét mỗi {interval//60} phút",
-        style="long"
-    )
-    send_message(
-        f"📡 <b>Session Scanner BẮT ĐẦU</b>\n"
-        f"Ngắn hạn 🟢{bull_s} | {len(hist_cache)} mã\n"
-        f"Quét mỗi {interval//60} phút",
-        style="short"
-    )
+    _start_lines = {
+        "morning": (
+            f"Chuẩn bị vào phiên sáng rồi — {len(hist_cache)} mã đang được theo dõi.\n"
+            f"Xu hướng tăng: Dài hạn 🟢{bull_l} mã | Ngắn hạn 🟢{bull_s} mã.\n"
+            f"Quét mỗi {interval//60} phút, có tín hiệu sẽ báo ngay."
+        ),
+        "afternoon": (
+            f"Phiên chiều bắt đầu — {len(hist_cache)} mã đang trực chiến.\n"
+            f"Xu hướng tăng: Dài hạn 🟢{bull_l} mã | Ngắn hạn 🟢{bull_s} mã.\n"
+            f"Quét mỗi {interval//60} phút, có biến sẽ thông báo liền."
+        ),
+        "full": (
+            f"Phiên giao dịch bắt đầu — theo dõi {len(hist_cache)} mã.\n"
+            f"Xu hướng tăng: Dài hạn 🟢{bull_l} mã | Ngắn hạn 🟢{bull_s} mã.\n"
+            f"Quét mỗi {interval//60} phút."
+        ),
+    }
+    _start_text = _start_lines.get(session, _start_lines["full"])
+    send_message(_start_text, style="long")
+    send_message(_start_text, style="short")
 
     total_flips = 0
     scan_count  = 0
@@ -724,8 +732,25 @@ def run_session(interval: int = 180, session: str = "full") -> None:
 
     long_flips  = sum(1 for k in alerted_today if k.endswith("_long"))
     short_flips = sum(1 for k in alerted_today if k.endswith("_short"))
-    send_message(f"🔔 <b>Session KẾT THÚC</b> — Dài hạn: {long_flips} tín hiệu", style="long")
-    send_message(f"🔔 <b>Session KẾT THÚC</b> — Ngắn hạn: {short_flips} tín hiệu", style="short")
+    _end_lines = {
+        "morning": (
+            f"Phiên sáng kết thúc rồi — nghỉ trưa tí nhé.\n"
+            f"Tổng tín hiệu: Dài hạn {long_flips} | Ngắn hạn {short_flips}.\n"
+            f"Phiên chiều 13:00 gặp lại."
+        ),
+        "afternoon": (
+            f"Xong phiên chiều — về nhà thôi.\n"
+            f"Tổng tín hiệu hôm nay: Dài hạn {long_flips} | Ngắn hạn {short_flips}.\n"
+            f"Báo cáo chi tiết cuối ngày gửi sau."
+        ),
+        "full": (
+            f"Phiên giao dịch kết thúc.\n"
+            f"Tổng tín hiệu: Dài hạn {long_flips} | Ngắn hạn {short_flips}."
+        ),
+    }
+    _end_text = _end_lines.get(session, _end_lines["full"])
+    send_message(_end_text, style="long")
+    send_message(_end_text, style="short")
     logger.info(f"=== Session Scanner KẾT THÚC — {total_flips} flips trong phiên ===")
 
 
