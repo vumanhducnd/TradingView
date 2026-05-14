@@ -785,6 +785,9 @@ def load_trade_history_from_ohlcv(style: str = "long", tickers: list[str] | None
         if len(df) < 20:
             continue
         try:
+            for col in ("open", "high", "low", "close", "volume"):
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors="coerce")
             df = calc_supertrend(df, style=style)
         except Exception as e:
             logger.warning(f"load_trade_history_from_ohlcv: calc_supertrend failed [{ticker}]: {e}")
