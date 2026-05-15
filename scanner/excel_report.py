@@ -529,6 +529,14 @@ def _sheet_nam_giu(wb: Workbook, results: pd.DataFrame, style: str = "long") -> 
     price_col = f"{p}last_signal_price" if f"{p}last_signal_price" in results.columns else "last_signal_price"
 
     df = results[results.get(trend_col, results.get("trend", pd.Series(dtype=int))) == 1].copy()
+
+    # Loại bỏ mã đang ở vùng biên giới (close < st*1.02) — dễ flip sang đỏ
+    st_col = f"{p}supertrend" if f"{p}supertrend" in df.columns else "supertrend"
+    if st_col in df.columns:
+        close_s = pd.to_numeric(df["close"], errors="coerce")
+        st_s    = pd.to_numeric(df[st_col],  errors="coerce")
+        df = df[(close_s >= st_s * 1.02) | st_s.isna()].copy()
+
     if "turnover" in df.columns:
         df = df.sort_values("turnover", ascending=False)
 
@@ -576,6 +584,14 @@ def _sheet_dung_ngoai(wb: Workbook, results: pd.DataFrame, style: str = "long") 
     price_col = f"{p}last_signal_price" if f"{p}last_signal_price" in results.columns else "last_signal_price"
 
     df = results[results.get(trend_col, results.get("trend", pd.Series(dtype=int))) == -1].copy()
+
+    # Loại bỏ mã đang ở vùng biên giới (close > st*0.98) — dễ flip sang xanh
+    st_col = f"{p}supertrend" if f"{p}supertrend" in df.columns else "supertrend"
+    if st_col in df.columns:
+        close_s = pd.to_numeric(df["close"], errors="coerce")
+        st_s    = pd.to_numeric(df[st_col],  errors="coerce")
+        df = df[(close_s <= st_s * 0.98) | st_s.isna()].copy()
+
     if "turnover" in df.columns:
         df = df.sort_values("turnover", ascending=False)
 
