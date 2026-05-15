@@ -631,14 +631,16 @@ def run_session(interval: int = 180, session: str = "full") -> None:
                     if new_state["buy_signal"]:
                         flips.append({
                             "ticker": ticker, "direction": "buy",
-                            "price": bar["close"], "st": new_state["supertrend"],
+                            "price": bar["close"],
+                            "st": state["dn"],   # kháng cự vừa bị phá (dn band bar trước)
                             "style": style_key,
                         })
                         alerted_today.add(alert_key)
                     elif new_state["sell_signal"]:
                         flips.append({
                             "ticker": ticker, "direction": "sell",
-                            "price": bar["close"], "st": new_state["supertrend"],
+                            "price": bar["close"],
+                            "st": state["up"],   # hỗ trợ vừa bị thủng (up band bar trước)
                             "style": style_key,
                         })
                         alerted_today.add(alert_key)
