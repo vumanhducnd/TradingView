@@ -92,16 +92,15 @@ def _cleanup_old_reports(keep_days: int = 3) -> None:
         if not m:
             continue
         day = m.group(1)
-        # Nhóm theo prefix (long/short/single) để giữ đủ ngày cho mỗi style
         prefix = f.name.replace(f"_{day}.xlsx", "")
         files.setdefault(prefix, []).append((day, f))
 
     for prefix, items in files.items():
-        items.sort(key=lambda x: x[0], reverse=True)  # mới nhất trước
+        items.sort(key=lambda x: x[0], reverse=True)
         for day, f in items[keep_days:]:
             try:
                 f.unlink()
-                logger.info(f"Xoa report cu: {f.name}")
+                logger.info(f"Xóa report cũ: {f.name}")
             except Exception:
                 pass
 
@@ -116,7 +115,6 @@ def _build_workbook(
 ) -> "Workbook":
     """Tạo 1 Workbook hoàn chỉnh cho 1 style (long hoặc short)."""
     wb = Workbook()
-    label = "Dài hạn" if style == "long" else "Ngắn hạn"
 
     _sheet_signals(wb, signals, ai_analysis=ai_analysis, style_filter=style)  # Tab 1
     _sheet_nam_giu(wb, results, style=style)                                    # Tab 2
@@ -143,7 +141,7 @@ def _save_workbook(wb: "Workbook", path) -> str:
         ts = datetime.now().strftime("%H%M%S")
         path = path.parent / f"{path.stem}_{ts}{path.suffix}"
         wb.save(path)
-        logger.warning(f"File goc bi khoa, luu thanh: {path.name}")
+        logger.warning(f"File gốc bị khóa, lưu thành: {path.name}")
     logger.info(f"Excel report saved: {path}")
     return str(path)
 
@@ -154,7 +152,6 @@ def _sheet_all(wb: Workbook, df: pd.DataFrame) -> None:
     criteria = ["ema", "vwap", "rsi", "macd", "adx", "obv", "stoch", "candle", "vol"]
     crit_labels = ["EMA", "VWAP", "RSI", "MACD", "ADX", "OBV", "Stoch", "Nến", "Vol"]
 
-    # Kiểm tra dual mode
     is_dual = "long_buy_signal" in df.columns
 
     if is_dual:
@@ -231,7 +228,6 @@ def _sheet_all(wb: Workbook, df: pd.DataFrame) -> None:
         for j, val in enumerate(base_row, start=1):
             ws.cell(row=i, column=j, value=val)
 
-        # Row color
         bias = row.get("bias_norm", 50)
         fill = None
         if row.get("buy_signal"):
@@ -256,23 +252,22 @@ STRONG_FILL = PatternFill("solid", fgColor="00B050")   # xanh đậm
 
 _SS_COLS   = ["ss1", "ss2", "ss3", "ss4", "ss5", "ss6", "ss7"]
 _SS_LABELS = [
-    "Gia>EMA200", "EMA200 Tang", "Gan dinh 52T",
-    "EMA50>EMA200", "Gia>EMA50", "ADX>25", "Vol20>Vol60",
+    "Giá>EMA200", "EMA200 Tăng", "Gần đỉnh 52T",
+    "EMA50>EMA200", "Giá>EMA50", "ADX>25", "Vol20>Vol60",
 ]
 _SS_LIQTHRESH = 50e6   # 50 tỷ VND (avg_turnover_20d đơn vị VND/1000)
 
 
 def _sheet_super_stocks(wb: Workbook, df: pd.DataFrame, scan_date: str) -> None:
     """
-    Siêu cổ phiếu: score ≥ 5/7 + TK TB 20 phiên ≥ 50 tỷ, sort TK giảm dần.
-    Cột: Mã | Giá | Score | TK TB 20p (tỷ) | ss1–ss7 (✓/✗)
+    Siêu cổ phiếu: score ≥ 5/7 + Thanh khoản TB 20 phiên ≥ 50 tỷ, sort thanh khoản giảm dần.
+    Cột: Mã | Giá | Score | Thanh khoản TB 20p (tỷ) | ss1–ss7 (✓/✗)
     """
-    ws = wb.create_sheet("Sieu co phieu (5-7 tieu chi)")
+    ws = wb.create_sheet("Siêu cổ phiếu (5-7 tiêu chí)")
 
-    headers = ["Ma", "Gia", "Score", "Thanh khoan TB 20p (ty)"] + _SS_LABELS
+    headers = ["Mã", "Giá", "Score", "Thanh khoản TB 20p (tỷ)"] + _SS_LABELS
     _write_header(ws, headers)
 
-    # Load avg_turnover_20d từ watchlist
     try:
         from scanner.database import load_avg_turnover
         tk_map = load_avg_turnover(df["ticker"].tolist())
@@ -287,8 +282,8 @@ def _sheet_super_stocks(wb: Workbook, df: pd.DataFrame, scan_date: str) -> None:
         except (ValueError, TypeError):
             score = 0
         ticker  = row.get("ticker", "")
-        avg_tk  = tk_map.get(ticker, 0)          # VND/1000
-        tk_ty   = avg_tk / 1e6                   # → tỷ VND
+        avg_tk  = tk_map.get(ticker, 0)
+        tk_ty   = avg_tk / 1e6
 
         if score < 5 or avg_tk < _SS_LIQTHRESH:
             continue
@@ -307,7 +302,6 @@ def _sheet_super_stocks(wb: Workbook, df: pd.DataFrame, scan_date: str) -> None:
         for j, v in enumerate(vals, start=1):
             ws.cell(row=i, column=j, value=v)
 
-        # Màu theo score
         fill = STAR_FILL if score == 7 else (STRONG_FILL if score >= 6 else GREEN_FILL)
         for j in range(1, len(headers) + 1):
             cell = ws.cell(row=i, column=j)
@@ -315,16 +309,14 @@ def _sheet_super_stocks(wb: Workbook, df: pd.DataFrame, scan_date: str) -> None:
             if fill == STRONG_FILL:
                 cell.font = Font(color="FFFFFF")
 
-        # Tô từng ô ✓/✗ theo kết quả
         for j, c in enumerate(_SS_COLS, start=5):
             ws.cell(row=i, column=j).fill = GREEN_FILL if row.get(c) else RED_FILL
 
     note_row = len(rows_data) + 3
-    ws.cell(row=note_row, column=1, value="Tieu chi: score>=5/7 va TK TB 20 phien >=50 ty VND").font = BOLD
-    ws.cell(row=note_row + 1, column=1, value="7/7=Vang | 6/7=Xanh dam | 5/7=Xanh nhat").font = BOLD
+    ws.cell(row=note_row, column=1, value="Tiêu chí: score>=5/7 và Thanh khoản TB 20 phiên >=50 tỷ VND").font = BOLD
+    ws.cell(row=note_row + 1, column=1, value="7/7=Vàng | 6/7=Xanh đậm | 5/7=Xanh nhạt").font = BOLD
 
-    # ── Sắp thành Siêu cổ phiếu (score 3–4, top 5 TK) ───────────────────────
-    ALMOST_FILL = PatternFill("solid", fgColor="FFF2CC")   # vàng nhạt
+    ALMOST_FILL = PatternFill("solid", fgColor="FFF2CC")
 
     almost_data = []
     for _, row in df.iterrows():
@@ -343,7 +335,7 @@ def _sheet_super_stocks(wb: Workbook, df: pd.DataFrame, scan_date: str) -> None:
 
     if almost_top5:
         sep_row = note_row + 3
-        cell = ws.cell(row=sep_row, column=1, value="⏳ Sap thanh Sieu co phieu (score 3-4/7, top 5 TK)")
+        cell = ws.cell(row=sep_row, column=1, value="⏳ Sắp thành Siêu cổ phiếu (score 3-4/7, top 5 Thanh khoản)")
         cell.font = Font(bold=True, size=11)
         cell.fill = ALMOST_FILL
 
@@ -374,30 +366,28 @@ def _sheet_super_stocks(wb: Workbook, df: pd.DataFrame, scan_date: str) -> None:
 
 def _sheet_ai(wb: Workbook, ai_analysis: dict, scan_date: str) -> None:
     """Sheet phân tích AI: overview + bảng từng tín hiệu."""
-    ws = wb.create_sheet("Phan tich AI")
+    ws = wb.create_sheet("Phân tích AI")
 
     WRAP = Alignment(wrap_text=True, vertical="top")
     AI_FILL = PatternFill("solid", fgColor="EAF4FB")
 
-    # --- Tổng quan thị trường ---
-    ws.cell(row=1, column=1, value="NHAN DINH TONG QUAN THI TRUONG").font = Font(bold=True, size=13)
+    ws.cell(row=1, column=1, value="NHẬN ĐỊNH TỔNG QUAN THỊ TRƯỜNG").font = Font(bold=True, size=13)
     ws.cell(row=1, column=1).fill = PatternFill("solid", fgColor="2F75B6")
     ws.cell(row=1, column=1).font = Font(bold=True, size=13, color="FFFFFF")
     ws.merge_cells("A1:D1")
 
-    overview = ai_analysis.get("overview", "") or "(AI khong phan tich duoc — kiem tra GROQ_API_KEY / GEMINI_API_KEY)"
+    overview = ai_analysis.get("overview", "") or "(AI không phân tích được — kiểm tra GROQ_API_KEY / GEMINI_API_KEY)"
     ws.cell(row=2, column=1, value=overview).alignment = WRAP
     ws.merge_cells("A2:D2")
     ws.row_dimensions[2].height = max(60, len(overview) // 5)
 
-    # --- Tín hiệu MUA ---
     buy_signals = ai_analysis.get("buy_signals", [])
     sell_signals = ai_analysis.get("sell_signals", [])
 
     row = 4
     for section_label, section_fill, signals_list in [
-        ("PHAN TICH TIN HIEU MUA", "C6EFCE", buy_signals),
-        ("PHAN TICH TIN HIEU BAN", "FFC7CE", sell_signals),
+        ("PHÂN TÍCH TÍN HIỆU MUA", "C6EFCE", buy_signals),
+        ("PHÂN TÍCH TÍN HIỆU BÁN", "FFC7CE", sell_signals),
     ]:
         if not signals_list:
             continue
@@ -407,7 +397,7 @@ def _sheet_ai(wb: Workbook, ai_analysis: dict, scan_date: str) -> None:
         row += 1
 
         header_row = row
-        for j, h in enumerate(["Ma", "Nhan dinh AI", "Scan date"], start=1):
+        for j, h in enumerate(["Mã", "Nhận định AI", "Ngày quét"], start=1):
             c = ws.cell(row=header_row, column=j, value=h)
             c.fill = HEADER_FILL
             c.font = HEADER_FONT
@@ -422,7 +412,7 @@ def _sheet_ai(wb: Workbook, ai_analysis: dict, scan_date: str) -> None:
             ws.row_dimensions[row].height = 40
             row += 1
 
-        row += 1  # khoảng cách giữa section
+        row += 1
 
     ws.column_dimensions["A"].width = 8
     ws.column_dimensions["B"].width = 80
@@ -431,35 +421,30 @@ def _sheet_ai(wb: Workbook, ai_analysis: dict, scan_date: str) -> None:
 
 
 def _sheet_signals(wb: Workbook, signals: dict, ai_analysis: dict | None = None, style_filter: str | None = None) -> None:
-    """
-    Tab đầu tiên: Tín hiệu trong ngày.
-    Cột: Mã | Tín hiệu | Khung | Ngày mua | Giá đóng cửa | Giá ST | TK (tỷ) | BiasNorm | bScore | Nhận xét AI
-    """
+    """Tab đầu tiên: Tín hiệu trong ngày."""
     style_label = {"long": " Dài hạn", "short": " Ngắn hạn"}.get(style_filter or "", "")
-    ws = wb.create_sheet(f"Tin hieu trong ngay{style_label}")
+    ws = wb.create_sheet(f"Tín hiệu trong ngày{style_label}")
 
     today_str = date.today().strftime("%d/%m/%Y")
 
     headers = [
-        "Ma", "Tin hieu", "Khung",
-        "Ngay mua", "Gia mua/ban (ST)",
-        "Thanh khoan (ty VND)", "BiasNorm",
+        "Mã", "Tín hiệu", "Khung",
+        "Ngày mua", "Giá mua/bán (ST)",
+        "Thanh khoản (tỷ VND)", "BiasNorm",
     ]
     _write_header(ws, headers)
 
     is_dual = any("long_buy_signal" in df.columns for df in signals.values() if not df.empty)
 
-    # (signal_label, buy_col, sell_col, khung, style_key, st_col)
     all_combos = [
-        ("But pha xac nhan", "long_buy_signal",   "long_sell_signal",  "Dai han",  "long",  "long_supertrend"),
-        ("Dao chieu giam",   "long_sell_signal",  "long_buy_signal",   "Dai han",  "long",  "long_supertrend"),
-        ("But pha xac nhan", "short_buy_signal",  "short_sell_signal", "Ngan han", "short", "short_supertrend"),
-        ("Dao chieu giam",   "short_sell_signal", "short_buy_signal",  "Ngan han", "short", "short_supertrend"),
+        ("Bứt phá xác nhận", "long_buy_signal",   "long_sell_signal",  "Dài hạn",  "long",  "long_supertrend"),
+        ("Đảo chiều giảm",   "long_sell_signal",  "long_buy_signal",   "Dài hạn",  "long",  "long_supertrend"),
+        ("Bứt phá xác nhận", "short_buy_signal",  "short_sell_signal", "Ngắn hạn", "short", "short_supertrend"),
+        ("Đảo chiều giảm",   "short_sell_signal", "short_buy_signal",  "Ngắn hạn", "short", "short_supertrend"),
     ]
     combos = [c for c in all_combos if style_filter is None or c[4] == style_filter]
 
-    # Thu thập tất cả rows trước, sort TK cao → thấp, rồi mới ghi
-    collected: list[tuple] = []  # (turnover, ticker_key, row, signal_label, khung, st_col, fill)
+    collected: list[tuple] = []
     seen: set[str] = set()
 
     def _collect(row, signal_label, khung, st_col, fill):
@@ -473,7 +458,7 @@ def _sheet_signals(wb: Workbook, signals: dict, ai_analysis: dict | None = None,
 
     if is_dual:
         for signal_label, buy_col, _sell_col, khung, _style, st_col in combos:
-            is_buy = "But pha" in signal_label
+            is_buy = "Bứt phá" in signal_label
             src    = signals.get("buy" if is_buy else "sell", pd.DataFrame())
             if src.empty or buy_col not in src.columns:
                 continue
@@ -482,11 +467,11 @@ def _sheet_signals(wb: Workbook, signals: dict, ai_analysis: dict | None = None,
                 _collect(row, signal_label, khung, st_col, fill)
     else:
         for df, label, fill, st_col in [
-            (signals.get("buy",  pd.DataFrame()), "But pha xac nhan", GREEN_FILL, "supertrend"),
-            (signals.get("sell", pd.DataFrame()), "Dao chieu giam",   RED_FILL,   "supertrend"),
+            (signals.get("buy",  pd.DataFrame()), "Bứt phá xác nhận", GREEN_FILL, "supertrend"),
+            (signals.get("sell", pd.DataFrame()), "Đảo chiều giảm",   RED_FILL,   "supertrend"),
         ]:
             for _, row in df.iterrows():
-                _collect(row, label, "Dai han", st_col, fill)
+                _collect(row, label, "Dài hạn", st_col, fill)
 
     collected.sort(key=lambda x: x[0], reverse=True)
 
@@ -506,11 +491,10 @@ def _sheet_signals(wb: Workbook, signals: dict, ai_analysis: dict | None = None,
             ws.cell(row=row_idx, column=j, value=v).fill = fill
         row_idx += 1
 
-    # Điều chỉnh chiều cao dòng cho cột AI
     for r in range(2, row_idx):
         ws.row_dimensions[r].height = 40
 
-    ws.column_dimensions["J"].width = 60  # cột Nhận xét AI rộng hơn
+    ws.column_dimensions["J"].width = 60
     _auto_width(ws)
     ws.column_dimensions["J"].width = max(ws.column_dimensions["J"].width, 60)
     ws.freeze_panes = "A2"
@@ -518,15 +502,14 @@ def _sheet_signals(wb: Workbook, signals: dict, ai_analysis: dict | None = None,
 
     note_row = row_idx + 1
     note_cell = ws.cell(row=note_row, column=1,
-                        value="* Uu tien ma co Thanh khoan cao (>= 50 ty/phien) de de mua/ban khi can.")
+                        value="* Ưu tiên mã có Thanh khoản cao (≥ 50 tỷ/phiên) để dễ mua/bán khi cần.")
     note_cell.font = Font(italic=True, color="888888")
 
 
-
 def _sheet_nam_giu(wb: Workbook, results: pd.DataFrame, style: str = "long") -> None:
-    """Vùng xanh: long_trend=1, ngày/giá mua từ SuperTrend flip gần nhất, sort TK↓."""
-    ws = wb.create_sheet("Vung xanh (Nam giu)")
-    headers = ["Ma", "Ngay Mua", "Giu Lenh (ngay)", "Gia Mua", "Gia Hien Tai", "Loi/Lo %", "Thanh khoan (ty)"]
+    """Vùng xanh: long_trend=1, ngày/giá mua từ SuperTrend flip gần nhất, sort thanh khoản↓."""
+    ws = wb.create_sheet("Vùng xanh (Nắm giữ)")
+    headers = ["Mã", "Ngày Mua", "Giữ lệnh (ngày)", "Giá Mua", "Giá Hiện Tại", "Lời/Lỗ %", "Thanh khoản (tỷ)"]
     _write_header(ws, headers)
 
     p         = f"{style}_"
@@ -565,15 +548,14 @@ def _sheet_nam_giu(wb: Workbook, results: pd.DataFrame, style: str = "long") -> 
     ws.auto_filter.ref = ws.dimensions
 
 
-_LIGHT_RED  = PatternFill("solid", fgColor="FFD7D7")   # đỏ nhạt cho toàn bộ vùng đỏ
-_LIGHT_GREEN = PatternFill("solid", fgColor="C6EFCE")  # xanh nhạt khi tránh được lỗ
+_LIGHT_RED  = PatternFill("solid", fgColor="FFD7D7")
+_LIGHT_GREEN = PatternFill("solid", fgColor="C6EFCE")
 
 
 def _sheet_dung_ngoai(wb: Workbook, results: pd.DataFrame, style: str = "long") -> None:
-    """Vùng đỏ: long_trend=-1, ngày/giá bán từ SuperTrend flip gần nhất, sort TK↓."""
-    ws = wb.create_sheet("Vung do (Dung ngoai)")
-    # Cột 6 = "Tranh lo": âm % nếu giá giảm sau bán (đúng), dương % nếu giá tăng (sai)
-    headers = ["Ma", "Ngay Ban", "Dung Ngoai (ngay)", "Gia Ban", "Gia Hien Tai", "Tranh lo", "Thanh khoan (ty)"]
+    """Vùng đỏ: long_trend=-1, ngày/giá bán từ SuperTrend flip gần nhất, sort thanh khoản↓."""
+    ws = wb.create_sheet("Vùng đỏ (Đứng ngoài)")
+    headers = ["Mã", "Ngày Bán", "Đứng ngoài (ngày)", "Giá Bán", "Giá Hiện Tại", "Tránh lỗ", "Thanh khoản (tỷ)"]
     _write_header(ws, headers)
 
     p         = f"{style}_"
@@ -585,7 +567,7 @@ def _sheet_dung_ngoai(wb: Workbook, results: pd.DataFrame, style: str = "long") 
     if "turnover" in df.columns:
         df = df.sort_values("turnover", ascending=False)
 
-    pnl_col_idx = 6  # cột "Tranh lo" (1-indexed)
+    pnl_col_idx = 6
 
     for i, (_, row) in enumerate(df.iterrows(), start=2):
         ticker = row.get("ticker", "")
@@ -599,9 +581,6 @@ def _sheet_dung_ngoai(wb: Workbook, results: pd.DataFrame, style: str = "long") 
         except Exception:
             hold = ""
 
-        # pnl = % thay đổi từ giá bán đến giá hiện tại
-        # Âm = giá giảm sau bán → đúng quyết định (tránh được lỗ)
-        # Dương = giá tăng sau bán → sai quyết định
         pnl = round((close - sell_p) / sell_p * 100, 2) if sell_p > 0 and close > 0 else None
         pnl_str = f"{pnl:+.2f}%" if pnl is not None else ""
 
@@ -609,11 +588,9 @@ def _sheet_dung_ngoai(wb: Workbook, results: pd.DataFrame, style: str = "long") 
         for j, v in enumerate(vals, start=1):
             ws.cell(row=i, column=j, value=v)
 
-        # Toàn hàng: đỏ nhạt
         for j in range(1, len(headers) + 1):
             ws.cell(row=i, column=j).fill = _LIGHT_RED
 
-        # Cột "Tránh lỗ": xanh nhạt nếu giá giảm (tránh được lỗ), đỏ nhạt nếu giá tăng
         if pnl is not None:
             ws.cell(row=i, column=pnl_col_idx).fill = _LIGHT_GREEN if pnl <= 0 else _LIGHT_RED
 
@@ -654,7 +631,6 @@ def _sheet_stats(wb: Workbook, df: pd.DataFrame, scan_date: str, style: str | No
         write_kv(5, "Đồng thuận cả 2", both_count)
     write_kv(6, "BiasNorm trung bình", avg_bias)
 
-    # BiasNorm distribution
     ws.cell(row=7, column=1, value="Phân phối BiasNorm").font = BOLD
     buckets = [(0, 25, "Rất yếu"), (25, 45, "Yếu"), (45, 55, "Trung tính"), (55, 75, "Mạnh"), (75, 100, "Rất mạnh")]
     for r, (lo, hi, label) in enumerate(buckets, start=8):
@@ -662,19 +638,16 @@ def _sheet_stats(wb: Workbook, df: pd.DataFrame, scan_date: str, style: str | No
         ws.cell(row=r, column=1, value=f"{label} ({lo}-{hi})")
         ws.cell(row=r, column=2, value=count)
 
-    # Top 5 mạnh nhất (bias_norm)
     ws.cell(row=14, column=1, value="Top 5 mạnh nhất (BiasNorm)").font = BOLD
     top5 = df.nlargest(5, "bias_norm")[["ticker", "bias_norm"]]
     for r, (_, tr) in enumerate(top5.iterrows(), start=15):
         ws.cell(row=r, column=1, value=tr["ticker"])
         ws.cell(row=r, column=2, value=round(tr["bias_norm"], 1))
 
-    # Top 10 mạnh + thanh khoản cao
     ws.cell(row=21, column=1, value="Top 10 Mạnh + Thanh khoản cao").font = BOLD
     top10_headers = ["Mã", "BiasNorm", "Thanh khoản (tỷ)", "Xu hướng DH", "Xu hướng NH"]
     for j, h in enumerate(top10_headers, start=1):
         cell = ws.cell(row=22, column=j, value=h)
-        cell.font = BOLD
         cell.fill = HEADER_FILL
         cell.font = HEADER_FONT
 
@@ -683,7 +656,6 @@ def _sheet_stats(wb: Workbook, df: pd.DataFrame, scan_date: str, style: str | No
         tmp["turnover"] = pd.to_numeric(tmp["turnover"], errors="coerce").fillna(0)
         tmp["bias_norm"] = pd.to_numeric(tmp["bias_norm"], errors="coerce").fillna(0)
 
-        # Normalize cả 2 về [0,1] rồi lấy trung bình
         max_tk = tmp["turnover"].max() or 1
         max_bn = tmp["bias_norm"].max() or 1
         tmp["_score"] = (tmp["bias_norm"] / max_bn) * 0.6 + (tmp["turnover"] / max_tk) * 0.4
@@ -703,19 +675,18 @@ def _sheet_stats(wb: Workbook, df: pd.DataFrame, scan_date: str, style: str | No
     _auto_width(ws)
 
 
-
-OPEN_FILL   = PatternFill("solid", fgColor="DDEBF7")   # xanh nhạt — đang giữ
-CLOSED_FILL = PatternFill("solid", fgColor="F2F2F2")   # xám nhạt — đã đóng
+OPEN_FILL   = PatternFill("solid", fgColor="DDEBF7")
+CLOSED_FILL = PatternFill("solid", fgColor="F2F2F2")
 
 
 def _sheet_history(wb: Workbook, results: pd.DataFrame, style: str = "long") -> None:
-    """Tab lịch sử lệnh: 1 giao dịch gần nhất/mã (MUA→BÁN), sort theo TK cao→thấp."""
-    ws = wb.create_sheet("Lich su lenh")
+    """Tab lịch sử lệnh: 1 giao dịch gần nhất/mã (MUA→BÁN), sort theo Thanh khoản cao→thấp."""
+    ws = wb.create_sheet("Lịch sử lệnh")
 
     headers = [
-        "Ma", "Ngay Mua", "Gia Mua",
-        "Ngay Ban", "Gia Ban",
-        "Loi/Lo %", "Trang Thai", "Thanh khoan (ty)",
+        "Mã", "Ngày Mua", "Giá Mua",
+        "Ngày Bán", "Giá Bán",
+        "Lời/Lỗ %", "Trạng thái", "Thanh khoản (tỷ)",
     ]
     _write_header(ws, headers)
 
@@ -723,7 +694,6 @@ def _sheet_history(wb: Workbook, results: pd.DataFrame, style: str = "long") -> 
     tk_map  = results.set_index("ticker")["turnover"].to_dict() if "turnover" in results.columns else {}
     close_map = results.set_index("ticker")["close"].to_dict() if "close" in results.columns else {}
 
-    # Tính SuperTrend từ OHLCV, lấy vùng xanh gần nhất mỗi mã
     trade_df = pd.DataFrame()
     try:
         from scanner.database import load_trade_history_from_ohlcv
@@ -732,10 +702,9 @@ def _sheet_history(wb: Workbook, results: pd.DataFrame, style: str = "long") -> 
         logger.warning(f"_sheet_history: load_trade_history_from_ohlcv failed: {e}")
 
     if trade_df.empty:
-        ws.cell(row=2, column=1, value="Khong tinh duoc lich su lenh — kiem tra log de biet ly do")
+        ws.cell(row=2, column=1, value="Không tính được lịch sử lệnh — kiểm tra log để biết lý do")
         return
 
-    # Gắn turnover → sort TK cao → thấp
     trade_df["_tk"] = trade_df["ticker"].map(tk_map).fillna(0)
     trade_df = trade_df.sort_values("_tk", ascending=False).reset_index(drop=True)
 
@@ -748,7 +717,6 @@ def _sheet_history(wb: Workbook, results: pd.DataFrame, style: str = "long") -> 
         status     = row.get("status", "")
         tk_ty      = round(float(row.get("_tk") or 0) / 1e9, 1)
 
-        # P&L: đã đóng → dùng sell_price; đang giữ → dùng close hiện tại
         pnl = row.get("pnl_pct")
         if status == "Dang giu":
             cur_close = close_map.get(ticker)
@@ -761,7 +729,7 @@ def _sheet_history(wb: Workbook, results: pd.DataFrame, style: str = "long") -> 
             pnl = None
 
         pnl_str    = f"{pnl:+.2f}%" if pnl is not None else ""
-        status_str = "Dang giu" if status == "Dang giu" else "Da dong"
+        status_str = "Đang giữ" if status == "Dang giu" else "Đã đóng"
 
         vals = [
             ticker,
@@ -776,7 +744,6 @@ def _sheet_history(wb: Workbook, results: pd.DataFrame, style: str = "long") -> 
         for j, v in enumerate(vals, start=1):
             ws.cell(row=i, column=j, value=v)
 
-        # Màu hàng
         if status == "Dang giu":
             row_fill = GREEN_FILL if (pnl is None or pnl >= 0) else RED_FILL
             for j in range(1, len(headers) + 1):
@@ -784,7 +751,6 @@ def _sheet_history(wb: Workbook, results: pd.DataFrame, style: str = "long") -> 
         else:
             for j in range(1, len(headers) + 1):
                 ws.cell(row=i, column=j).fill = CLOSED_FILL
-            # Cột P&L tô riêng theo lời/lỗ
             ws.cell(row=i, column=6).fill = GREEN_FILL if (pnl is not None and pnl >= 0) else RED_FILL
 
     _auto_width(ws)
@@ -792,11 +758,11 @@ def _sheet_history(wb: Workbook, results: pd.DataFrame, style: str = "long") -> 
     ws.auto_filter.ref = ws.dimensions
 
 
-_RUT_CHAN_FILL = PatternFill("solid", fgColor="FCE4D6")  # cam nhạt
+_RUT_CHAN_FILL = PatternFill("solid", fgColor="FCE4D6")
 
 
 def _sheet_rut_chan(wb: Workbook, style: str, scan_date: str) -> None:
-    """Tab tín hiệu rút chân: giá, TK, ngưỡng ST bị phá, % rút chân."""
+    """Tab tín hiệu rút chân: giá, thanh khoản, ngưỡng ST bị phá, % rút chân."""
     try:
         from scanner.database import db_cursor
         with db_cursor(commit=False) as cur:
@@ -827,10 +793,10 @@ def _sheet_rut_chan(wb: Workbook, style: str, scan_date: str) -> None:
     if not rows:
         return
 
-    ws = wb.create_sheet("Tin hieu rut chan")
+    ws = wb.create_sheet("Tín hiệu rút chân")
     headers = [
-        "Ma", "Tin hieu", "Gia tin hieu",
-        "Nguong ST bi pha", "Gia dong cua", "Rut chan %", "Thanh khoan TB (ty)",
+        "Mã", "Tín hiệu", "Giá tín hiệu",
+        "Ngưỡng ST bị phá", "Giá đóng cửa", "Rút chân %", "Thanh khoản TB (tỷ)",
     ]
     _write_header(ws, headers)
 
@@ -854,7 +820,6 @@ def _sheet_rut_chan(wb: Workbook, style: str, scan_date: str) -> None:
         for j, v in enumerate(vals, start=1):
             ws.cell(row=i, column=j, value=v).fill = _RUT_CHAN_FILL
 
-        # Cột "Rút chân %" tô đỏ đậm hơn nếu mất nhiều
         if pct is not None and abs(pct) >= 2:
             ws.cell(row=i, column=6).fill = RED_FILL
 
@@ -878,7 +843,6 @@ def _sheet_positions(wb: Workbook, df: pd.DataFrame) -> None:
     """Sheet vị thế đang mở — tất cả mã đang nắm giữ (có buy_date, chưa bán)."""
     ws = wb.create_sheet("Vị thế đang mở")
 
-    # Lọc mã đang giữ: có buy_date và trend vẫn còn bullish (hoặc đang chờ)
     pos = df[df["buy_date"].notna()].copy() if "buy_date" in df.columns else pd.DataFrame()
 
     if pos.empty:
@@ -894,7 +858,6 @@ def _sheet_positions(wb: Workbook, df: pd.DataFrame) -> None:
     ]
     _write_header(ws, headers)
 
-    # Tóm tắt tổng vị thế ở cuối
     total_pnl_pct = []
 
     for i, (_, row) in enumerate(pos.iterrows(), start=2):
@@ -905,13 +868,8 @@ def _sheet_positions(wb: Workbook, df: pd.DataFrame) -> None:
         pnl_pct   = row.get("pnl_pct")
         trend_str = "↑ TĂNG" if row.get("trend", 0) == 1 else "↓ GIẢM"
 
-        # Tránh lỗ tối đa % = khoảng cách từ giá mua xuống stop loss
         max_loss_pct = round((buy_price - support) / buy_price * 100, 2) if buy_price and support else None
-
-        # Tiềm năng lãi % = khoảng cách từ giá hiện tại lên kháng cự
         upside_pct = round((resist - close) / close * 100, 2) if close and resist else None
-
-        # Lời/lỗ VND (giả sử 1 đơn vị)
         pnl_vnd = round((close - buy_price) / buy_price * 100, 2) if buy_price else None
 
         vals = [
@@ -933,7 +891,6 @@ def _sheet_positions(wb: Workbook, df: pd.DataFrame) -> None:
         for j, v in enumerate(vals, start=1):
             ws.cell(row=i, column=j, value=v)
 
-        # Màu theo lời/lỗ
         if pnl_pct is not None:
             fill = GREEN_FILL if pnl_pct >= 0 else RED_FILL
             total_pnl_pct.append(pnl_pct)
@@ -943,7 +900,6 @@ def _sheet_positions(wb: Workbook, df: pd.DataFrame) -> None:
         for j in range(1, len(headers) + 1):
             ws.cell(row=i, column=j).fill = fill
 
-    # Dòng tóm tắt cuối
     if total_pnl_pct:
         summary_row = len(pos) + 3
         ws.cell(row=summary_row, column=1, value=f"Tổng {len(pos)} vị thế").font = BOLD
@@ -958,7 +914,7 @@ def _sheet_positions(wb: Workbook, df: pd.DataFrame) -> None:
 def _sheet_style(wb: Workbook, df: pd.DataFrame, style: str, title: str) -> None:
     """Sheet riêng cho 1 style (long hoặc short) trong dual mode."""
     ws = wb.create_sheet(title)
-    p = f"{style}_"  # prefix: long_ hoặc short_
+    p = f"{style}_"
 
     criteria = ["ema", "vwap", "rsi", "macd", "adx", "obv", "stoch", "candle", "vol"]
     crit_labels = ["EMA", "VWAP", "RSI", "MACD", "ADX", "OBV", "Stoch", "Nến", "Vol"]
@@ -971,7 +927,6 @@ def _sheet_style(wb: Workbook, df: pd.DataFrame, style: str, title: str) -> None
     ] + crit_labels
     _write_header(ws, headers)
 
-    # Sort: tín hiệu trước, rồi bias_norm
     buy_col  = f"{p}buy_signal"
     sell_col = f"{p}sell_signal"
     df_sorted = df.copy()
@@ -992,7 +947,7 @@ def _sheet_style(wb: Workbook, df: pd.DataFrame, style: str, title: str) -> None
         pnl        = row.get(f"{p}signal_pnl_pct")
 
         tk = row.get("turnover", 0)
-        tk_ty = round(tk / 1e9, 1) if tk else ""  # đổi sang tỷ VND
+        tk_ty = round(tk / 1e9, 1) if tk else ""
 
         base_row = [
             row.get("ticker", ""),
@@ -1016,7 +971,6 @@ def _sheet_style(wb: Workbook, df: pd.DataFrame, style: str, title: str) -> None
         for j, val in enumerate(base_row, start=1):
             ws.cell(row=i, column=j, value=val)
 
-        # Màu theo lệnh hiện tại: xanh = đang nắm giữ (MUA), đỏ = đứng ngoài (BÁN/chưa vào)
         if last_sig == "MUA":
             fill = GREEN_FILL
         elif last_sig == "BÁN":
@@ -1028,12 +982,11 @@ def _sheet_style(wb: Workbook, df: pd.DataFrame, style: str, title: str) -> None
             for j in range(1, len(headers) + 1):
                 ws.cell(row=i, column=j).fill = fill
 
-        # Tô đậm hơn nếu hôm nay có tín hiệu mới
         if row.get(buy_col) or row.get(sell_col):
-            NEW_BUY  = PatternFill("solid", fgColor="00B050")  # xanh đậm
-            NEW_SELL = PatternFill("solid", fgColor="FF0000")  # đỏ đậm
+            NEW_BUY  = PatternFill("solid", fgColor="00B050")
+            NEW_SELL = PatternFill("solid", fgColor="FF0000")
             accent = NEW_BUY if row.get(buy_col) else NEW_SELL
-            for j in range(1, 4):  # chỉ tô 3 cột đầu để phân biệt
+            for j in range(1, 4):
                 ws.cell(row=i, column=j).fill = accent
 
     _auto_width(ws)
