@@ -559,10 +559,7 @@ def _ensure_signals_schema() -> None:
                  "closed", "sell_date", "sell_price", "pnl_pct"]
     with db_cursor() as cur:
         # Thêm cột style nếu chưa có (DB cũ)
-        cur.execute("ALTER TABLE signals ADD COLUMN IF NOT EXISTS style        VARCHAR(10)   DEFAULT 'long'")
-        cur.execute("ALTER TABLE signals ADD COLUMN IF NOT EXISTS signal_price NUMERIC(12,4)")
-        cur.execute("ALTER TABLE signals ADD COLUMN IF NOT EXISTS signal_st    NUMERIC(12,4)")
-        cur.execute("ALTER TABLE signals ADD COLUMN IF NOT EXISTS is_fakeout   BOOLEAN       DEFAULT FALSE")
+        cur.execute("ALTER TABLE signals ADD COLUMN IF NOT EXISTS style VARCHAR(10) DEFAULT 'long'")
         for col in drop_cols:
             try:
                 cur.execute(f"ALTER TABLE signals DROP COLUMN IF EXISTS {col}")
