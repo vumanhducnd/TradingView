@@ -43,7 +43,7 @@ BIAS_STRONG_THR = 70
 BIAS_WEAK_THR = 30
 
 # Data fetch
-LOOKBACK_DAYS = 750  # ~500 trading days — đủ cho ATR/ST hội tụ gần TradingView
+LOOKBACK_DAYS = 400
 MAX_WORKERS = 1      # 1 worker để tránh rate limit (tăng lên 3 nếu có API key)
 FETCH_DELAY = 3.5    # giây chờ giữa mỗi request (guest: 20/phút → cần >3s, community: 60/phút → 1s)
 

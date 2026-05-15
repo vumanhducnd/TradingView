@@ -225,3 +225,11 @@ if __name__ == "__main__":
     )
     print(f"\nWatchlist: {len(result)} mã")
     print(result[:20], "...")
+
+    # Dọn OHLCV cũ sau khi update watchlist
+    from scanner.config import LOOKBACK_DAYS
+    from scanner.database import db_cursor
+    with db_cursor() as cur:
+        cur.execute("DELETE FROM ohlcv WHERE date < CURRENT_DATE - INTERVAL '%s days'", (LOOKBACK_DAYS,))
+        deleted = cur.rowcount
+    print(f"Cleanup OHLCV: xóa {deleted} rows cũ hơn {LOOKBACK_DAYS} ngày")
