@@ -82,7 +82,8 @@ def run_scan_dual(
     style_cols = ["trend", "supertrend", "support", "resistance",
                   "buy_signal", "sell_signal",
                   "last_signal_type", "last_signal_date",
-                  "last_signal_price", "bars_since_signal", "signal_pnl_pct"]
+                  "last_signal_price", "bars_since_signal", "signal_pnl_pct",
+                  "prev_buy_date", "prev_buy_price"]
     # Cột criteria (bull_ema, ...)
     crit_cols = [c for c in long_df.columns if c.startswith("bull_") or c.startswith("bear_")]
 

@@ -271,6 +271,9 @@ def analyze_ticker(
     last_signal_price = None
     bars_since_signal = 0
 
+    prev_buy_date  = None   # lần MUA trước tín hiệu BÁN gần nhất
+    prev_buy_price = None
+
     for i in range(len(df) - 1, -1, -1):
         if df["buy_signal"].iloc[i]:
             last_signal_type  = "MUA"
@@ -285,6 +288,12 @@ def analyze_ticker(
             # Giá bán = high của nến breakout
             last_signal_price = float(df["high"].iloc[i])
             bars_since_signal = len(df) - 1 - i
+            # Tìm lần MUA gần nhất trước tín hiệu BÁN này
+            for j in range(i - 1, -1, -1):
+                if df["buy_signal"].iloc[j]:
+                    prev_buy_date  = df.index[j]
+                    prev_buy_price = float(df["low"].iloc[j])
+                    break
             break
 
     # PnL từ giá tín hiệu đến hiện tại
@@ -357,6 +366,9 @@ def analyze_ticker(
         "last_signal_price": last_signal_price,
         "bars_since_signal": bars_since_signal,
         "signal_pnl_pct":    signal_pnl_pct,
+        # Lần MUA trước tín hiệu BÁN (dùng cho P&L báo cáo cuối phiên)
+        "prev_buy_date":     prev_buy_date,
+        "prev_buy_price":    prev_buy_price,
         # Siêu cổ phiếu 7 tiêu chí
         "ss1": ss1, "ss2": ss2, "ss3": ss3, "ss4": ss4,
         "ss5": ss5, "ss6": ss6, "ss7": ss7,

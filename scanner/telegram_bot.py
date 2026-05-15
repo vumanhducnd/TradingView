@@ -197,21 +197,23 @@ def send_daily_report(
                     f"    Thanh khoản   : {_fmt_tk(row)}"
                 )
             else:
-                buy_date  = str(_val(row, f"{_pfx}last_signal_date",  "last_signal_date")  or "")[:10]
-                buy_price = _val(row, f"{_pfx}last_signal_price", "last_signal_price")
+                # Lấy lần MUA trước đó (trước tín hiệu BÁN hôm nay)
+                buy_date  = str(_val(row, f"{_pfx}prev_buy_date",  "prev_buy_date")  or "")[:10]
+                buy_price = _val(row, f"{_pfx}prev_buy_price", "prev_buy_price")
+                sell_price = close
                 try:
-                    c_f = float(close) if close else None
-                    b_f = float(buy_price) if buy_price else None
-                    pnl = round((c_f - b_f) / b_f * 100, 2) if c_f and b_f and b_f > 0 else None
+                    s_f = float(sell_price) if sell_price else None
+                    b_f = float(buy_price)  if buy_price  else None
+                    pnl = round((s_f - b_f) / b_f * 100, 2) if s_f and b_f and b_f > 0 else None
                 except Exception:
                     pnl = None
                 pnl_str  = (f"{'🟢' if pnl >= 0 else '🔴'} {pnl:+.2f}%") if pnl is not None else "–"
-                date_str = buy_date if buy_date and buy_date != "N" else "–"
+                date_str = buy_date if buy_date and buy_date not in ("", "N", "None") else "–"
                 lines.append(
                     f"  <b>{row['ticker']}</b>\n"
                     f"    Ngày mua      : {date_str}\n"
                     f"    Giá mua       : {_fmt(buy_price)}\n"
-                    f"    Giá bán       : {_fmt(close)}\n"
+                    f"    Giá bán       : {_fmt(sell_price)}\n"
                     f"    Lời/Lỗ        : {pnl_str}\n"
                     f"    Thanh khoản   : {_fmt_tk(row)}"
                 )
