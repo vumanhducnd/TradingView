@@ -266,22 +266,20 @@ def send_daily_report(
             logger.warning(f"AI cuoi phien failed: {e}")
 
         # Header + AI gộp 1 tin
+        disclaimer = "<tg-spoiler>📌 Tín hiệu kỹ thuật để tham khảo — bạn vẫn là người ra quyết định nhé!</tg-spoiler>"
         header_lines = [
             f"<b>📊 Báo cáo cuối phiên — {style_name} — {today}</b>",
             f"🟢 Bứt phá: <b>{len(buy_df)}</b> mã  |  🔴 Đảo chiều: <b>{len(sell_df)}</b> mã",
         ]
         if ai_end:
             header_lines.append(f"\n{ai_end}")
+        header_lines.append(f"\n{disclaimer}")
         send_message("\n".join(header_lines), style=style)
         time.sleep(0.8)
 
-        # Siêu cổ phiếu đã bỏ khỏi Telegram (vẫn còn trong Excel)
-
-        # Top 5 vùng xanh (nắm giữ) theo TK thay vị thế
         _send_top_vung_xanh(results, style=style)
         time.sleep(0.8)
 
-        # Tín hiệu
         st_col = f"{p}supertrend"
         for lines in [
             _signal_lines(buy_df,  "🚀", "Tín hiệu bứt phá xác nhận", st_col, direction="buy"),
@@ -295,12 +293,6 @@ def send_daily_report(
             top5 = results.nlargest(5, "bias_norm")[["ticker", "bias_norm"]]
             txt = "\n".join(f"  • {r['ticker']}: {r['bias_norm']:.0f}/100" for _, r in top5.iterrows())
             send_message(f"Hôm nay không có tín hiệu mới.\n\n<b>Top 5 mạnh nhất:</b>\n{txt}", style=style)
-
-        disclaimer = (
-            "<i>📌 Đây là tín hiệu kỹ thuật để tham khảo — bạn vẫn là người ra quyết định nhé!</i>"
-        )
-        time.sleep(0.3)
-        send_message(disclaimer, style=style)
 
     if is_dual:
         _send_for_style("long")
