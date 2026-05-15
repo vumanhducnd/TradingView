@@ -445,6 +445,21 @@ def _calc_realtime_st(hist_df: pd.DataFrame, today_bar: dict) -> Optional[dict]:
 
 # ─── Alert helpers ────────────────────────────────────────────────────────────
 
+def _save_signal_to_db(ticker: str, signal_type: str, style: str) -> None:
+    """Ghi flip vào signals DB để phiên chiều không re-fire khi load lại."""
+    try:
+        from scanner.database import db_cursor
+        with db_cursor(commit=True) as cur:
+            cur.execute(
+                """INSERT INTO signals (ticker, signal_date, signal_type, style)
+                   VALUES (%s, CURRENT_DATE, %s, %s)
+                   ON CONFLICT ON CONSTRAINT signals_ticker_date_type_style_key DO NOTHING""",
+                (ticker, signal_type, style),
+            )
+    except Exception as e:
+        logger.debug(f"signals insert failed {ticker}: {e}")
+
+
 def _collect_alerts(
     ticker: str,
     result: dict,
@@ -636,6 +651,7 @@ def run_session(interval: int = 180, session: str = "full") -> None:
                             "style": style_key,
                         })
                         alerted_today.add(alert_key)
+                        _save_signal_to_db(ticker, "MUA", style_key)
                     elif new_state["sell_signal"]:
                         flips.append({
                             "ticker": ticker, "direction": "sell",
@@ -644,6 +660,7 @@ def run_session(interval: int = 180, session: str = "full") -> None:
                             "style": style_key,
                         })
                         alerted_today.add(alert_key)
+                        _save_signal_to_db(ticker, "BÁN", style_key)
 
                 st_states[ticker] = {**new_state, "close": bar["close"]}
 
