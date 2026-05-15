@@ -10,7 +10,7 @@ import sys
 import time
 from datetime import date, timedelta
 
-from scanner.config import FETCH_DELAY
+from scanner.config import FETCH_DELAY, LOOKBACK_DAYS
 from scanner.database import (
     get_all_last_dates,
     get_watchlist,
@@ -176,7 +176,7 @@ def run_scan_only() -> None:
     logger.info("Buoc 1/4: Load OHLCV bulk tu DB (top 300)...")
     from scanner.database import get_top300_thanh_khoan, load_all_ohlcv_bulk
     top300 = get_top300_thanh_khoan(n=300)
-    ticker_data = load_all_ohlcv_bulk(tickers=top300, days=300)
+    ticker_data = load_all_ohlcv_bulk(tickers=top300, days=LOOKBACK_DAYS)
     if not ticker_data:
         logger.error("Khong load duoc data tu DB")
         return

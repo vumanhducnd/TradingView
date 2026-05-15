@@ -21,7 +21,7 @@ from typing import Optional
 
 import pandas as pd
 import scanner.utils  # noqa: patch SSL trước
-from scanner.data_fetcher import _set_api_key, load_all_from_db
+from scanner.data_fetcher import _set_api_key, _snap_to_tick, load_all_from_db
 from scanner.database import bulk_upsert_today, get_top300_thanh_khoan, get_vn100_watchlist, load_all_ohlcv_bulk, load_ohlcv, upsert_ohlcv
 from scanner.indicators import calc_bias_norm, calc_supertrend, calc_supertrend_next, get_supertrend_state
 from scanner.telegram_bot import send_message
@@ -370,10 +370,10 @@ def _fetch_via_price_board(tickers: list[str]) -> dict[str, dict]:
                     no_hl += 1          # chưa có H/L thực (ATO hoặc 1 lệnh đầu)
                 # price_board trả về VND thực (41500), DB lưu VND/1000 (41.5)
                 result[ticker] = {
-                    "open":   (float(row["open"] or 0) or close) / 1000,
-                    "high":   high   / 1000,
-                    "low":    low    / 1000,
-                    "close":  close  / 1000,
+                    "open":   _snap_to_tick((float(row["open"] or 0) or close) / 1000),
+                    "high":   _snap_to_tick(high   / 1000),
+                    "low":    _snap_to_tick(low    / 1000),
+                    "close":  _snap_to_tick(close  / 1000),
                     "volume": float(row["volume"] or 0),
                 }
             except (TypeError, ValueError):
@@ -405,10 +405,10 @@ def _fetch_via_history(tickers: list[str]) -> dict[str, dict]:
                     close = float(row.get("close", row.get("c", 0)))
                     if close > 0:
                         result[ticker] = {
-                            "open":   float(row.get("open",   close)),
-                            "high":   float(row.get("high",   close)),
-                            "low":    float(row.get("low",    close)),
-                            "close":  close,
+                            "open":   _snap_to_tick(float(row.get("open",   close))),
+                            "high":   _snap_to_tick(float(row.get("high",   close))),
+                            "low":    _snap_to_tick(float(row.get("low",    close))),
+                            "close":  _snap_to_tick(close),
                             "volume": float(row.get("volume", 0)),
                         }
                         break
