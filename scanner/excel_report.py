@@ -269,7 +269,7 @@ def _sheet_super_stocks(wb: Workbook, df: pd.DataFrame, scan_date: str) -> None:
     """
     ws = wb.create_sheet("Sieu co phieu (5-7 tieu chi)")
 
-    headers = ["Ma", "Gia", "Score", "TK TB 20p (ty)"] + _SS_LABELS
+    headers = ["Ma", "Gia", "Score", "Thanh khoan TB 20p (ty)"] + _SS_LABELS
     _write_header(ws, headers)
 
     # Load avg_turnover_20d từ watchlist
@@ -443,7 +443,7 @@ def _sheet_signals(wb: Workbook, signals: dict, ai_analysis: dict | None = None,
     headers = [
         "Ma", "Tin hieu", "Khung",
         "Ngay mua", "Gia mua/ban (ST)",
-        "TK (ty VND)", "BiasNorm",
+        "Thanh khoan (ty VND)", "BiasNorm",
     ]
     _write_header(ws, headers)
 
@@ -516,12 +516,17 @@ def _sheet_signals(wb: Workbook, signals: dict, ai_analysis: dict | None = None,
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = ws.dimensions
 
+    note_row = row_idx + 1
+    note_cell = ws.cell(row=note_row, column=1,
+                        value="* Uu tien ma co Thanh khoan cao (>= 50 ty/phien) de de mua/ban khi can.")
+    note_cell.font = Font(italic=True, color="888888")
+
 
 
 def _sheet_nam_giu(wb: Workbook, results: pd.DataFrame, style: str = "long") -> None:
     """Vùng xanh: long_trend=1, ngày/giá mua từ SuperTrend flip gần nhất, sort TK↓."""
     ws = wb.create_sheet("Vung xanh (Nam giu)")
-    headers = ["Ma", "Ngay Mua", "Giu Lenh (ngay)", "Gia Mua", "Gia Hien Tai", "Loi/Lo %", "TK (ty)"]
+    headers = ["Ma", "Ngay Mua", "Giu Lenh (ngay)", "Gia Mua", "Gia Hien Tai", "Loi/Lo %", "Thanh khoan (ty)"]
     _write_header(ws, headers)
 
     p         = f"{style}_"
@@ -568,7 +573,7 @@ def _sheet_dung_ngoai(wb: Workbook, results: pd.DataFrame, style: str = "long") 
     """Vùng đỏ: long_trend=-1, ngày/giá bán từ SuperTrend flip gần nhất, sort TK↓."""
     ws = wb.create_sheet("Vung do (Dung ngoai)")
     # Cột 6 = "Tranh lo": âm % nếu giá giảm sau bán (đúng), dương % nếu giá tăng (sai)
-    headers = ["Ma", "Ngay Ban", "Dung Ngoai (ngay)", "Gia Ban", "Gia Hien Tai", "Tranh lo", "TK (ty)"]
+    headers = ["Ma", "Ngay Ban", "Dung Ngoai (ngay)", "Gia Ban", "Gia Hien Tai", "Tranh lo", "Thanh khoan (ty)"]
     _write_header(ws, headers)
 
     p         = f"{style}_"
@@ -666,7 +671,7 @@ def _sheet_stats(wb: Workbook, df: pd.DataFrame, scan_date: str, style: str | No
 
     # Top 10 mạnh + thanh khoản cao
     ws.cell(row=21, column=1, value="Top 10 Mạnh + Thanh khoản cao").font = BOLD
-    top10_headers = ["Mã", "BiasNorm", "TK (tỷ)", "Xu hướng DH", "Xu hướng NH"]
+    top10_headers = ["Mã", "BiasNorm", "Thanh khoản (tỷ)", "Xu hướng DH", "Xu hướng NH"]
     for j, h in enumerate(top10_headers, start=1):
         cell = ws.cell(row=22, column=j, value=h)
         cell.font = BOLD
@@ -710,7 +715,7 @@ def _sheet_history(wb: Workbook, results: pd.DataFrame, style: str = "long") -> 
     headers = [
         "Ma", "Ngay Mua", "Gia Mua",
         "Ngay Ban", "Gia Ban",
-        "Loi/Lo %", "Trang Thai", "TK (ty)",
+        "Loi/Lo %", "Trang Thai", "Thanh khoan (ty)",
     ]
     _write_header(ws, headers)
 
@@ -825,7 +830,7 @@ def _sheet_rut_chan(wb: Workbook, style: str, scan_date: str) -> None:
     ws = wb.create_sheet("Tin hieu rut chan")
     headers = [
         "Ma", "Tin hieu", "Gia tin hieu",
-        "Nguong ST bi pha", "Gia dong cua", "Rut chan %", "TK TB (ty)",
+        "Nguong ST bi pha", "Gia dong cua", "Rut chan %", "Thanh khoan TB (ty)",
     ]
     _write_header(ws, headers)
 
@@ -962,7 +967,7 @@ def _sheet_style(wb: Workbook, df: pd.DataFrame, style: str, title: str) -> None
         "Mã", "Xu hướng", "Tín hiệu",
         "Lệnh HĐ", "Ngày vào lệnh", "Giá vào lệnh", "Giá hiện tại",
         "Giữ (phiên)", "Lời/Lỗ %",
-        "TK (tỷ VND)", "BiasNorm", "Nhận xét", "bScore", "rScore",
+        "Thanh khoản (tỷ VND)", "BiasNorm", "Nhận xét", "bScore", "rScore",
     ] + crit_labels
     _write_header(ws, headers)
 

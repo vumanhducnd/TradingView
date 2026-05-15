@@ -292,8 +292,8 @@ def generate_end_of_session_ai(
     if fake_breakdown:
         reversal_ctx += f"\n- Rút chân giả (fake breakdown): {', '.join(fake_breakdown[:5])}"
 
-    gainers_str = ", ".join(top_gainers[:5]) if top_gainers else "–"
-    losers_str  = ", ".join(top_losers[:5])  if top_losers  else "–"
+    gainers_str = ", ".join(top_gainers[:5]) if top_gainers else "Không có"
+    losers_str  = ", ".join(top_losers[:5])  if top_losers  else "Không có"
 
     prompt = textwrap.dedent(f"""
         {p['setup']}

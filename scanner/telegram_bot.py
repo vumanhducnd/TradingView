@@ -200,7 +200,7 @@ def send_daily_report(
                 # Lấy lần MUA trước đó + giá BÁN = high của nến bán hôm nay
                 buy_date   = str(_val(row, f"{_pfx}prev_buy_date",    "prev_buy_date")    or "")[:10]
                 buy_price  = _val(row, f"{_pfx}prev_buy_price",  "prev_buy_price")
-                sell_price = _val(row, f"{_pfx}last_signal_price", "last_signal_price") or close
+                sell_price = _val(row, f"{_pfx}last_signal_price", "last_signal_price", default=close)
                 try:
                     s_f = float(sell_price) if sell_price else None
                     b_f = float(buy_price)  if buy_price  else None
