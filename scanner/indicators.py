@@ -278,21 +278,19 @@ def analyze_ticker(
         if df["buy_signal"].iloc[i]:
             last_signal_type  = "MUA"
             last_signal_date  = df.index[i]
-            # Giá mua = low của nến breakout
-            last_signal_price = float(df["low"].iloc[i])
+            last_signal_price = float(df["low"].iloc[i])   # mua = low
             bars_since_signal = len(df) - 1 - i
             break
         elif df["sell_signal"].iloc[i]:
             last_signal_type  = "BÁN"
             last_signal_date  = df.index[i]
-            # Giá bán = high của nến breakout
-            last_signal_price = float(df["high"].iloc[i])
+            last_signal_price = float(df["high"].iloc[i])  # bán = high
             bars_since_signal = len(df) - 1 - i
             # Tìm lần MUA gần nhất trước tín hiệu BÁN này
             for j in range(i - 1, -1, -1):
                 if df["buy_signal"].iloc[j]:
                     prev_buy_date  = df.index[j]
-                    prev_buy_price = float(df["low"].iloc[j])
+                    prev_buy_price = float(df["low"].iloc[j])  # mua = low
                     break
             break
 

@@ -197,10 +197,10 @@ def send_daily_report(
                     f"    Thanh khoản   : {_fmt_tk(row)}"
                 )
             else:
-                # Lấy lần MUA trước đó (trước tín hiệu BÁN hôm nay)
-                buy_date  = str(_val(row, f"{_pfx}prev_buy_date",  "prev_buy_date")  or "")[:10]
-                buy_price = _val(row, f"{_pfx}prev_buy_price", "prev_buy_price")
-                sell_price = close
+                # Lấy lần MUA trước đó + giá BÁN = high của nến bán hôm nay
+                buy_date   = str(_val(row, f"{_pfx}prev_buy_date",    "prev_buy_date")    or "")[:10]
+                buy_price  = _val(row, f"{_pfx}prev_buy_price",  "prev_buy_price")
+                sell_price = _val(row, f"{_pfx}last_signal_price", "last_signal_price") or close
                 try:
                     s_f = float(sell_price) if sell_price else None
                     b_f = float(buy_price)  if buy_price  else None
@@ -295,6 +295,12 @@ def send_daily_report(
             top5 = results.nlargest(5, "bias_norm")[["ticker", "bias_norm"]]
             txt = "\n".join(f"  • {r['ticker']}: {r['bias_norm']:.0f}/100" for _, r in top5.iterrows())
             send_message(f"Hôm nay không có tín hiệu mới.\n\n<b>Top 5 mạnh nhất:</b>\n{txt}", style=style)
+
+        disclaimer = (
+            "<i>📌 Đây là tín hiệu kỹ thuật để tham khảo — bạn vẫn là người ra quyết định nhé!</i>"
+        )
+        time.sleep(0.3)
+        send_message(disclaimer, style=style)
 
     if is_dual:
         _send_for_style("long")

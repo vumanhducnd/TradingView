@@ -73,12 +73,12 @@ def _call_gemini(prompt: str, max_tokens: int = 2048) -> str:
         return ""
 
 
-def _call(client, prompt: str, max_tokens: int = 2048, _retry: int = 0) -> str:
+def _call(client, prompt: str, max_tokens: int = 2048, _retry: int = 0, _temperature: float = 0.35) -> str:
     try:
         resp = client.chat.completions.create(
             model=_MODEL,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.35,
+            temperature=_temperature,
             max_tokens=max_tokens,
         )
         return resp.choices[0].message.content.strip()
@@ -92,7 +92,7 @@ def _call(client, prompt: str, max_tokens: int = 2048, _retry: int = 0) -> str:
                 return _call_gemini(prompt, max_tokens)
             logger.warning(f"Groq 429 - cho {wait}s ({_retry+1}/2)...")
             time.sleep(wait)
-            return _call(client, prompt, max_tokens, _retry + 1)
+            return _call(client, prompt, max_tokens, _retry + 1, _temperature)
         logger.warning(f"Groq loi: {e}")
         return ""
 
@@ -236,62 +236,92 @@ def generate_end_of_session_ai(
     today = date.today().strftime("%d/%m/%Y")
     weekday = date.today().weekday()
 
+    # Persona: câu mở + ví dụ giọng văn + câu kết theo nhân cách
     personas = {
-        0: "Bạn là dân văn phòng vừa tan ca, mở app chứng khoán xem hôm nay lãi lỗ thế nào trước khi tắt máy.",
-        1: "Bạn là bà nội trợ vừa đi chợ về, nhẩm tính hôm nay mua bán cổ phiếu có lời không như tính tiền chợ.",
-        2: "Bạn là tiểu thương vừa đóng cửa hàng, tổng kết cuối ngày xem hàng bán có lời không, thị trường hôm nay thế nào.",
-        3: "Bạn là Gen Z vừa xong ca làm, tổng kết ngày giao dịch kiểu 'ae ơi hôm nay thị trường có toang không'.",
-        4: "Bạn là nông dân nhìn lại vụ mùa hôm nay, lúa có được giá không, thu hoạch có khá không.",
+        0: {
+            "setup": "Bạn là dân văn phòng vừa tan ca thứ Hai, đang nhìn app chứng khoán trên xe về nhà.",
+            "style": "Giọng mệt mỏi nhưng tỉnh, hay so sánh với deadline và sếp. Bắt đầu bằng một câu cụ thể về thị trường hôm nay, không nói 'hôm nay là một ngày...'.",
+            "example_good": "Cuối ngày mà BSR còn kéo được 5%, sếp market đang chơi đẹp hơn sếp công ty. HPG thì đúng là hôm nay cắt không được.",
+            "example_bad": "Hôm nay là một ngày giao dịch khá phức tạp. Ngày mai tôi sẽ tiếp tục theo dõi.",
+            "ending": "Câu cuối: nói thẳng nên giữ hay cắt cái gì, giọng đồng nghiệp nói nhau.",
+        },
+        1: {
+            "setup": "Bạn là bà nội trợ vừa đi chợ về, đang cầm điện thoại xem chứng khoán lên xuống.",
+            "style": "Hay so sánh với chuyện chợ búa: giá rau, mặc cả, hàng ế. Bắt đầu ngay vào số liệu cụ thể.",
+            "example_good": "BSR tăng 5% — ngon như hôm nay mua được thịt giá cũ. HPG mà để lâu thêm chắc ế như cá chiều.",
+            "example_bad": "Hôm nay thị trường có nhiều biến động. Nhà đầu tư cần theo dõi sát.",
+            "ending": "Câu cuối: lời khuyên kiểu bà buôn bán lâu năm, thực tế.",
+        },
+        2: {
+            "setup": "Bạn là tiểu thương vừa đóng cửa hàng, đang tổng kết sổ sách cuối ngày.",
+            "style": "So sánh với buôn bán: lời lỗ, hàng tồn, vốn xoay vòng. Nói thẳng, không vòng vo.",
+            "example_good": "BSR bứt tốt, như hàng hot hôm nay bán sạch. HPG giảm, mấy mã kia cũng vậy — tồn hàng rồi.",
+            "example_bad": "Ngày hôm nay giao dịch diễn ra sôi nổi. Cần tiếp tục theo dõi.",
+            "ending": "Câu cuối: nên hold hay cắt, nói kiểu tính toán vốn xoay vòng.",
+        },
+        3: {
+            "setup": "Bạn là Gen Z vừa xong ca, đang nhắn nhóm ae về thị trường hôm nay.",
+            "style": "Dùng ngôn ngữ Gen Z Việt: toang, xanh đỏ loạn, all-in, FOMO. Thẳng, hài, không cần lịch sự.",
+            "example_good": "BSR +5% ae ơi, không hold thì tiếc. HPG thì hơi toang, cắt hay để mai xem tiếp.",
+            "example_bad": "Hôm nay thị trường diễn ra sôi động. Các nhà đầu tư nên cân nhắc chiến lược.",
+            "ending": "Câu cuối: nhắn ae nên làm gì mai, giọng group chat.",
+        },
+        4: {
+            "setup": "Bạn là người nông dân chân chất, nhìn chứng khoán như nhìn mùa màng.",
+            "style": "So sánh với lúa, con bò, thời tiết. Mộc mạc, thật thà. Bắt đầu ngay vào mã cụ thể.",
+            "example_good": "BSR hôm nay được mùa, tăng tới 5%. HPG thì như lúa gặp hạn, rũ xuống chưa biết khi nào ngóc.",
+            "example_bad": "Hôm nay là một ngày giao dịch đầy biến động. Ngày mai tôi sẽ tiếp tục theo dõi.",
+            "ending": "Câu cuối: nên giữ hay bán, nói kiểu ông nông dân tính toán thu hoạch.",
+        },
     }
-    persona = personas.get(weekday, personas[0])
+    p = personas.get(weekday, personas[0])
 
-    # Top biến động từ results
-    import pandas as _pd
     top_buy_str  = ", ".join(buy_tickers[:5])  if buy_tickers  else "Không có"
     top_sell_str = ", ".join(sell_tickers[:5]) if sell_tickers else "Không có"
 
     n_bull = int((results["bias_norm"] >= 55).sum()) if "bias_norm" in results.columns else 0
     n_bear = int((results["bias_norm"] <= 45).sum()) if "bias_norm" in results.columns else 0
 
-    # Top tăng/giảm theo bias_norm
-    top_strong = results.nlargest(3, "bias_norm")["ticker"].tolist() if "bias_norm" in results.columns else []
-    top_weak   = results.nsmallest(3, "bias_norm")["ticker"].tolist() if "bias_norm" in results.columns else []
-
-    # Intraday reversal context
     style_key = "long" if "Dài" in style_label else "short"
     rev = (intraday_reversals or {}).get(style_key, {})
     fake_breakout  = rev.get("fake_breakout",  [])
     fake_breakdown = rev.get("fake_breakdown", [])
     reversal_ctx = ""
     if fake_breakout:
-        reversal_ctx += f"\n        - Bứt phá không giữ được: {', '.join(fake_breakout[:5])} (mua trong phiên nhưng cuối ngày thủng hỗ trợ)"
+        reversal_ctx += f"\n- Bứt phá không giữ được (fake breakout): {', '.join(fake_breakout[:5])}"
     if fake_breakdown:
-        reversal_ctx += f"\n        - Rút chân giả: {', '.join(fake_breakdown[:5])} (bán trong phiên nhưng cuối ngày giá hồi)"
+        reversal_ctx += f"\n- Rút chân giả (fake breakdown): {', '.join(fake_breakdown[:5])}"
+
+    gainers_str = ", ".join(top_gainers[:5]) if top_gainers else "–"
+    losers_str  = ", ".join(top_losers[:5])  if top_losers  else "–"
 
     prompt = textwrap.dedent(f"""
-        {persona}
-        Hôm nay {today} — Tổng kết phiên giao dịch | Khung: {style_label}
+        {p['setup']}
+        Phong cách: {p['style']}
 
-        KẾT QUẢ NGÀY:
-        - Mã tăng mạnh nhất: {", ".join(top_gainers[:5]) if top_gainers else "–"}
-        - Mã giảm mạnh nhất: {", ".join(top_losers[:5])  if top_losers  else "–"}
-        - Bứt phá (tín hiệu mua mới): {top_buy_str}
-        - Đảo chiều (tín hiệu bán mới): {top_sell_str}
-        - Xu hướng mạnh: {", ".join(top_strong)}
+        VÍ DỤ ĐÚNG: "{p['example_good']}"
+        VÍ DỤ SAI (không được viết kiểu này): "{p['example_bad']}"
+
+        SỐ LIỆU PHIÊN {today} ({style_label}):
+        - Tăng mạnh: {gainers_str}
+        - Giảm mạnh: {losers_str}
+        - Bứt phá mới (tín hiệu mua): {top_buy_str}
+        - Đảo chiều giảm (tín hiệu bán): {top_sell_str}
         - Xu hướng tăng: {n_bull} mã | Xu hướng giảm: {n_bear} mã{reversal_ctx}
 
-        Yêu cầu:
-        - Tiếng Việt có dấu đầy đủ, không emoji, không bullet, không markdown
-        - Đúng nhân cách được giao, tự nhiên như đang tổng kết cuối ngày
-        - Đề cập cụ thể các mã có biến động nổi bật hôm nay
-        - Nếu có mã "bứt phá không giữ được": dùng đúng cụm từ "bứt phá thất bại" hoặc "bứt lên rồi rớt lại", KHÔNG dùng "đảo chiều"
-        - Nếu có mã "rút chân giả": dùng đúng cụm từ "rút chân giả" hoặc "giả vờ giảm rồi hồi lại", KHÔNG dùng "đảo chiều"
-        - Tối đa 4-5 câu
-        - Câu cuối: nhìn về ngày mai — nên làm gì
+        RÀNG BUỘC BẮT BUỘC:
+        - Tiếng Việt có dấu đầy đủ, không emoji, không bullet
+        - TUYỆT ĐỐI không mở đầu bằng: "Hôm nay là một ngày", "Ngày hôm nay", "Thị trường hôm nay"
+        - TUYỆT ĐỐI không kết bằng: "tôi sẽ tiếp tục theo dõi", "cần phân tích kỹ lưỡng", "nhà đầu tư cần lưu ý"
+        - Nếu có fake breakout: dùng "bứt phá thất bại" hoặc "bứt lên rồi rớt"
+        - Nếu có fake breakdown: dùng "rút chân giả" hoặc "giả vờ giảm rồi hồi"
+        - Đề cập ít nhất 2 mã cụ thể kèm số %
+        - Tối đa 4 câu văn xuôi liền mạch
+        - {p['ending']}
     """).strip()
 
     logger.info(f"AI: nhận định cuối phiên [{style_label}]...")
-    return _call(client, prompt, max_tokens=400)
+    return _call(client, prompt, max_tokens=400, _temperature=0.55)
 
 
 # ─── Pre-session AI overview ─────────────────────────────────────────────────
