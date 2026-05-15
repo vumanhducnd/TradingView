@@ -250,27 +250,31 @@ def load_all_from_db(
     """
     from scanner.database import load_all_ohlcv_bulk, load_ohlcv, get_watchlist
 
-    # Bulk load toàn bộ (nhanh hơn nhiều so với từng ticker)
+    # Bulk load 1 query — dù có tickers cụ thể hay không
     if tickers is None:
-        logger.info("Loading OHLCV bulk từ DB...")
-        result = load_all_ohlcv_bulk(days=days)
-        if result:
-            return result
-        # Fallback nếu bulk trả về rỗng
-        logger.warning("Bulk load rỗng, fallback sang load từng ticker")
-        tickers = get_watchlist()
-        if not tickers:
-            tickers = _load_watchlist_csv()
+        tickers_arg = None
+        label = "toan bo watchlist"
+    else:
+        tickers_arg = tickers
+        label = f"{len(tickers)} ticker"
 
-    # Load từng ticker theo đúng thứ tự watchlist (VN100 rank ưu tiên)
-    result = {}
+    logger.info(f"Loading OHLCV bulk tu DB ({label})...")
+    result = load_all_ohlcv_bulk(tickers=tickers_arg, days=days)
+    if result:
+        logger.info(f"Loaded {len(result)} tickers tu DB")
+        return result
+
+    logger.warning("Bulk load rong, fallback sang load tung ticker")
+    if tickers is None:
+        tickers = get_watchlist() or _load_watchlist_csv()
+
+    out = {}
     for ticker in tickers:
         df = load_ohlcv(ticker, days=days)
         if not df.empty and len(df) >= 50:
-            result[ticker] = df
-
-    logger.info(f"Loaded {len(result)}/{len(tickers)} tickers tu DB")
-    return result
+            out[ticker] = df
+    logger.info(f"Loaded {len(out)}/{len(tickers)} tickers tu DB")
+    return out
 
 
 if __name__ == "__main__":

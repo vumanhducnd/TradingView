@@ -94,8 +94,11 @@ CREATE TABLE IF NOT EXISTS signals (
     id          SERIAL      PRIMARY KEY,
     ticker      VARCHAR(10) NOT NULL,
     signal_date DATE        NOT NULL,
-    signal_type VARCHAR(4)  NOT NULL,   -- 'MUA' hoặc 'BÁN'
-    style       VARCHAR(10) DEFAULT 'long',
+    signal_type  VARCHAR(4)    NOT NULL,   -- 'MUA' hoặc 'BÁN'
+    style        VARCHAR(10)   DEFAULT 'long',
+    signal_price NUMERIC(12,4),            -- giá close lúc tín hiệu phát
+    signal_st    NUMERIC(12,4),            -- ngưỡng ST bị phá (kháng cự/hỗ trợ)
+    is_fakeout   BOOLEAN       DEFAULT FALSE,
     CONSTRAINT signals_ticker_date_type_style_key
         UNIQUE (ticker, signal_date, signal_type, style)
 );

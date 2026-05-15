@@ -121,7 +121,8 @@ def _build_workbook(
     _sheet_signals(wb, signals, ai_analysis=ai_analysis, style_filter=style)  # Tab 1
     _sheet_nam_giu(wb, results, style=style)                                    # Tab 2
     _sheet_dung_ngoai(wb, results, style=style)                                 # Tab 3
-    _sheet_super_stocks(wb, results, scan_date)                                 # Tab 5 — dùng results trực tiếp
+    _sheet_super_stocks(wb, results, scan_date)                                 # Tab 4
+    _sheet_rut_chan(wb, style=style, scan_date=scan_date)                       # Tab 5
 
     if style == "long" and ai_analysis is not None:
         _sheet_ai(wb, ai_analysis, scan_date)                                   # Tab 6 — chỉ DH
@@ -784,6 +785,76 @@ def _sheet_history(wb: Workbook, results: pd.DataFrame, style: str = "long") -> 
     _auto_width(ws)
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = ws.dimensions
+
+
+_RUT_CHAN_FILL = PatternFill("solid", fgColor="FCE4D6")  # cam nhạt
+
+
+def _sheet_rut_chan(wb: Workbook, style: str, scan_date: str) -> None:
+    """Tab tín hiệu rút chân: giá, TK, ngưỡng ST bị phá, % rút chân."""
+    try:
+        from scanner.database import db_cursor
+        with db_cursor(commit=False) as cur:
+            cur.execute(
+                """
+                SELECT
+                    s.ticker,
+                    s.signal_type,
+                    s.signal_price,
+                    s.signal_st,
+                    o.close           AS final_close,
+                    w.avg_turnover_20d AS turnover
+                FROM signals s
+                LEFT JOIN ohlcv o
+                    ON o.ticker = s.ticker AND o.date = %s
+                LEFT JOIN watchlist w
+                    ON w.ticker = s.ticker
+                WHERE s.signal_date = %s AND s.style = %s AND s.is_fakeout = TRUE
+                ORDER BY w.avg_turnover_20d DESC NULLS LAST
+                """,
+                (scan_date, scan_date, style),
+            )
+            rows = cur.fetchall()
+    except Exception as e:
+        logger.warning(f"_sheet_rut_chan query failed: {e}")
+        return
+
+    if not rows:
+        return
+
+    ws = wb.create_sheet("Tin hieu rut chan")
+    headers = [
+        "Ma", "Tin hieu", "Gia tin hieu",
+        "Nguong ST bi pha", "Gia dong cua", "Rut chan %", "TK TB (ty)",
+    ]
+    _write_header(ws, headers)
+
+    for i, row in enumerate(rows, start=2):
+        sig_p   = float(row["signal_price"] or 0)
+        final   = float(row["final_close"]  or 0)
+        st_lvl  = float(row["signal_st"]    or 0)
+        tk      = float(row["turnover"]     or 0)
+        pct     = round((final - sig_p) / sig_p * 100, 2) if sig_p else None
+        pct_str = f"{pct:+.2f}%" if pct is not None else ""
+
+        vals = [
+            row["ticker"],
+            row["signal_type"],
+            round(sig_p, 2)  if sig_p  else "",
+            round(st_lvl, 2) if st_lvl else "",
+            round(final, 2)  if final  else "",
+            pct_str,
+            round(tk / 1e6, 1) if tk else "",
+        ]
+        for j, v in enumerate(vals, start=1):
+            ws.cell(row=i, column=j, value=v).fill = _RUT_CHAN_FILL
+
+        # Cột "Rút chân %" tô đỏ đậm hơn nếu mất nhiều
+        if pct is not None and abs(pct) >= 2:
+            ws.cell(row=i, column=6).fill = RED_FILL
+
+    _auto_width(ws)
+    ws.freeze_panes = "A2"
 
 
 def _write_header(ws, headers: list) -> None:

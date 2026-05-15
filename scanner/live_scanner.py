@@ -445,19 +445,58 @@ def _calc_realtime_st(hist_df: pd.DataFrame, today_bar: dict) -> Optional[dict]:
 
 # ─── Alert helpers ────────────────────────────────────────────────────────────
 
-def _save_signal_to_db(ticker: str, signal_type: str, style: str) -> None:
+def _save_signal_to_db(ticker: str, signal_type: str, style: str,
+                       price: float | None = None, st: float | None = None) -> None:
     """Ghi flip vào signals DB để phiên chiều không re-fire khi load lại."""
     try:
         from scanner.database import db_cursor
         with db_cursor(commit=True) as cur:
             cur.execute(
-                """INSERT INTO signals (ticker, signal_date, signal_type, style)
-                   VALUES (%s, CURRENT_DATE, %s, %s)
+                """INSERT INTO signals (ticker, signal_date, signal_type, style, signal_price, signal_st)
+                   VALUES (%s, CURRENT_DATE, %s, %s, %s, %s)
                    ON CONFLICT ON CONSTRAINT signals_ticker_date_type_style_key DO NOTHING""",
-                (ticker, signal_type, style),
+                (ticker, signal_type, style, price, st),
             )
     except Exception as e:
         logger.debug(f"signals insert failed {ticker}: {e}")
+
+
+def _save_rut_chan_report(
+    alerted_signals: dict[str, dict],
+    st_states_long: dict[str, dict],
+    st_states_short: dict[str, dict],
+) -> None:
+    """Đánh dấu is_fakeout=TRUE trong bảng signals cho các mã rút chân."""
+    if not alerted_signals:
+        return
+
+    fakeout_keys: list[tuple[str, str]] = []   # (ticker, style)
+    for alert_key, sig in alerted_signals.items():
+        ticker, style_key = alert_key.rsplit("_", 1)
+        st_states = st_states_long if style_key == "long" else st_states_short
+        state = st_states.get(ticker)
+        if state is None:
+            continue
+        direction  = sig["direction"]
+        final_trend = state["trend"]
+        if (direction == "buy" and final_trend == -1) or (direction == "sell" and final_trend == 1):
+            fakeout_keys.append((ticker, style_key))
+
+    if not fakeout_keys:
+        logger.info("Khong co ma rut chan hom nay")
+        return
+
+    try:
+        from scanner.database import db_cursor
+        with db_cursor(commit=True) as cur:
+            cur.executemany(
+                """UPDATE signals SET is_fakeout = TRUE
+                   WHERE ticker = %s AND style = %s AND signal_date = CURRENT_DATE""",
+                fakeout_keys,
+            )
+        logger.info(f"Rut chan: danh dau {len(fakeout_keys)} ma trong DB")
+    except Exception as e:
+        logger.warning(f"UPDATE is_fakeout that bai: {e}")
 
 
 def _collect_alerts(
@@ -540,7 +579,8 @@ def run_session(interval: int = 180, session: str = "full") -> None:
     _set_api_key()
     logger.info(f"=== Session Scanner [{label}] START ===")
 
-    from scanner.database import get_watchlist
+    from scanner.database import get_watchlist, _ensure_signals_schema
+    _ensure_signals_schema()   # đảm bảo các cột mới (signal_price, signal_st, is_fakeout) tồn tại
     all_tickers  = get_watchlist()                  # toàn bộ để upsert DB
     top300       = get_top300_thanh_khoan(n=300)    # top 300 để tính ST + alert
     if not top300:
@@ -611,6 +651,8 @@ def run_session(interval: int = 180, session: str = "full") -> None:
 
     alerted_today: set[str] = _load_alerted_from_db()
     logger.info(f"Loaded {len(alerted_today)} ma da bao hom nay tu DB")
+    # direction/price/time của từng flip gửi trong session này (cho báo cáo rút chân)
+    alerted_signals: dict[str, dict] = {}
 
     while _is_market_open(session):
         now = datetime.now(ICT)
@@ -644,23 +686,29 @@ def run_session(interval: int = 180, session: str = "full") -> None:
                 alert_key = f"{ticker}_{style_key}"
                 if alert_key not in alerted_today:
                     if new_state["buy_signal"]:
+                        _st = state["dn"]
                         flips.append({
                             "ticker": ticker, "direction": "buy",
-                            "price": bar["close"],
-                            "st": state["dn"],   # kháng cự vừa bị phá (dn band bar trước)
-                            "style": style_key,
+                            "price": bar["close"], "st": _st, "style": style_key,
                         })
                         alerted_today.add(alert_key)
-                        _save_signal_to_db(ticker, "MUA", style_key)
+                        _save_signal_to_db(ticker, "MUA", style_key, price=bar["close"], st=_st)
+                        alerted_signals[alert_key] = {
+                            "direction": "buy", "price": bar["close"],
+                            "time": now.strftime("%H:%M"), "style": style_key,
+                        }
                     elif new_state["sell_signal"]:
+                        _st = state["up"]
                         flips.append({
                             "ticker": ticker, "direction": "sell",
-                            "price": bar["close"],
-                            "st": state["up"],   # hỗ trợ vừa bị thủng (up band bar trước)
-                            "style": style_key,
+                            "price": bar["close"], "st": _st, "style": style_key,
                         })
                         alerted_today.add(alert_key)
-                        _save_signal_to_db(ticker, "BÁN", style_key)
+                        _save_signal_to_db(ticker, "BÁN", style_key, price=bar["close"], st=_st)
+                        alerted_signals[alert_key] = {
+                            "direction": "sell", "price": bar["close"],
+                            "time": now.strftime("%H:%M"), "style": style_key,
+                        }
 
                 st_states[ticker] = {**new_state, "close": bar["close"]}
 
@@ -743,6 +791,9 @@ def run_session(interval: int = 180, session: str = "full") -> None:
         sleep_sec = max(0, interval - elapsed)
         if sleep_sec > 0:
             time.sleep(sleep_sec)
+
+    # ── Báo cáo rút chân: flip trong phiên nhưng đóng cửa ngược chiều ──
+    _save_rut_chan_report(alerted_signals, st_states_long, st_states_short)
 
     long_flips  = sum(1 for k in alerted_today if k.endswith("_long"))
     short_flips = sum(1 for k in alerted_today if k.endswith("_short"))

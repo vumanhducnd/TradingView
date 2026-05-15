@@ -24,6 +24,8 @@ from scanner.utils import is_trading_day, logger
 def update_daily(force: bool = False) -> bool:
     """
     Fetch dữ liệu mới nhất cho tất cả ticker trong watchlist.
+    Dùng price_board bulk (1 API call) thay vì per-ticker.
+    Fallback sang per-ticker nếu price_board thất bại.
     Returns True nếu có ít nhất 1 ticker cập nhật thành công.
     """
     today = date.today()
@@ -38,19 +40,33 @@ def update_daily(force: bool = False) -> bool:
         return False
 
     last_dates = get_all_last_dates()
-    ok, skipped, failed = 0, 0, []
+    need_update = [t for t in tickers if force or not last_dates.get(t) or last_dates[t] < today]
 
-    logger.info(f"Daily update: {len(tickers)} tickers, ngày {today}")
+    if not need_update:
+        logger.info(f"Tất cả {len(tickers)} ticker đã có data hôm nay. Bỏ qua.")
+        return True
 
-    for i, ticker in enumerate(tickers, 1):
+    logger.info(f"Daily update: {len(need_update)}/{len(tickers)} ticker cần cập nhật ngày {today}")
+
+    # ── Thử bulk trước (1 API call) ──────────────────────────────────────────
+    from scanner.live_scanner import _fetch_via_price_board
+    from scanner.database import bulk_upsert_today
+
+    bars = _fetch_via_price_board(need_update)
+    if bars:
+        n = bulk_upsert_today(bars, today)
+        logger.info(f"Bulk update OK: {n} rows, {len(bars)}/{len(need_update)} ticker")
+        failed = [t for t in need_update if t not in bars]
+        if failed:
+            logger.warning(f"price_board thiếu {len(failed)} ticker: {failed[:10]}...")
+        return True
+
+    # ── Fallback per-ticker ───────────────────────────────────────────────────
+    logger.warning("price_board thất bại, fallback per-ticker...")
+    ok, failed = 0, []
+
+    for i, ticker in enumerate(need_update, 1):
         last = last_dates.get(ticker)
-
-        # Đã có data hôm nay → bỏ qua
-        if last and last >= today and not force:
-            skipped += 1
-            continue
-
-        # Chỉ lấy từ ngày tiếp theo sau last (hoặc 5 ngày gần nhất nếu không có)
         start = (last + timedelta(days=1)) if last else (today - timedelta(days=5))
         df = _fetch_latest(ticker, start, today)
 
@@ -62,10 +78,10 @@ def update_daily(force: bool = False) -> bool:
             failed.append(ticker)
             logger.warning(f"  {ticker}: không có data")
 
-        if i < len(tickers):
+        if i < len(need_update):
             time.sleep(FETCH_DELAY)
 
-    logger.info(f"Update xong: {ok} cập nhật, {skipped} bỏ qua, {len(failed)} thất bại")
+    logger.info(f"Per-ticker xong: {ok} cập nhật, {len(failed)} thất bại")
     if failed:
         logger.warning(f"Failed: {failed}")
 
