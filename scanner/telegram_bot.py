@@ -321,7 +321,7 @@ def send_daily_report(
         if ai_analysis and ai_analysis.get("overview"):
             send_message(f"<b>🤖 Nhận định AI:</b>\n{ai_analysis['overview']}", style="long")
             time.sleep(0.8)
-        _send_positions_summary(results, style="long")
+        _send_top_vung_xanh(results, style="long")
         time.sleep(0.8)
         for lines in [
             _signal_lines(buy_df,  "🚀", "Tín hiệu bứt phá xác nhận", "supertrend", direction="buy"),
