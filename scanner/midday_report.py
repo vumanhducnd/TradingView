@@ -17,19 +17,33 @@ from scanner.utils import fmt_price, is_trading_day, logger
 
 # ─── Lấy top mã biến động ─────────────────────────────────────────────────────
 
-def _get_top_movers(min_pct: float = 2.0, top_n: int = 20) -> list[dict]:
+def _get_top_movers(min_pct: float = 2.0, top_n: int = 20, force: bool = False) -> list[dict]:
     """
     So sánh giá đóng cửa hôm nay vs hôm qua.
     Chỉ lấy mã biến động >=min_pct%, sắp xếp theo thanh khoản (volume*close) cao nhất.
+    force=True → dùng 2 ngày giao dịch gần nhất trong DB thay vì today/yesterday.
     """
     from scanner.database import db_cursor
 
-    today = date.today()
-    prev  = today - timedelta(days=1)
-    for _ in range(7):          # lùi về ngày giao dịch gần nhất
-        if is_trading_day(prev):
-            break
-        prev -= timedelta(days=1)
+    if force:
+        # Lấy 2 ngày giao dịch gần nhất thực sự có data trong DB
+        try:
+            with db_cursor(commit=False) as cur:
+                cur.execute("SELECT DISTINCT date FROM ohlcv ORDER BY date DESC LIMIT 2")
+                dates = [r["date"] for r in cur.fetchall()]
+            if len(dates) < 2:
+                return []
+            today, prev = dates[0], dates[1]
+        except Exception as e:
+            logger.warning(f"_get_top_movers: lay dates tu DB failed: {e}")
+            return []
+    else:
+        today = date.today()
+        prev  = today - timedelta(days=1)
+        for _ in range(7):          # lùi về ngày giao dịch gần nhất
+            if is_trading_day(prev):
+                break
+            prev -= timedelta(days=1)
 
     try:
         with db_cursor(commit=False) as cur:
@@ -129,7 +143,7 @@ def run(force: bool = False) -> None:
 
     logger.info("Midday report: bat dau...")
 
-    movers = _get_top_movers(min_pct=2.0, top_n=20)
+    movers = _get_top_movers(min_pct=2.0, top_n=20, force=force)
     if not movers:
         logger.info("Khong co ma nao bien dong >=2% — bo qua midday report.")
         return
