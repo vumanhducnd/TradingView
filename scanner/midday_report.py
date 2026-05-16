@@ -80,32 +80,72 @@ def _get_top_movers(min_pct: float = 2.0, top_n: int = 20, force: bool = False) 
 
 # ─── Nhóm ngành ───────────────────────────────────────────────────────────────
 
+_S = "Ngân hàng"
+_R = "Bất động sản"
+_ST = "Thép"
+_O = "Dầu khí"
+_F = "Thực phẩm"
+_C = "Tiêu dùng"
+_RT = "Bán lẻ"
+_T = "Công nghệ"
+_E = "Điện & Năng lượng"
+_B = "Xây dựng"
+_A = "Hàng không & Vận tải"
+_SC = "Chứng khoán"
+_CH = "Hóa chất & Phân bón"
+_PH = "Dược phẩm"
+_TX = "Dệt may"
+_SF = "Thủy sản"
+_RB = "Cao su"
+_IN = "Bảo hiểm"
+_MN = "Khai khoáng"
+
 _SECTORS: dict[str, str] = {
-    # Ngân hàng
-    "VCB":"Ngân hàng","BID":"Ngân hàng","CTG":"Ngân hàng","MBB":"Ngân hàng",
-    "VPB":"Ngân hàng","TCB":"Ngân hàng","ACB":"Ngân hàng","STB":"Ngân hàng",
-    "HDB":"Ngân hàng","VIB":"Ngân hàng","MSB":"Ngân hàng","OCB":"Ngân hàng",
-    "LPB":"Ngân hàng","TPB":"Ngân hàng","SHB":"Ngân hàng","SSB":"Ngân hàng",
-    # Bất động sản
-    "VHM":"Bất động sản","VIC":"Bất động sản","NVL":"Bất động sản",
-    "DIG":"Bất động sản","KDH":"Bất động sản","PDR":"Bất động sản",
-    "BCM":"Bất động sản","NLG":"Bất động sản","HDG":"Bất động sản",
-    # Thép & Tài nguyên
-    "HPG":"Thép","HSG":"Thép","NKG":"Thép","SMC":"Thép",
-    # Dầu khí
-    "GAS":"Dầu khí","PLX":"Dầu khí","BSR":"Dầu khí","OIL":"Dầu khí",
-    "PVS":"Dầu khí","PVD":"Dầu khí","PVC":"Dầu khí",
-    # Thực phẩm & Tiêu dùng
-    "VNM":"Thực phẩm","SAB":"Thực phẩm","MCH":"Thực phẩm","MSN":"Tiêu dùng",
-    # Bán lẻ & Công nghệ
-    "MWG":"Bán lẻ","FRT":"Bán lẻ","DGW":"Bán lẻ","FPT":"Công nghệ",
-    # Điện & Hạ tầng
-    "REE":"Điện","GEX":"Điện","POW":"Điện","PC1":"Xây dựng",
-    "HBC":"Xây dựng","CTD":"Xây dựng",
-    # Hàng không & Vận tải
-    "HVN":"Hàng không","VJC":"Hàng không","GMD":"Vận tải","VSC":"Vận tải",
-    # Chứng khoán
-    "SSI":"Chứng khoán","VND":"Chứng khoán","HCM":"Chứng khoán","MBS":"Chứng khoán",
+    # Ngân hàng (16)
+    "VCB":_S,"BID":_S,"CTG":_S,"MBB":_S,"VPB":_S,"TCB":_S,"ACB":_S,"STB":_S,
+    "HDB":_S,"VIB":_S,"MSB":_S,"OCB":_S,"LPB":_S,"TPB":_S,"SHB":_S,"SSB":_S,
+    "NAB":_S,"BAB":_S,"KLB":_S,"ABB":_S,"NVB":_S,"VAB":_S,"BVB":_S,"EIB":_S,
+    # Bất động sản (20)
+    "VHM":_R,"VIC":_R,"NVL":_R,"DIG":_R,"KDH":_R,"PDR":_R,"BCM":_R,"NLG":_R,
+    "HDG":_R,"DXG":_R,"AGG":_R,"CEO":_R,"DRH":_R,"HQC":_R,"DXS":_R,"VRE":_R,
+    "SCR":_R,"TDH":_R,"LDG":_R,"IDC":_R,"KBC":_R,"SZC":_R,"D2D":_R,"IJC":_R,
+    "NHA":_R,"CII":_R,"SGR":_R,"DPG":_R,"TIP":_R,"SJS":_R,
+    # Thép & Kim loại (10)
+    "HPG":_ST,"HSG":_ST,"NKG":_ST,"SMC":_ST,"TLH":_ST,"VGS":_ST,
+    "POM":_ST,"VIS":_ST,"TNA":_ST,"TVN":_ST,
+    # Dầu khí (10)
+    "GAS":_O,"PLX":_O,"BSR":_O,"OIL":_O,"PVS":_O,"PVD":_O,
+    "PVC":_O,"CNG":_O,"PGD":_O,"PVT":_O,
+    # Thực phẩm (10)
+    "VNM":_F,"SAB":_F,"MCH":_F,"QNS":_F,"VHC":_F,"ANV":_F,
+    "IDI":_F,"FMC":_F,"ABT":_F,"ACL":_F,
+    # Tiêu dùng & Bán lẻ (8)
+    "MSN":_C,"MWG":_RT,"FRT":_RT,"DGW":_RT,"PNJ":_RT,"HAX":_RT,"SVC":_RT,"VGI":_C,
+    # Công nghệ (6)
+    "FPT":_T,"CMG":_T,"ELC":_T,"ITD":_T,"SAM":_T,"VGI":_T,
+    # Điện & Năng lượng (12)
+    "REE":_E,"GEX":_E,"POW":_E,"PC1":_E,"PPC":_E,"CHP":_E,
+    "SHP":_E,"TBC":_E,"VSH":_E,"NT2":_E,"HND":_E,"QTP":_E,
+    # Xây dựng & Vật liệu (12)
+    "HBC":_B,"CTD":_B,"VCG":_B,"FCN":_B,"HHV":_B,"C4G":_B,
+    "PHC":_B,"SC5":_B,"L14":_B,"TV2":_B,"HT1":_B,"BCC":_B,
+    # Hàng không & Vận tải (8)
+    "HVN":_A,"VJC":_A,"GMD":_A,"VSC":_A,"HAH":_A,"PVT":_A,"VTO":_A,"SGP":_A,
+    # Chứng khoán (10)
+    "SSI":_SC,"VND":_SC,"HCM":_SC,"MBS":_SC,"BSI":_SC,
+    "VCI":_SC,"ORS":_SC,"SHS":_SC,"AGR":_SC,"FTS":_SC,
+    # Hóa chất & Phân bón (8)
+    "DCM":_CH,"DPM":_CH,"BMP":_CH,"AAA":_CH,"NTP":_CH,"CSV":_CH,"DDV":_CH,"LAS":_CH,
+    # Dược phẩm (6)
+    "DHG":_PH,"IMP":_PH,"DMC":_PH,"OPC":_PH,"TRA":_PH,"DBD":_PH,
+    # Dệt may (6)
+    "TNG":_TX,"MSH":_TX,"TCM":_TX,"STK":_TX,"GMC":_TX,"VGT":_TX,
+    # Cao su (5)
+    "PHR":_RB,"DPR":_RB,"CSV":_RB,"TRC":_RB,"BRC":_RB,
+    # Bảo hiểm (5)
+    "BVH":_IN,"PVI":_IN,"BIC":_IN,"MIG":_IN,"PTI":_IN,
+    # Khai khoáng (4)
+    "KSB":_MN,"DHA":_MN,"NNC":_MN,"VPG":_MN,
 }
 
 
