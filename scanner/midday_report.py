@@ -167,4 +167,12 @@ def run() -> None:
 
 
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--force", action="store_true", help="Bỏ qua kiểm tra ngày giao dịch")
+    args = parser.parse_args()
+    if args.force:
+        # Bypass trading day check
+        import scanner.utils as _u
+        _u.is_trading_day = lambda *_: True
     run()
