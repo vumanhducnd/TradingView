@@ -15,7 +15,7 @@ import psycopg2
 import psycopg2.extras
 from psycopg2.extensions import connection as PgConnection
 
-from scanner.utils import logger
+from scanner.utils import is_trading_day, logger
 
 
 # ─── Connection ───────────────────────────────────────────────────────────────
@@ -259,6 +259,7 @@ def upsert_ohlcv(ticker: str, df: pd.DataFrame) -> int:
             int(row["volume"]),
         )
         for _, row in df.iterrows()
+        if is_trading_day(row[date_col].date() if hasattr(row[date_col], "date") else row[date_col])
     ]
     with db_cursor() as cur:
         psycopg2.extras.execute_values(cur, sql, rows)
@@ -272,6 +273,10 @@ def bulk_upsert_today(bars: dict[str, dict], today: "date") -> int:
     Trả về số rows upserted.
     """
     if not bars:
+        return 0
+
+    if not is_trading_day(today):
+        logger.info(f"bulk_upsert_today: {today} không phải ngày giao dịch, bỏ qua.")
         return 0
 
     sql = """
