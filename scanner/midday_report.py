@@ -264,6 +264,13 @@ def run(force: bool = False) -> None:
         rest = len(lst) - show
         return f"{top}  (+{rest} mã khác)" if rest > 0 else top
 
+    # Tin hot để hiển thị (ưu tiên tin theo mã, bổ sung tin chung nếu còn chỗ)
+    all_news = news_ticker[:4] + [n for n in news_hot if n not in news_ticker][:3]
+    news_block = ""
+    if all_news:
+        news_lines = "\n".join(f"  • {n['title']} <i>({n['source']})</i>" for n in all_news[:6])
+        news_block = f"\n\n<b>📋 Tin nổi bật:</b>\n{news_lines}"
+
     today_str = today.strftime("%d/%m/%Y")
     message = "\n".join([
         f"<b>📰 Tổng hợp giữa phiên — {today_str}</b>",
@@ -271,9 +278,7 @@ def run(force: bool = False) -> None:
         f"🔴 Giảm mạnh ({len(down)} mã): {_ticker_list(down)}",
         "",
         summary,
-        "",
-        "<i>📌 Phân tích AI để tham khảo — bạn vẫn là người ra quyết định nhé!</i>",
-    ])
+    ]) + news_block + "\n\n<i>📌 Phân tích AI để tham khảo — bạn vẫn là người ra quyết định nhé!</i>"
 
     from scanner.telegram_bot import send_message_both
     send_message_both(message)
