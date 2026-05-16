@@ -14,10 +14,8 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from scanner.utils import logger
 
 _FEEDS = [
-    ("VnEconomy",  "https://vneconomy.vn/chung-khoan.rss"),
-    ("BaoDauTu",   "https://baodautu.vn/chung-khoan.rss"),
-    ("CafeF",      "https://cafef.vn/thi-truong-chung-khoan.rss"),
-    ("Vietstock",  "https://vietstock.vn/rss/tin-tuc-chung-khoan.rss"),
+    ("VnEconomy", "https://vneconomy.vn/chung-khoan.rss"),
+    ("CafeF",     "https://cafef.vn/thi-truong-chung-khoan.rss"),
 ]
 
 
@@ -39,7 +37,7 @@ def fetch_news(tickers: list[str] | None = None, max_items: int = 20) -> list[di
         try:
             resp = requests.get(url, timeout=10, verify=False, headers={"User-Agent": "Mozilla/5.0"})
             resp.raise_for_status()
-            root    = ET.fromstring(resp.content)
+            root    = ET.fromstring(resp.content.strip())
             channel = root.find("channel") or root
             for item in channel.findall("item"):
                 title   = (item.findtext("title")       or "").strip()
