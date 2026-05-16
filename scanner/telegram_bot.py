@@ -207,16 +207,20 @@ def send_daily_report(
                     pnl = round((s_f - b_f) / b_f * 100, 2) if s_f and b_f and b_f > 0 else None
                 except Exception:
                     pnl = None
-                pnl_str  = (f"{'🟢' if pnl >= 0 else '🔴'} {pnl:+.2f}%") if pnl is not None else "–"
-                date_str = buy_date if buy_date and buy_date not in ("", "N", "None") else "–"
-                lines.append(
-                    f"  <b>{row['ticker']}</b>\n"
-                    f"    Ngày mua      : {date_str}\n"
-                    f"    Giá mua       : {_fmt(buy_price)}\n"
-                    f"    Giá bán       : {_fmt(sell_price)}\n"
-                    f"    Lời/Lỗ        : {pnl_str}\n"
-                    f"    Thanh khoản   : {_fmt_tk(row)}"
-                )
+                pnl_str  = (f"{'🟢' if pnl >= 0 else '🔴'} {pnl:+.2f}%") if pnl is not None else None
+                date_str = buy_date if buy_date and buy_date not in ("", "N", "None") else None
+                has_buy  = buy_price and float(buy_price) > 0
+
+                block = f"  <b>{row['ticker']}</b>\n"
+                if has_buy:
+                    if date_str:
+                        block += f"    Ngày mua      : {date_str}\n"
+                    block += f"    Giá mua       : {_fmt(buy_price)}\n"
+                block += f"    Giá bán       : {_fmt(sell_price)}\n"
+                if pnl_str:
+                    block += f"    Lời/Lỗ        : {pnl_str}\n"
+                block += f"    Thanh khoản   : {_fmt_tk(row)}"
+                lines.append(block)
         return lines
 
     def _send_for_style(style: str) -> None:
