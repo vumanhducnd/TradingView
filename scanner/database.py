@@ -919,3 +919,76 @@ def load_scan_dates() -> list[date]:
         return [r["d"]] if r and r["d"] else []
 
 
+# ─── Price Alerts (Interactive Bot) ───────────────────────────────────────────
+
+_alerts_table_ensured = False
+
+
+def _ensure_price_alerts_table() -> None:
+    global _alerts_table_ensured
+    if _alerts_table_ensured:
+        return
+    with db_cursor() as cur:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS price_alerts (
+                id           SERIAL PRIMARY KEY,
+                chat_id      TEXT          NOT NULL,
+                ticker       TEXT          NOT NULL,
+                target_price NUMERIC(12,4) NOT NULL,
+                direction    TEXT          NOT NULL,
+                triggered    BOOLEAN       DEFAULT FALSE,
+                created_at   TIMESTAMP     DEFAULT NOW()
+            )
+        """)
+    _alerts_table_ensured = True
+
+
+def save_price_alert(chat_id: str, ticker: str, target_price: float, direction: str) -> int:
+    """Lưu cảnh báo giá mới, trả về ID."""
+    _ensure_price_alerts_table()
+    with db_cursor() as cur:
+        cur.execute(
+            "INSERT INTO price_alerts (chat_id, ticker, target_price, direction) "
+            "VALUES (%s, %s, %s, %s) RETURNING id",
+            (chat_id, ticker, target_price, direction),
+        )
+        return cur.fetchone()["id"]
+
+
+def get_price_alerts(chat_id: str) -> list[dict]:
+    """Danh sách cảnh báo chưa kích hoạt của 1 user."""
+    _ensure_price_alerts_table()
+    with db_cursor(commit=False) as cur:
+        cur.execute(
+            "SELECT id, ticker, target_price, direction FROM price_alerts "
+            "WHERE chat_id = %s AND triggered = FALSE ORDER BY created_at DESC",
+            (chat_id,),
+        )
+        return [dict(r) for r in cur.fetchall()]
+
+
+def get_all_active_alerts() -> list[dict]:
+    """Tất cả cảnh báo chưa kích hoạt (để kiểm tra định kỳ)."""
+    _ensure_price_alerts_table()
+    with db_cursor(commit=False) as cur:
+        cur.execute(
+            "SELECT id, chat_id, ticker, target_price, direction FROM price_alerts "
+            "WHERE triggered = FALSE"
+        )
+        return [dict(r) for r in cur.fetchall()]
+
+
+def mark_alert_triggered(alert_id: int) -> None:
+    with db_cursor() as cur:
+        cur.execute("UPDATE price_alerts SET triggered = TRUE WHERE id = %s", (alert_id,))
+
+
+def delete_price_alert(chat_id: str, alert_id: int) -> bool:
+    with db_cursor() as cur:
+        cur.execute(
+            "DELETE FROM price_alerts WHERE id = %s AND chat_id = %s",
+            (alert_id, chat_id),
+        )
+        return cur.rowcount > 0
+
+
