@@ -14,26 +14,6 @@ from datetime import date, timedelta
 import scanner.config  # noqa: F401 — bắt buộc để load_dotenv() chạy trước DB
 from scanner.utils import fmt_price, is_trading_day, logger
 
-# Tên ngày hài hước: [thứ][mood: 0=bull, 1=bear, 2=mixed]
-_FUNNY_DAYS = {
-    0: ["Thứ Hai thần thánh 🚀",   "Thứ Hai oan nghiệt 😭",  "Thứ Hai lăn tăn 🤔"],   # Mon
-    1: ["Thứ Ba bùng nổ 🔥",       "Thứ Ba buồn muốn khóc 😢","Thứ Ba nước đôi 😐"],   # Tue
-    2: ["Thứ Tư siêu cấp vũ trụ 🌟","Thứ Tư ướt át 🌧️",       "Thứ Tư cân não 🧠"],    # Wed
-    3: ["Thứ Năm phi hành gia 🛸",  "Thứ Năm chán đời 💀",    "Thứ Năm vừa mừng vừa lo 😅"], # Thu
-    4: ["Thứ Sáu chốt lời đẹp 🎉", "Thứ Sáu cuối tuần buồn 🫠","Thứ Sáu không biết cảm xúc 🤡"], # Fri
-}
-
-
-def _funny_day_name(d: date, up: int, down: int) -> str:
-    weekday = d.weekday()  # 0=Mon … 4=Fri
-    if up > down * 1.5:
-        mood = 0  # bull
-    elif down > up * 1.5:
-        mood = 1  # bear
-    else:
-        mood = 2  # mixed
-    return _FUNNY_DAYS.get(weekday, ["Ngày lạ 🤷"] * 3)[mood]
-
 
 # ─── Lấy top mã biến động ─────────────────────────────────────────────────────
 
@@ -185,10 +165,9 @@ def run(force: bool = False) -> None:
     up_str   = "  ".join(f"{m['ticker']}(+{float(m['pct_chg']):.1f}%)" for m in up)[:250]
     down_str = "  ".join(f"{m['ticker']}({float(m['pct_chg']):.1f}%)"  for m in down)[:250]
 
-    today_str  = today.strftime("%d/%m/%Y")
-    day_label  = _funny_day_name(today, len(up), len(down))
+    today_str = today.strftime("%d/%m/%Y")
     message = "\n".join([
-        f"<b>📰 Tổng hợp giữa phiên — {day_label} ({today_str})</b>",
+        f"<b>📰 Tổng hợp giữa phiên — {today_str}</b>",
         f"🟢 Tăng mạnh ({len(up)} mã): {up_str or '–'}",
         f"🔴 Giảm mạnh ({len(down)} mã): {down_str or '–'}",
         "",
