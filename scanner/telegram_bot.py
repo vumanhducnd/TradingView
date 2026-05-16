@@ -268,7 +268,7 @@ def send_daily_report(
         # Header + AI gộp 1 tin
         disclaimer = "<tg-spoiler>📌 Tín hiệu kỹ thuật để tham khảo — bạn vẫn là người ra quyết định nhé!</tg-spoiler>"
         header_lines = [
-            f"<b>📊 Báo cáo cuối phiên — {today} — {style_name}</b>",
+            f"<b>Báo cáo cuối phiên — {today} — {style_name}</b>",
             f"🟢 Bứt phá: <b>{len(buy_df)}</b> mã  |  🔴 Đảo chiều: <b>{len(sell_df)}</b> mã",
         ]
         if ai_end:
