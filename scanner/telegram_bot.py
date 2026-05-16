@@ -47,20 +47,6 @@ def _fmt_tk(row) -> str:
         return f"{vol / 1e6:.1f}M cp"
     return "–"
 
-# Custom animated emoji từ pack Statusvideobytaraxd
-def _ae(emoji_id: str, fallback: str) -> str:
-    return f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>'
-
-AE_ROCKET  = _ae("6298548743352355181", "🚀")   # bứt phá / MUA
-AE_DOWN    = _ae("6255512604110751681", "🔻")   # đảo chiều / BÁN
-AE_UP      = _ae("6255793039705377676", "🔺")   # tăng
-AE_CHECK   = _ae("6296501388276926215", "✅")   # xác nhận
-AE_FIRE    = _ae("6298644001432012664", "💥")   # cảnh báo / nổi bật
-AE_DIAMOND = _ae("6244241334320762892", "💎")   # siêu cổ phiếu
-AE_CROWN   = _ae("6219549292458150316", "👑")   # top / vùng xanh
-AE_STAR    = _ae("6255705323588290387", "💫")   # nhận định
-AE_LOOP    = _ae("6298717844804733009", "♾")    # dài hạn
-
 _CRITERIA_LABELS = {
     "ema":    "EMA9>21",
     "vwap":   "Giá>VWAP",
@@ -280,14 +266,13 @@ def send_daily_report(
             logger.warning(f"AI cuoi phien failed: {e}")
 
         # Header + AI gộp 1 tin
-        disclaimer = "<tg-spoiler>📌 Tín hiệu kỹ thuật để tham khảo — bạn vẫn là người ra quyết định nhé!</tg-spoiler>"
-        loop = AE_LOOP if is_long else AE_FIRE
+        disclaimer = "<i>📌 Tín hiệu kỹ thuật để tham khảo — bạn vẫn là người ra quyết định nhé!</i>"
         header_lines = [
-            f"<b>{loop} Báo cáo cuối phiên — {today} — {style_name}</b>",
-            f"{AE_ROCKET} Bứt phá: <b>{len(buy_df)}</b> mã  |  {AE_DOWN} Đảo chiều: <b>{len(sell_df)}</b> mã",
+            f"<b>📊 Báo cáo cuối phiên — {today} — {style_name}</b>",
+            f"🟢 Bứt phá: <b>{len(buy_df)}</b> mã  |  🔴 Đảo chiều: <b>{len(sell_df)}</b> mã",
         ]
         if ai_end:
-            header_lines.append(f"\n{AE_STAR} {ai_end}")
+            header_lines.append(f"\n{ai_end}")
         header_lines.append(f"\n{disclaimer}")
         send_message("\n".join(header_lines), style=style)
         time.sleep(0.8)
@@ -297,8 +282,8 @@ def send_daily_report(
 
         st_col = f"{p}supertrend"
         for lines in [
-            _signal_lines(buy_df,  AE_ROCKET, "Tín hiệu bứt phá xác nhận", st_col, direction="buy"),
-            _signal_lines(sell_df, AE_DOWN,   "Tín hiệu đảo chiều giảm",   st_col, direction="sell"),
+            _signal_lines(buy_df,  "🚀", "Tín hiệu bứt phá xác nhận", st_col, direction="buy"),
+            _signal_lines(sell_df, "🔻", "Tín hiệu đảo chiều giảm",   st_col, direction="sell"),
         ]:
             if lines:
                 send_message("\n".join(lines), style=style)
@@ -306,8 +291,8 @@ def send_daily_report(
 
         if buy_df.empty and sell_df.empty:
             top5 = results.nlargest(5, "bias_norm")[["ticker", "bias_norm"]]
-            txt = "\n".join(f"  {AE_STAR} {r['ticker']}: {r['bias_norm']:.0f}/100" for _, r in top5.iterrows())
-            send_message(f"Hôm nay không có tín hiệu mới.\n\n<b>{AE_CROWN} Top 5 mạnh nhất:</b>\n{txt}", style=style)
+            txt = "\n".join(f"  • {r['ticker']}: {r['bias_norm']:.0f}/100" for _, r in top5.iterrows())
+            send_message(f"Hôm nay không có tín hiệu mới.\n\n<b>Top 5 mạnh nhất:</b>\n{txt}", style=style)
 
     if is_dual:
         _send_for_style("long")
@@ -317,10 +302,10 @@ def send_daily_report(
         buy_df  = signals.get("buy",  pd.DataFrame())
         sell_df = signals.get("sell", pd.DataFrame())
         header = (
-            f"<b>{AE_LOOP} ManhDucCapital Scanner — {today}</b>\n"
-            f"Dài hạn (ATR=10, x3.0)\n\n"
-            f"{AE_ROCKET} MUA: <b>{len(buy_df)}</b> mã\n"
-            f"{AE_DOWN} BÁN: <b>{len(sell_df)}</b> mã\n"
+            f"<b>📊 ManhDucCapital Scanner — {today}</b>\n"
+            f"📈 Dài hạn (ATR=10, x3.0)\n\n"
+            f"🟢 MUA: <b>{len(buy_df)}</b> mã\n"
+            f"🔴 BÁN: <b>{len(sell_df)}</b> mã\n"
             f"⬜ Không tín hiệu: {len(results) - len(buy_df) - len(sell_df)} mã"
         )
         send_message(header, style="long")
@@ -331,8 +316,8 @@ def send_daily_report(
         _send_top_vung_xanh(results, style="long")
         time.sleep(0.8)
         for lines in [
-            _signal_lines(buy_df,  AE_ROCKET, "Tín hiệu bứt phá xác nhận", "supertrend", direction="buy"),
-            _signal_lines(sell_df, AE_DOWN,   "Tín hiệu đảo chiều giảm",   "supertrend", direction="sell"),
+            _signal_lines(buy_df,  "🚀", "Tín hiệu bứt phá xác nhận", "supertrend", direction="buy"),
+            _signal_lines(sell_df, "🔻", "Tín hiệu đảo chiều giảm",   "supertrend", direction="sell"),
         ]:
             if lines:
                 send_message("\n".join(lines), style="long")
@@ -460,7 +445,7 @@ def _send_top_vung_xanh(results: pd.DataFrame, style: str = "long", top_n: int =
     date_col  = f"{p}last_signal_date"  if f"{p}last_signal_date"  in results.columns else "last_signal_date"
     price_col = f"{p}last_signal_price" if f"{p}last_signal_price" in results.columns else "last_signal_price"
 
-    lines = [f"<b>{AE_CROWN} Top {top_n} vùng xanh (TK cao nhất):</b>"]
+    lines = [f"<b>💼 Top {top_n} vùng xanh (TK cao nhất):</b>"]
     for _, row in df.iterrows():
         ticker = row.get("ticker", "")
         close  = _val(row, "close")
