@@ -35,7 +35,11 @@ def _get_updates(token: str, offset: int, timeout: int = 30) -> list[dict]:
     try:
         resp = requests.get(
             _api(token, "getUpdates"),
-            params={"offset": offset, "timeout": timeout, "allowed_updates": ["message"]},
+            params={
+                "offset": offset,
+                "timeout": timeout,
+                "allowed_updates": ["message", "callback_query"],
+            },
             timeout=timeout + 5,
             verify=False,
         )
@@ -45,16 +49,109 @@ def _get_updates(token: str, offset: int, timeout: int = 30) -> list[dict]:
         return []
 
 
-def _reply(token: str, chat_id: int | str, text: str) -> None:
+def _reply(token: str, chat_id: int | str, text: str, keyboard: dict | None = None) -> None:
+    body: dict = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
+    if keyboard:
+        body["reply_markup"] = keyboard
     try:
-        requests.post(
-            _api(token, "sendMessage"),
-            json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"},
-            timeout=15,
-            verify=False,
-        )
+        requests.post(_api(token, "sendMessage"), json=body, timeout=15, verify=False)
     except Exception as e:
         logger.warning(f"send_reply error (chat={chat_id}): {e}")
+
+
+# ─── Keyboard layouts ─────────────────────────────────────────────────────────
+
+_KB_MAIN = {
+    "inline_keyboard": [
+        [{"text": "📖 Hướng dẫn giao dịch", "callback_data": "guide"}],
+        [
+            {"text": "🔍 Tra cứu mã",    "callback_data": "input_check"},
+            {"text": "🏆 Top vùng xanh", "callback_data": "top_menu"},
+        ],
+        [
+            {"text": "💼 Đang giữ",      "callback_data": "dangiu"},
+            {"text": "⏰ Đặt cảnh báo", "callback_data": "input_alert"},
+        ],
+        [{"text": "📋 Cảnh báo của tôi", "callback_data": "alerts"}],
+    ]
+}
+
+_KB_BACK = {
+    "inline_keyboard": [[{"text": "🔙 Menu chính", "callback_data": "main_menu"}]]
+}
+
+_KB_TOP = {
+    "inline_keyboard": [
+        [
+            {"text": "Top 5",  "callback_data": "top_5"},
+            {"text": "Top 10", "callback_data": "top_10"},
+            {"text": "Top 20", "callback_data": "top_20"},
+        ],
+        [{"text": "🔙 Menu chính", "callback_data": "main_menu"}],
+    ]
+}
+
+
+# ─── Conversation state (chờ user nhập mã / giá) ─────────────────────────────
+
+_user_state: dict[str, str] = {}  # chat_id (str) → "check" | "alert"
+
+
+# ─── Telegram API helpers ─────────────────────────────────────────────────────
+
+def _answer_callback(token: str, callback_id: str) -> None:
+    try:
+        requests.post(
+            _api(token, "answerCallbackQuery"),
+            json={"callback_query_id": callback_id},
+            timeout=10,
+            verify=False,
+        )
+    except Exception:
+        pass
+
+
+def _send_main_menu(token: str, chat_id: int | str) -> None:
+    _reply(
+        token, chat_id,
+        "👋 Chào mừng đến với <b>MDAlpha3 Bot</b>!\nChọn tính năng bạn muốn dùng:",
+        _KB_MAIN,
+    )
+
+
+def _handle_callback(token: str, cq: dict) -> None:
+    _answer_callback(token, cq["id"])
+    chat_id = cq["message"]["chat"]["id"]
+    cid_str = str(chat_id)
+    data    = cq.get("data", "")
+
+    if data == "main_menu":
+        _user_state.pop(cid_str, None)
+        _send_main_menu(token, chat_id)
+
+    elif data == "guide":
+        _reply(token, chat_id, GUIDE, _KB_BACK)
+
+    elif data == "input_check":
+        _user_state[cid_str] = "check"
+        _reply(token, chat_id, "🔍 Nhập mã cổ phiếu (VD: <code>VHM</code>):")
+
+    elif data == "top_menu":
+        _reply(token, chat_id, "Chọn số lượng mã muốn xem:", _KB_TOP)
+
+    elif data in ("top_5", "top_10", "top_20"):
+        n = int(data.split("_")[1])
+        _reply(token, chat_id, _cmd_top(n), _KB_BACK)
+
+    elif data == "dangiu":
+        _reply(token, chat_id, _cmd_dangiu(), _KB_BACK)
+
+    elif data == "input_alert":
+        _user_state[cid_str] = "alert"
+        _reply(token, chat_id, "⏰ Nhập mã và giá mục tiêu (VD: <code>VHM 25.5</code>):")
+
+    elif data == "alerts":
+        _reply(token, chat_id, _cmd_list_alerts(cid_str), _KB_BACK)
 
 
 # ─── Scan results cache (TTL 5 phút) ─────────────────────────────────────────
@@ -137,7 +234,7 @@ GUIDE = (
 )
 
 MENU = (
-    "<b>🤖 ManhDucCapital Bot — Lệnh</b>\n"
+    "<b>🤖 MDAlpha3 Bot — Lệnh</b>\n"
     "\n"
     "<b>📊 Tra cứu</b>\n"
     "<code>/check VHM</code>\n"
@@ -374,23 +471,33 @@ def _check_alerts(token: str) -> None:
 
 def _dispatch(token: str, message: dict) -> None:
     chat_id = message["chat"]["id"]
-    text = (message.get("text") or "").strip()
+    cid_str = str(chat_id)
+    text    = (message.get("text") or "").strip()
+
+    # ── Xử lý state machine (user đang chờ nhập mã/giá) ──────────────────────
     if not text.startswith("/"):
+        state = _user_state.pop(cid_str, None)
+        if state == "check":
+            _reply(token, chat_id, _cmd_check(text.split()[0]), _KB_BACK)
+        elif state == "alert":
+            parts = text.split()
+            if len(parts) >= 2:
+                _reply(token, chat_id, _cmd_set_alert(cid_str, parts[0], parts[1]), _KB_BACK)
+            else:
+                _user_state[cid_str] = "alert"
+                _reply(token, chat_id, "Nhập đúng định dạng: <code>VHM 25.5</code>")
         return
 
+    # ── Lệnh slash ────────────────────────────────────────────────────────────
     parts = text.split()
-    cmd = parts[0].lower().split("@")[0]
+    cmd   = parts[0].lower().split("@")[0]
 
     if cmd in ("/start", "/help"):
-        _reply(token, chat_id, GUIDE)
-        _reply(token, chat_id, MENU)
-        return
+        _send_main_menu(token, chat_id)
     elif cmd == "/huongdan":
-        reply = GUIDE
+        _reply(token, chat_id, GUIDE, _KB_BACK)
     else:
-        reply = "⏳ Tính năng đang phát triển.\n\nGõ /help để xem hướng dẫn."
-
-    _reply(token, chat_id, reply)
+        _reply(token, chat_id, "⏳ Tính năng đang phát triển.", _KB_BACK)
 
 
 # ─── Main loop ────────────────────────────────────────────────────────────────
@@ -409,12 +516,14 @@ def run(token: str | None = None) -> None:
             updates = _get_updates(token, offset=offset, timeout=30)
             for upd in updates:
                 offset = upd["update_id"] + 1
-                msg = upd.get("message")
-                if msg and msg.get("text"):
-                    try:
-                        _dispatch(token, msg)
-                    except Exception as e:
-                        logger.warning(f"dispatch error: {e}")
+                try:
+                    if cq := upd.get("callback_query"):
+                        _handle_callback(token, cq)
+                    elif msg := upd.get("message"):
+                        if msg.get("text"):
+                            _dispatch(token, msg)
+                except Exception as e:
+                    logger.warning(f"dispatch error: {e}")
 
             now = time.time()
             if now - last_alert_check >= 60:
