@@ -338,16 +338,23 @@ def _cmd_top(n: int = 10) -> str:
     pnl_col   = "long_signal_pnl_pct" if is_dual else "signal_pnl_pct"
 
     subset = df[df[trend_col] == 1] if trend_col in df.columns else df
-    top = subset.nlargest(min(n, 20), "bias_norm")
-
-    if top.empty:
+    if subset.empty:
         return "Không có mã nào trong vùng xanh hiện tại."
 
-    lines = [f"<b>🏆 Top {len(top)} Vùng Xanh:</b>"]
+    if "turnover" in subset.columns:
+        top = subset.nlargest(min(n, 20), "turnover")
+    else:
+        top = subset.nlargest(min(n, 20), "bias_norm")
+
+    lines = [f"<b>🏆 Top {len(top)} Vùng Xanh (Thanh khoản cao nhất):</b>"]
     for i, (_, row) in enumerate(top.iterrows(), 1):
+        tk = float(row.get("turnover") or 0)
+        tk_str = f"{tk/1e9:.1f} tỷ" if tk > 0 else "–"
         lines.append(
-            f"  {i}. <b>{row['ticker']}</b> — {float(row.get('bias_norm') or 0):.0f}/100"
-            f" | {_fmt(_val(row, 'close'))}{_pnl_str(_val(row, pnl_col))}"
+            f"  {i}. <b>{row['ticker']}</b>"
+            f" | {_fmt(_val(row, 'close'))}"
+            f" | TK {tk_str}"
+            f"{_pnl_str(_val(row, pnl_col))}"
         )
     return "\n".join(lines)
 
