@@ -804,7 +804,7 @@ def load_trade_history_from_ohlcv(style: str = "long", tickers: list[str] | None
 
         last_buy_idx  = buy_idx_series[-1]
         buy_date  = df.loc[last_buy_idx, "date"]
-        buy_price = float(df.loc[last_buy_idx, "close"])
+        buy_price = float(df.loc[last_buy_idx, "low"])
 
         sell_after = df[(df.index > last_buy_idx) & (df["sell_signal"] == True)]
         if sell_after.empty:
@@ -814,7 +814,7 @@ def load_trade_history_from_ohlcv(style: str = "long", tickers: list[str] | None
         else:
             first_sell = sell_after.iloc[0]
             sell_date  = first_sell["date"]
-            sell_price = float(first_sell["close"])
+            sell_price = float(first_sell["high"])
             status     = "Da dong"
 
         records.append({
