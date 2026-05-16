@@ -13,6 +13,7 @@ from datetime import date, timedelta
 
 import scanner.config  # noqa: F401 — bắt buộc để load_dotenv() chạy trước DB
 from scanner.utils import fmt_price, is_trading_day, logger
+from scanner.ai_analyst import generate_midday_ai
 
 
 # ─── Lấy top mã biến động ─────────────────────────────────────────────────────
@@ -78,61 +79,6 @@ def _get_top_movers(min_pct: float = 2.0, top_n: int = 20, force: bool = False) 
         return []
 
 
-# ─── AI tổng hợp ──────────────────────────────────────────────────────────────
-
-def _build_prompt(movers: list[dict], news: list[dict]) -> str:
-    today_str = date.today().strftime("%d/%m/%Y")
-
-    mover_lines = []
-    for m in movers[:15]:
-        pct = float(m["pct_chg"])
-        arrow = "▲" if pct > 0 else "▼"
-        tk = float(m["turnover"] or 0) / 1e9
-        mover_lines.append(
-            f"- {m['ticker']}: {arrow}{abs(pct):.1f}% | giá {fmt_price(float(m['close']))} | TK {tk:.1f} tỷ"
-        )
-
-    news_lines = [f"- [{n['source']}] {n['title']}" for n in news[:10]]
-
-    return f"""Bạn là chuyên gia phân tích chứng khoán Việt Nam. Viết 1 bài tổng hợp giữa phiên ngày {today_str}, ngắn gọn khoảng 150 từ, bằng tiếng Việt, dành cho nhà đầu tư cá nhân.
-
-Các mã có biến động mạnh (≥2%) sáng nay, sắp xếp theo thanh khoản:
-{chr(10).join(mover_lines)}
-
-Tin tức liên quan:
-{chr(10).join(news_lines) if news_lines else "Chưa có tin tức nổi bật được tìm thấy."}
-
-Yêu cầu:
-- Nêu xu hướng chung thị trường phiên sáng
-- Đề cập 3-5 mã nổi bật và lý do biến động (dựa vào tin tức nếu có, nếu không thì nhận định kỹ thuật)
-- Kết luận: nhà đầu tư cần lưu ý gì khi bước vào phiên chiều
-- Giọng văn chuyên nghiệp, súc tích, không dùng markdown"""
-
-
-def _call_ai(prompt: str) -> str:
-    try:
-        from scanner.ai_analyst import _get_client
-        client = _get_client()
-        resp = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=500,
-            temperature=0.7,
-        )
-        return resp.choices[0].message.content.strip()
-    except Exception as e:
-        if "429" in str(e):
-            logger.warning("Groq 429 → fallback Gemini")
-            try:
-                from scanner.ai_analyst import _call_gemini
-                return _call_gemini(prompt, max_tokens=500)
-            except Exception as e2:
-                logger.warning(f"Gemini fallback failed: {e2}")
-        else:
-            logger.warning(f"AI midday failed: {e}")
-        return ""
-
-
 # ─── Entry point ──────────────────────────────────────────────────────────────
 
 def run(force: bool = False) -> None:
@@ -155,7 +101,7 @@ def run(force: bool = False) -> None:
     news = fetch_news(tickers=tickers)
     logger.info(f"Tin tuc lien quan: {len(news)} bai")
 
-    summary = _call_ai(_build_prompt(movers, news))
+    summary = generate_midday_ai(movers, news)
     if not summary:
         summary = "Không thể tải phân tích AI lúc này."
 
