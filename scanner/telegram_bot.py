@@ -449,7 +449,7 @@ def _send_top_vung_xanh(results: pd.DataFrame, style: str = "long", top_n: int =
     date_col  = f"{p}last_signal_date"  if f"{p}last_signal_date"  in results.columns else "last_signal_date"
     price_col = f"{p}last_signal_price" if f"{p}last_signal_price" in results.columns else "last_signal_price"
 
-    lines = [f"<b>💼 Top {top_n} vùng xanh (TK cao nhất):</b>"]
+    lines = [f"<b>💼 Top {top_n} vùng xanh (Thanh khoản cao nhất):</b>"]
     for _, row in df.iterrows():
         ticker = row.get("ticker", "")
         close  = _val(row, "close")
