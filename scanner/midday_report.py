@@ -159,17 +159,23 @@ def run(force: bool = False) -> None:
     if not summary:
         summary = "Không thể tải phân tích AI lúc này."
 
-    # Danh sách mã tăng/giảm
+    # Danh sách mã tăng/giảm — hiện top 5, còn lại gộp "+X mã khác"
     up   = [m for m in movers if float(m["pct_chg"]) > 0]
     down = [m for m in movers if float(m["pct_chg"]) < 0]
-    up_str   = "  ".join(f"{m['ticker']}(+{float(m['pct_chg']):.1f}%)" for m in up)[:250]
-    down_str = "  ".join(f"{m['ticker']}({float(m['pct_chg']):.1f}%)"  for m in down)[:250]
+
+    def _ticker_list(lst: list[dict], show: int = 8) -> str:
+        if not lst:
+            return "–"
+        sign = "+" if float(lst[0]["pct_chg"]) > 0 else ""
+        top  = "  ".join(f"{m['ticker']}({sign}{float(m['pct_chg']):.1f}%)" for m in lst[:show])
+        rest = len(lst) - show
+        return f"{top}  (+{rest} mã khác)" if rest > 0 else top
 
     today_str = today.strftime("%d/%m/%Y")
     message = "\n".join([
         f"<b>📰 Tổng hợp giữa phiên — {today_str}</b>",
-        f"🟢 Tăng mạnh ({len(up)} mã): {up_str or '–'}",
-        f"🔴 Giảm mạnh ({len(down)} mã): {down_str or '–'}",
+        f"🟢 Tăng mạnh ({len(up)} mã): {_ticker_list(up)}",
+        f"🔴 Giảm mạnh ({len(down)} mã): {_ticker_list(down)}",
         "",
         summary,
         "",
