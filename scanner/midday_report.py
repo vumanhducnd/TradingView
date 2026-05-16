@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
+import scanner.config  # noqa: F401 — bắt buộc để load_dotenv() chạy trước DB
 from scanner.utils import fmt_price, is_trading_day, logger
 
 
