@@ -78,9 +78,52 @@ def _get_top_movers(min_pct: float = 2.0, top_n: int = 20, force: bool = False) 
         return []
 
 
+# ─── Nhóm ngành ───────────────────────────────────────────────────────────────
+
+_SECTORS: dict[str, str] = {
+    # Ngân hàng
+    "VCB":"Ngân hàng","BID":"Ngân hàng","CTG":"Ngân hàng","MBB":"Ngân hàng",
+    "VPB":"Ngân hàng","TCB":"Ngân hàng","ACB":"Ngân hàng","STB":"Ngân hàng",
+    "HDB":"Ngân hàng","VIB":"Ngân hàng","MSB":"Ngân hàng","OCB":"Ngân hàng",
+    "LPB":"Ngân hàng","TPB":"Ngân hàng","SHB":"Ngân hàng","SSB":"Ngân hàng",
+    # Bất động sản
+    "VHM":"Bất động sản","VIC":"Bất động sản","NVL":"Bất động sản",
+    "DIG":"Bất động sản","KDH":"Bất động sản","PDR":"Bất động sản",
+    "BCM":"Bất động sản","NLG":"Bất động sản","HDG":"Bất động sản",
+    # Thép & Tài nguyên
+    "HPG":"Thép","HSG":"Thép","NKG":"Thép","SMC":"Thép",
+    # Dầu khí
+    "GAS":"Dầu khí","PLX":"Dầu khí","BSR":"Dầu khí","OIL":"Dầu khí",
+    "PVS":"Dầu khí","PVD":"Dầu khí","PVC":"Dầu khí",
+    # Thực phẩm & Tiêu dùng
+    "VNM":"Thực phẩm","SAB":"Thực phẩm","MCH":"Thực phẩm","MSN":"Tiêu dùng",
+    # Bán lẻ & Công nghệ
+    "MWG":"Bán lẻ","FRT":"Bán lẻ","DGW":"Bán lẻ","FPT":"Công nghệ",
+    # Điện & Hạ tầng
+    "REE":"Điện","GEX":"Điện","POW":"Điện","PC1":"Xây dựng",
+    "HBC":"Xây dựng","CTD":"Xây dựng",
+    # Hàng không & Vận tải
+    "HVN":"Hàng không","VJC":"Hàng không","GMD":"Vận tải","VSC":"Vận tải",
+    # Chứng khoán
+    "SSI":"Chứng khoán","VND":"Chứng khoán","HCM":"Chứng khoán","MBS":"Chứng khoán",
+}
+
+
+def _group_by_sector(movers: list[dict]) -> str:
+    """Gom mã biến động vào nhóm ngành, trả về text mô tả."""
+    from collections import defaultdict
+    groups: dict[str, list[str]] = defaultdict(list)
+    for m in movers:
+        sector = _SECTORS.get(m["ticker"], "Khác")
+        pct = float(m["pct_chg"])
+        arrow = "▲" if pct > 0 else "▼"
+        groups[sector].append(f"{m['ticker']}{arrow}{abs(pct):.1f}%")
+    return "  |  ".join(f"{s}: {', '.join(t)}" for s, t in sorted(groups.items()))
+
+
 # ─── AI tổng hợp ──────────────────────────────────────────────────────────────
 
-def _build_prompt(movers: list[dict], news: list[dict]) -> str:
+def _build_prompt(movers: list[dict], news_ticker: list[dict], news_hot: list[dict]) -> str:
     today_str = date.today().strftime("%d/%m/%Y")
 
     mover_lines = []
@@ -88,23 +131,32 @@ def _build_prompt(movers: list[dict], news: list[dict]) -> str:
         pct = float(m["pct_chg"])
         arrow = "▲" if pct > 0 else "▼"
         tk = float(m["turnover"] or 0) / 1e9
+        sector = _SECTORS.get(m["ticker"], "")
+        sector_tag = f" [{sector}]" if sector else ""
         mover_lines.append(
-            f"- {m['ticker']}: {arrow}{abs(pct):.1f}% | giá {fmt_price(float(m['close']))} | TK {tk:.1f} tỷ"
+            f"- {m['ticker']}{sector_tag}: {arrow}{abs(pct):.1f}% | giá {fmt_price(float(m['close']))} | TK {tk:.1f} tỷ"
         )
 
-    news_lines = [f"- [{n['source']}] {n['title']}" for n in news[:10]]
+    sector_summary = _group_by_sector(movers)
+    news_ticker_lines = [f"- [{n['source']}] {n['title']}" for n in news_ticker[:6]]
+    news_hot_lines    = [f"- [{n['source']}] {n['title']}" for n in news_hot[:5]]
 
     return f"""Bạn là chuyên gia phân tích chứng khoán Việt Nam. Viết 1 bài tổng hợp giữa phiên ngày {today_str}, ngắn gọn khoảng 150 từ, bằng tiếng Việt, dành cho nhà đầu tư cá nhân.
 
-Các mã có biến động mạnh (≥2%) sáng nay, sắp xếp theo thanh khoản:
+Các mã biến động mạnh (≥2%) sáng nay, xếp theo thanh khoản:
 {chr(10).join(mover_lines)}
 
-Tin tức liên quan:
-{chr(10).join(news_lines) if news_lines else "Chưa có tin tức nổi bật được tìm thấy."}
+Phân nhóm ngành: {sector_summary}
+
+Tin tức liên quan đến các mã biến động:
+{chr(10).join(news_ticker_lines) if news_ticker_lines else "Chưa tìm thấy."}
+
+Tin tức thị trường nổi bật:
+{chr(10).join(news_hot_lines) if news_hot_lines else "Chưa tìm thấy."}
 
 Yêu cầu:
-- Nêu xu hướng chung thị trường phiên sáng
-- Đề cập 3-5 mã nổi bật và lý do biến động (dựa vào tin tức nếu có, nếu không thì nhận định kỹ thuật)
+- Nêu nhóm ngành nào đang dẫn dắt / kéo lùi thị trường phiên sáng
+- Đề cập 3-5 mã nổi bật, liên kết với tin tức hot nếu có
 - Kết luận: nhà đầu tư cần lưu ý gì khi bước vào phiên chiều
 - Giọng văn chuyên nghiệp, súc tích, không dùng markdown"""
 
@@ -151,11 +203,12 @@ def run(force: bool = False) -> None:
     logger.info(f"Top movers: {len(movers)} ma")
 
     tickers = [m["ticker"] for m in movers]
-    from scanner.news_fetcher import fetch_news
-    news = fetch_news(tickers=tickers)
-    logger.info(f"Tin tuc lien quan: {len(news)} bai")
+    from scanner.news_fetcher import fetch_news, fetch_hot_news
+    news_ticker = fetch_news(tickers=tickers)
+    news_hot    = fetch_hot_news()
+    logger.info(f"Tin tuc: {len(news_ticker)} theo ma, {len(news_hot)} tin hot")
 
-    summary = _call_ai(_build_prompt(movers, news))
+    summary = _call_ai(_build_prompt(movers, news_ticker, news_hot))
     if not summary:
         summary = "Không thể tải phân tích AI lúc này."
 

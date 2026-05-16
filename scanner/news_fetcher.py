@@ -21,6 +21,11 @@ _FEEDS = [
 ]
 
 
+def fetch_hot_news(max_items: int = 10) -> list[dict]:
+    """Lấy tin tức nổi bật chung (không lọc theo mã)."""
+    return fetch_news(tickers=None, max_items=max_items)
+
+
 def fetch_news(tickers: list[str] | None = None, max_items: int = 20) -> list[dict]:
     """
     Lấy tin từ RSS feeds.
