@@ -14,10 +14,10 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from scanner.utils import logger
 
 _FEEDS = [
-    ("VnEconomy",         "https://vneconomy.vn/chung-khoan.rss"),
-    ("CafeF",             "https://cafef.vn/rss/home.rss"),
-    ("TinnhanhCK",        "https://tinnhanhchungkhoan.vn/rss.html"),
-    ("VietnamFinance",    "https://vietnamfinance.vn/rss/chung-khoan.rss"),
+    ("VnEconomy",  "https://vneconomy.vn/chung-khoan.rss"),
+    ("BaoDauTu",   "https://baodautu.vn/chung-khoan.rss"),
+    ("CafeF",      "https://cafef.vn/thi-truong-chung-khoan.rss"),
+    ("Vietstock",  "https://vietstock.vn/rss/tin-tuc-chung-khoan.rss"),
 ]
 
 
