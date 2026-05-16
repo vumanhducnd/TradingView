@@ -120,9 +120,9 @@ def _call_ai(prompt: str) -> str:
 
 # ─── Entry point ──────────────────────────────────────────────────────────────
 
-def run() -> None:
+def run(force: bool = False) -> None:
     today = date.today()
-    if not is_trading_day(today):
+    if not force and not is_trading_day(today):
         logger.info("Hom nay khong phai ngay giao dich — bo qua midday report.")
         return
 
@@ -171,8 +171,4 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--force", action="store_true", help="Bỏ qua kiểm tra ngày giao dịch")
     args = parser.parse_args()
-    if args.force:
-        # Bypass trading day check
-        import scanner.utils as _u
-        _u.is_trading_day = lambda *_: True
-    run()
+    run(force=args.force)
