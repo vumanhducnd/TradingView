@@ -13,15 +13,18 @@ _bot_thread: threading.Thread | None = None
 
 
 class _HealthHandler(BaseHTTPRequestHandler):
+    def _status(self):
+        return 503 if (_bot_thread is None or not _bot_thread.is_alive()) else 200
+
     def do_GET(self):
-        if _bot_thread is None or not _bot_thread.is_alive():
-            self.send_response(503)
-            self.end_headers()
-            self.wfile.write(b"Bot thread dead")
-        else:
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(b"OK")
+        code = self._status()
+        self.send_response(code)
+        self.end_headers()
+        self.wfile.write(b"Bot thread dead" if code == 503 else b"OK")
+
+    def do_HEAD(self):
+        self.send_response(self._status())
+        self.end_headers()
 
     def log_message(self, format, *args):
         print(f"[health] {self.address_string()} {format % args}", flush=True)
