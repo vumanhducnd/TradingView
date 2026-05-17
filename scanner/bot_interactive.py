@@ -503,8 +503,32 @@ def _dispatch(token: str, message: dict) -> None:
         _send_main_menu(token, chat_id)
     elif cmd == "/huongdan":
         _reply(token, chat_id, GUIDE, _KB_BACK)
+    elif cmd == "/check":
+        reply = _cmd_check(parts[1]) if len(parts) >= 2 else "Dùng: <code>/check VHM</code>"
+        _reply(token, chat_id, reply, _KB_BACK)
+    elif cmd == "/top":
+        n = int(parts[1]) if len(parts) >= 2 and parts[1].isdigit() else 10
+        _reply(token, chat_id, _cmd_top(n), _KB_BACK)
+    elif cmd == "/dangiu":
+        _reply(token, chat_id, _cmd_dangiu(), _KB_BACK)
+    elif cmd == "/alert":
+        reply = (
+            _cmd_set_alert(cid_str, parts[1], parts[2])
+            if len(parts) >= 3
+            else "Dùng: <code>/alert VHM 25.5</code>"
+        )
+        _reply(token, chat_id, reply, _KB_BACK)
+    elif cmd == "/alerts":
+        _reply(token, chat_id, _cmd_list_alerts(cid_str), _KB_BACK)
+    elif cmd == "/delalert":
+        reply = (
+            _cmd_delete_alert(cid_str, parts[1])
+            if len(parts) >= 2
+            else "Dùng: <code>/delalert &lt;id&gt;</code>"
+        )
+        _reply(token, chat_id, reply, _KB_BACK)
     else:
-        _reply(token, chat_id, "⏳ Tính năng đang phát triển.", _KB_BACK)
+        _send_main_menu(token, chat_id)
 
 
 # ─── Main loop ────────────────────────────────────────────────────────────────
