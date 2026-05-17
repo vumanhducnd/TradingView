@@ -402,6 +402,20 @@ def _handle_callback(token: str, cq: dict) -> None:
     cid_str = str(chat_id)
     data    = cq.get("data", "")
 
+    # ── Access control cho callback (trừ main_menu/guide để user pending vẫn thấy) ──
+    _PUBLIC = {"main_menu", "guide"}
+    if data not in _PUBLIC and not _is_admin(cid_str):
+        status = _check_access(cid_str)
+        if status is None:
+            _send_registration_prompt(token, chat_id)
+            return
+        if status == "pending":
+            _reply(token, chat_id, "⏳ Tài khoản đang chờ admin duyệt.")
+            return
+        if status in ("blocked", "expired"):
+            _reply(token, chat_id, "🚫 Tài khoản không còn hiệu lực.")
+            return
+
     style = _trend(cid_str)
 
     if data == "main_menu":
@@ -431,7 +445,11 @@ def _handle_callback(token: str, cq: dict) -> None:
         _reply(token, chat_id, _cmd_top(n, style), _KB_BACK)
 
     elif data == "dangiu":
-        _reply(token, chat_id, _cmd_dangiu(style), _KB_BACK)
+        try:
+            _reply(token, chat_id, _cmd_dangiu(style), _KB_BACK)
+        except Exception as e:
+            logger.warning(f"dangiu error: {e}")
+            _reply(token, chat_id, "❌ Lỗi tải dữ liệu. Vui lòng thử lại.", _KB_BACK)
 
     elif data == "input_alert":
         _user_state[cid_str] = "alert"
