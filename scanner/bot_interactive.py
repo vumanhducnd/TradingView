@@ -314,16 +314,30 @@ def _handle_contact(token: str, message: dict) -> None:
 
 # ─── Telegram API helpers ─────────────────────────────────────────────────────
 
-def _answer_callback(token: str, callback_id: str) -> None:
+_last_callback: dict[str, float] = {}  # chat_id → timestamp
+_RATE_LIMIT = 1.5  # giây tối thiểu giữa 2 lần bấm
+
+
+def _answer_callback(token: str, callback_id: str, text: str = "", alert: bool = False) -> None:
     try:
-        requests.post(
-            _api(token, "answerCallbackQuery"),
-            json={"callback_query_id": callback_id},
-            timeout=10,
-            verify=False,
-        )
+        body: dict = {"callback_query_id": callback_id}
+        if text:
+            body["text"] = text
+            body["show_alert"] = alert
+        requests.post(_api(token, "answerCallbackQuery"), json=body, timeout=10, verify=False)
     except Exception:
         pass
+
+
+def _is_rate_limited(chat_id: str, callback_id: str, token: str) -> bool:
+    """Trả về True nếu user bấm quá nhanh — đã gửi toast thông báo."""
+    now = time.time()
+    last = _last_callback.get(chat_id, 0)
+    if now - last < _RATE_LIMIT:
+        _answer_callback(token, callback_id, "⏳ Vui lòng chờ...", alert=False)
+        return True
+    _last_callback[chat_id] = now
+    return False
 
 
 def _send_main_menu(token: str, chat_id: int | str) -> None:
@@ -407,11 +421,14 @@ def _send_admin_user_list(token: str, chat_id: int | str, f_key: str, page: int,
 
 
 def _handle_callback(token: str, cq: dict) -> None:
-    _answer_callback(token, cq["id"])
     chat_id    = cq["message"]["chat"]["id"]
     message_id = cq["message"]["message_id"]
     cid_str    = str(chat_id)
     data       = cq.get("data", "")
+
+    if _is_rate_limited(cid_str, cq["id"], token):
+        return
+    _answer_callback(token, cq["id"])
 
     # ── Access control cho callback (trừ main_menu/guide để user pending vẫn thấy) ──
     _PUBLIC = {"main_menu", "guide"}
