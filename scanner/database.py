@@ -1004,14 +1004,20 @@ def _ensure_bot_users_table() -> None:
     with db_cursor() as cur:
         cur.execute("""
             CREATE TABLE IF NOT EXISTS bot_users (
-                chat_id      TEXT PRIMARY KEY,
-                phone        TEXT,
-                full_name    TEXT,
-                username     TEXT,
-                status       TEXT DEFAULT 'pending',
-                created_at   TIMESTAMP DEFAULT NOW(),
-                activated_at TIMESTAMP
+                chat_id          TEXT PRIMARY KEY,
+                phone            TEXT,
+                full_name        TEXT,
+                username         TEXT,
+                status           TEXT DEFAULT 'pending',
+                created_at       TIMESTAMP DEFAULT NOW(),
+                activated_at     TIMESTAMP,
+                trial_expires_at TIMESTAMP
             )
+        """)
+        # Migration: thêm cột nếu DB cũ chưa có
+        cur.execute("""
+            ALTER TABLE bot_users
+            ADD COLUMN IF NOT EXISTS trial_expires_at TIMESTAMP
         """)
     _users_table_ensured = True
 
@@ -1038,18 +1044,34 @@ def upsert_bot_user(chat_id: str, phone: str, full_name: str, username: str = ""
         """, (chat_id, phone, full_name, username))
 
 
-def set_user_status(chat_id: str, status: str) -> bool:
-    """status: 'active' | 'blocked' | 'pending'. Trả về True nếu tìm thấy user."""
+def set_user_status(chat_id: str, status: str, trial_days: int = 0) -> bool:
+    """
+    status: 'active' | 'trial' | 'blocked' | 'pending'
+    trial_days: chỉ dùng khi status='trial'
+    """
     _ensure_bot_users_table()
     with db_cursor() as cur:
         if status == "active":
+            if trial_days and trial_days > 0:
+                cur.execute(
+                    f"UPDATE bot_users SET status='active', activated_at=NOW(), "
+                    f"trial_expires_at=NOW() + INTERVAL '{trial_days} days' WHERE chat_id=%s",
+                    (chat_id,),
+                )
+            else:
+                cur.execute(
+                    "UPDATE bot_users SET status='active', activated_at=NOW(), trial_expires_at=NULL WHERE chat_id=%s",
+                    (chat_id,),
+                )
+        elif status == "trial":
             cur.execute(
-                "UPDATE bot_users SET status = 'active', activated_at = NOW() WHERE chat_id = %s",
+                "UPDATE bot_users SET status='trial', activated_at=NOW(), "
+                f"trial_expires_at=NOW() + INTERVAL '{trial_days or 3} days' WHERE chat_id=%s",
                 (chat_id,),
             )
         else:
             cur.execute(
-                "UPDATE bot_users SET status = %s WHERE chat_id = %s",
+                "UPDATE bot_users SET status=%s WHERE chat_id=%s",
                 (status, chat_id),
             )
         return cur.rowcount > 0
@@ -1070,5 +1092,18 @@ def get_all_bot_users() -> list[dict]:
     with db_cursor(commit=False) as cur:
         cur.execute("SELECT * FROM bot_users ORDER BY created_at DESC")
         return [dict(r) for r in cur.fetchall()]
+
+
+def get_user_by_phone(phone: str) -> dict | None:
+    """Tìm user theo SĐT (hỗ trợ có/không có mã quốc gia)."""
+    _ensure_bot_users_table()
+    phone_clean = phone.strip().lstrip("+")
+    with db_cursor(commit=False) as cur:
+        cur.execute(
+            "SELECT * FROM bot_users WHERE REGEXP_REPLACE(phone, '[^0-9]', '', 'g') LIKE %s",
+            (f"%{phone_clean[-9:]}",),   # so 9 so cuoi de khop ca +84 lan 0
+        )
+        r = cur.fetchone()
+        return dict(r) if r else None
 
 

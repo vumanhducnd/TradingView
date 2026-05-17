@@ -81,28 +81,35 @@ def _kb_main(cid: str) -> dict:
     t = _trend(cid)
     short_btn = "⚡ Ngắn hạn ✓" if t == "short" else "⚡ Ngắn hạn"
     long_btn  = "📈 Dài hạn ✓"  if t == "long"  else "📈 Dài hạn"
-    return {
-        "inline_keyboard": [
-            [{"text": "📖 Hướng dẫn giao dịch", "callback_data": "guide"}],
-            [
-                {"text": "🔍 Tra cứu mã",    "callback_data": "input_check"},
-                {"text": "🏆 Top vùng xanh", "callback_data": "top_menu"},
-            ],
-            [
-                {"text": "💼 Đang giữ",      "callback_data": "dangiu"},
-                {"text": "⏰ Đặt cảnh báo", "callback_data": "input_alert"},
-            ],
-            [{"text": "📋 Cảnh báo của tôi", "callback_data": "alerts"}],
-            [
-                {"text": short_btn, "callback_data": "trend_short"},
-                {"text": long_btn,  "callback_data": "trend_long"},
-            ],
-        ]
-    }
+    rows = [
+        [{"text": "📖 Hướng dẫn giao dịch", "callback_data": "guide"}],
+        [
+            {"text": "🔍 Tra cứu mã",    "callback_data": "input_check"},
+            {"text": "🏆 Top vùng xanh", "callback_data": "top_menu"},
+        ],
+        [
+            {"text": "💼 Đang giữ",      "callback_data": "dangiu"},
+            {"text": "⏰ Đặt cảnh báo", "callback_data": "input_alert"},
+        ],
+        [{"text": "📋 Cảnh báo của tôi", "callback_data": "alerts"}],
+        [
+            {"text": short_btn, "callback_data": "trend_short"},
+            {"text": long_btn,  "callback_data": "trend_long"},
+        ],
+    ]
+    if _is_admin(cid):
+        rows.append([{"text": "👮 Admin Panel", "callback_data": "admin_panel"}])
+    return {"inline_keyboard": rows}
+
 
 _KB_BACK = {
     "inline_keyboard": [[{"text": "🔙 Menu chính", "callback_data": "main_menu"}]]
 }
+
+_KB_ADMIN_BACK = {
+    "inline_keyboard": [[{"text": "🔙 Admin Panel", "callback_data": "admin_panel"}]]
+}
+
 
 def _kb_top(cid: str) -> dict:
     return {
@@ -117,6 +124,64 @@ def _kb_top(cid: str) -> dict:
     }
 
 
+def _kb_admin_menu(pending: int, active: int, blocked: int) -> dict:
+    return {
+        "inline_keyboard": [
+            [
+                {"text": f"⏳ Chờ duyệt ({pending})", "callback_data": "adm_list_pending_0"},
+                {"text": f"✅ Active ({active})",     "callback_data": "adm_list_active_0"},
+            ],
+            [
+                {"text": f"🚫 Đã chặn ({blocked})",  "callback_data": "adm_list_blocked_0"},
+                {"text": "👥 Tất cả",                 "callback_data": "adm_list_all_0"},
+            ],
+            [{"text": "🔙 Menu chính", "callback_data": "main_menu"}],
+        ]
+    }
+
+
+def _kb_user_actions(target_id: str, current_status: str) -> dict:
+    """Nút hành động cho từng user tùy theo status hiện tại."""
+    if current_status == "pending":
+        rows = [
+            [
+                {"text": "✅ Kích hoạt",       "callback_data": f"sel_apv_{target_id}"},
+                {"text": "⏱ Dùng thử 3 ngày", "callback_data": f"trial_{target_id}"},
+            ],
+            [{"text": "🚫 Chặn", "callback_data": f"block_{target_id}"}],
+        ]
+    elif current_status in ("active", "trial"):
+        rows = [[{"text": "🚫 Chặn", "callback_data": f"block_{target_id}"}]]
+    elif current_status == "blocked":
+        rows = [
+            [
+                {"text": "✅ Kích hoạt",       "callback_data": f"sel_apv_{target_id}"},
+                {"text": "⏱ Dùng thử 3 ngày", "callback_data": f"trial_{target_id}"},
+            ],
+        ]
+    else:
+        rows = []
+    rows.append([{"text": "🔙 Admin Panel", "callback_data": "admin_panel"}])
+    return {"inline_keyboard": rows}
+
+
+def _kb_approve_duration(target_id: str) -> dict:
+    return {
+        "inline_keyboard": [
+            [
+                {"text": "♾ Vĩnh viễn",  "callback_data": f"apv_{target_id}_0"},
+                {"text": "📅 30 ngày",   "callback_data": f"apv_{target_id}_30"},
+            ],
+            [
+                {"text": "📅 90 ngày",   "callback_data": f"apv_{target_id}_90"},
+                {"text": "📅 180 ngày",  "callback_data": f"apv_{target_id}_180"},
+            ],
+            [{"text": "📅 1 năm",        "callback_data": f"apv_{target_id}_365"}],
+            [{"text": "🔙 Admin Panel",  "callback_data": "admin_panel"}],
+        ]
+    }
+
+
 # ─── Access control ───────────────────────────────────────────────────────────
 
 def _is_admin(chat_id: str) -> bool:
@@ -124,14 +189,26 @@ def _is_admin(chat_id: str) -> bool:
 
 
 def _check_access(chat_id: str) -> str | None:
-    """Trả về status: 'active' | 'pending' | 'blocked' | None (chưa đăng ký)."""
+    """Trả về status: 'active' | 'trial' | 'pending' | 'blocked' | 'expired' | None."""
     if not ADMIN_CHAT_ID:
-        return "active"          # Chưa cấu hình admin → cho qua hết
+        return "active"
     if _is_admin(chat_id):
-        return "active"          # Admin luôn có quyền
-    from scanner.database import get_bot_user
+        return "active"
+    from scanner.database import get_bot_user, set_user_status
     user = get_bot_user(chat_id)
-    return user["status"] if user else None
+    if not user:
+        return None
+    if user["status"] in ("trial", "active"):
+        expires = user.get("trial_expires_at")
+        if expires:
+            from datetime import timezone, datetime as _dt
+            now = _dt.now(timezone.utc)
+            if expires.tzinfo is None:
+                expires = expires.replace(tzinfo=timezone.utc)
+            if now > expires:
+                set_user_status(chat_id, "blocked")
+                return "expired"
+    return user["status"]
 
 
 def _send_registration_prompt(token: str, chat_id: int | str) -> None:
@@ -253,6 +330,72 @@ def _send_main_menu(token: str, chat_id: int | str) -> None:
     )
 
 
+_PAGE_SIZE = 8
+
+_FILTER_LABEL = {
+    "pending": "⏳ Chờ duyệt",
+    "active":  "✅ Active",
+    "blocked": "🚫 Đã chặn",
+    "all":     "👥 Tất cả",
+}
+
+
+def _send_admin_user_list(token: str, chat_id: int | str, f_key: str, page: int) -> None:
+    from scanner.database import get_users_by_status, get_all_bot_users
+    users = get_all_bot_users() if f_key == "all" else get_users_by_status(f_key)
+    label = _FILTER_LABEL.get(f_key, f_key)
+    total = len(users)
+
+    if not users:
+        _reply(token, chat_id, f"Không có user nào trong mục {label}.", _KB_ADMIN_BACK)
+        return
+
+    total_pages = (total + _PAGE_SIZE - 1) // _PAGE_SIZE
+    page = max(0, min(page, total_pages - 1))
+    chunk = users[page * _PAGE_SIZE:(page + 1) * _PAGE_SIZE]
+
+    # Danh sách text
+    icons = {"active": "✅", "pending": "⏳", "blocked": "🚫", "trial": "⏱"}
+    lines = [f"<b>{label} — {total} user (trang {page+1}/{total_pages}):</b>"]
+    for u in chunk:
+        ic = icons.get(u["status"], "❓")
+        trial_info = ""
+        if u.get("trial_expires_at"):
+            exp = u["trial_expires_at"]
+            trial_info = f" (hết {exp.strftime('%d/%m/%Y')})"
+        lines.append(
+            f"{ic} <b>{u['full_name'] or '–'}</b> | "
+            f"<code>{u['phone'] or '–'}</code>{trial_info}"
+        )
+
+    # Keyboard: nút hành động theo từng user
+    user_rows = []
+    for u in chunk:
+        row = []
+        if u["status"] == "pending":
+            row = [
+                {"text": f"✅ {(u['full_name'] or u['chat_id'])[:15]}", "callback_data": f"approve_{u['chat_id']}"},
+                {"text": "🚫", "callback_data": f"block_{u['chat_id']}"},
+            ]
+        elif u["status"] == "active":
+            row = [{"text": f"🚫 Chặn {(u['full_name'] or u['chat_id'])[:20]}", "callback_data": f"block_{u['chat_id']}"}]
+        elif u["status"] == "blocked":
+            row = [{"text": f"✅ Bỏ chặn {(u['full_name'] or u['chat_id'])[:18]}", "callback_data": f"approve_{u['chat_id']}"}]
+        if row:
+            user_rows.append(row)
+
+    # Phân trang
+    nav = []
+    if page > 0:
+        nav.append({"text": "◄ Trước", "callback_data": f"adm_list_{f_key}_{page-1}"})
+    nav.append({"text": f"{page+1}/{total_pages}", "callback_data": "admin_panel"})
+    if page < total_pages - 1:
+        nav.append({"text": "Tiếp ►", "callback_data": f"adm_list_{f_key}_{page+1}"})
+
+    kb = {"inline_keyboard": user_rows + [nav, [{"text": "🔙 Admin Panel", "callback_data": "admin_panel"}]]}
+    _reply(token, chat_id, "\n".join(lines), kb)
+
+
 def _handle_callback(token: str, cq: dict) -> None:
     _answer_callback(token, cq["id"])
     chat_id = cq["message"]["chat"]["id"]
@@ -312,6 +455,73 @@ def _handle_callback(token: str, cq: dict) -> None:
         text, kb = _cmd_list_alerts(cid_str)
         _reply(token, chat_id, reply)
         _reply(token, chat_id, text, kb)
+
+    # ── Admin Panel ───────────────────────────────────────────────────────────
+    elif data == "admin_panel" and _is_admin(cid_str):
+        from scanner.database import get_users_by_status
+        p = len(get_users_by_status("pending"))
+        a = len(get_users_by_status("active"))
+        b = len(get_users_by_status("blocked"))
+        _reply(token, chat_id,
+            f"<b>👮 Admin Panel</b>\n"
+            f"⏳ Chờ duyệt: <b>{p}</b>  |  ✅ Active: <b>{a}</b>  |  🚫 Chặn: <b>{b}</b>",
+            _kb_admin_menu(p, a, b))
+
+    elif data.startswith("adm_list_") and _is_admin(cid_str):
+        # format: adm_list_<filter>_<page>
+        parts_d = data.split("_")   # ['adm','list','pending','0']
+        f_key   = parts_d[2]        # pending | active | blocked | all
+        page    = int(parts_d[3]) if len(parts_d) > 3 else 0
+        _send_admin_user_list(token, chat_id, f_key, page)
+
+    # ── Admin: chọn thời hạn kích hoạt ───────────────────────────────────────
+    elif data.startswith("sel_apv_") and _is_admin(cid_str):
+        target_id = data[8:]
+        from scanner.database import get_bot_user
+        u = get_bot_user(target_id) or {}
+        name = u.get("full_name") or target_id
+        _reply(token, chat_id,
+            f"Kích hoạt <b>{name}</b> trong bao lâu?",
+            _kb_approve_duration(target_id))
+
+    elif data.startswith("apv_") and _is_admin(cid_str):
+        # format: apv_<chat_id>_<days>
+        parts_d = data.split("_", 2)   # ['apv', chat_id, days]  nhưng chat_id có thể có '_'
+        days_str = parts_d[-1]
+        target_id = "_".join(parts_d[1:-1])
+        days = int(days_str)
+        from scanner.database import set_user_status, get_bot_user
+        ok = set_user_status(target_id, "active", trial_days=days)
+        if ok:
+            u = get_bot_user(target_id) or {}
+            name = u.get("full_name") or target_id
+            dur = "vĩnh viễn" if days == 0 else f"{days} ngày"
+            _reply(token, chat_id, f"✅ Đã kích hoạt <b>{name}</b> — {dur}")
+            msg = (
+                f"🎉 Tài khoản đã được kích hoạt <b>{dur}</b>!\nGõ /start để bắt đầu."
+                if days == 0 else
+                f"🎉 Tài khoản được kích hoạt <b>{days} ngày</b>!\n"
+                f"Gõ /start để bắt đầu.\n\n<i>Hết hạn sau {days} ngày.</i>"
+            )
+            _reply(token, target_id, msg)
+        else:
+            _reply(token, chat_id, "Không tìm thấy user.")
+
+    # ── Admin: dùng thử ───────────────────────────────────────────────────────
+    elif data.startswith("trial_") and _is_admin(cid_str):
+        target_id = data[6:]
+        from scanner.database import set_user_status, get_bot_user
+        ok = set_user_status(target_id, "trial", trial_days=3)
+        if ok:
+            u = get_bot_user(target_id) or {}
+            name = u.get("full_name") or target_id
+            _reply(token, chat_id, f"⏱ Đã cấp dùng thử 3 ngày: <b>{name}</b>")
+            _reply(token, target_id,
+                "🎉 Tài khoản được dùng thử <b>3 ngày</b>!\n"
+                "Gõ /start để bắt đầu.\n\n"
+                "<i>Sau 3 ngày hãy liên hệ admin để kích hoạt đầy đủ.</i>")
+        else:
+            _reply(token, chat_id, "Không tìm thấy user.")
 
     # ── Admin: duyệt / chặn user ──────────────────────────────────────────────
     elif data.startswith("approve_") or data.startswith("block_"):
@@ -670,6 +880,11 @@ def _dispatch(token: str, message: dict) -> None:
         _reply(token, chat_id,
             "⏳ Tài khoản đang chờ admin duyệt.\nBạn sẽ được thông báo khi được kích hoạt.")
         return
+    if status == "expired":
+        _reply(token, chat_id,
+            "⏰ Thời gian dùng thử đã hết.\n"
+            "Liên hệ admin để được kích hoạt tài khoản đầy đủ.")
+        return
     if status == "blocked":
         _reply(token, chat_id, "🚫 Tài khoản của bạn đã bị chặn.")
         return
@@ -758,6 +973,19 @@ def _dispatch(token: str, message: dict) -> None:
             _reply(token, chat_id, f"🚫 Đã chặn: <b>{u.get('full_name', target)}</b>")
         else:
             _reply(token, chat_id, "Không tìm thấy user.")
+
+    elif cmd == "/block_sdt" and _is_admin(cid_str) and len(parts) >= 2:
+        from scanner.database import get_user_by_phone, set_user_status
+        phone = parts[1]
+        u = get_user_by_phone(phone)
+        if not u:
+            _reply(token, chat_id, f"Không tìm thấy user với SĐT: <code>{phone}</code>")
+        else:
+            set_user_status(u["chat_id"], "blocked")
+            _reply(token, chat_id,
+                f"🚫 Đã chặn: <b>{u.get('full_name', '–')}</b>\n"
+                f"SĐT: <code>{u['phone']}</code> | ID: <code>{u['chat_id']}</code>"
+            )
 
     # ── User commands ─────────────────────────────────────────────────────────
     elif cmd == "/check":
