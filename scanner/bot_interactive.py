@@ -122,11 +122,7 @@ def _kb_main(cid: str) -> dict:
     return {"inline_keyboard": rows}
 
 
-_KB_BACK = {
-    "inline_keyboard": [[{"text": "🔙 Menu chính", "callback_data": "main_menu"}]]
-}
-
-# Dùng cho guide — back gửi tin menu mới, không xoá guide
+# Back button — gửi tin menu MỚI, giữ nguyên tin kết quả hiện tại
 _KB_BACK_NEW = {
     "inline_keyboard": [[{"text": "🔙 Menu chính", "callback_data": "main_menu_new"}]]
 }
@@ -506,14 +502,14 @@ def _handle_callback(token: str, cq: dict) -> None:
 
     elif data in ("top_5", "top_10", "top_20"):
         n = int(data.split("_")[1])
-        _edit(token, chat_id, message_id, _cmd_top(n, style), _KB_BACK)
+        _edit(token, chat_id, message_id, _cmd_top(n, style), _KB_BACK_NEW)
 
     elif data == "dangiu":
         try:
-            _reply(token, chat_id, _cmd_dangiu(style), _KB_BACK)
+            _reply(token, chat_id, _cmd_dangiu(style), _KB_BACK_NEW)
         except Exception as e:
             logger.warning(f"dangiu error: {e}")
-            _reply(token, chat_id, "❌ Lỗi tải dữ liệu. Vui lòng thử lại.", _KB_BACK)
+            _reply(token, chat_id, "❌ Lỗi tải dữ liệu. Vui lòng thử lại.", _KB_BACK_NEW)
 
     elif data == "input_alert":
         _user_state[cid_str] = "alert"
@@ -930,7 +926,7 @@ def _cmd_list_alerts(chat_id: str) -> tuple[str, dict]:
     from scanner.database import get_price_alerts
     alerts = get_price_alerts(chat_id)
     if not alerts:
-        return "Bạn chưa có cảnh báo nào.\nBấm ⏰ Đặt cảnh báo để thêm mới.", _KB_BACK
+        return "Bạn chưa có cảnh báo nào.\nBấm ⏰ Đặt cảnh báo để thêm mới.", _KB_BACK_NEW
 
     lines = [f"<b>⏰ Cảnh báo của bạn ({len(alerts)}):</b>"]
     buttons = []
@@ -1015,11 +1011,11 @@ def _dispatch(token: str, message: dict) -> None:
     if not text.startswith("/"):
         state = _user_state.pop(cid_str, None)
         if state == "check":
-            _reply(token, chat_id, _cmd_check(text.split()[0], _trend(cid_str)), _KB_BACK)
+            _reply(token, chat_id, _cmd_check(text.split()[0], _trend(cid_str)), _KB_BACK_NEW)
         elif state == "alert":
             parts = text.split()
             if len(parts) >= 2:
-                _reply(token, chat_id, _cmd_set_alert(cid_str, parts[0], parts[1]), _KB_BACK)
+                _reply(token, chat_id, _cmd_set_alert(cid_str, parts[0], parts[1]), _KB_BACK_NEW)
             else:
                 _user_state[cid_str] = "alert"
                 _reply(token, chat_id, "Nhập đúng định dạng: <code>VHM 25.5</code>")
@@ -1032,7 +1028,7 @@ def _dispatch(token: str, message: dict) -> None:
     if cmd in ("/start", "/help"):
         _send_main_menu(token, chat_id)
     elif cmd == "/huongdan":
-        _reply(token, chat_id, GUIDE, _KB_BACK)
+        _reply(token, chat_id, GUIDE, _KB_BACK_NEW)
 
     # ── Admin commands ────────────────────────────────────────────────────────
     elif cmd == "/users" and _is_admin(cid_str):
@@ -1133,19 +1129,19 @@ def _dispatch(token: str, message: dict) -> None:
     # ── User commands ─────────────────────────────────────────────────────────
     elif cmd == "/check":
         reply = _cmd_check(parts[1], _trend(cid_str)) if len(parts) >= 2 else "Dùng: <code>/check VHM</code>"
-        _reply(token, chat_id, reply, _KB_BACK)
+        _reply(token, chat_id, reply, _KB_BACK_NEW)
     elif cmd == "/top":
         n = int(parts[1]) if len(parts) >= 2 and parts[1].isdigit() else 10
-        _reply(token, chat_id, _cmd_top(n, _trend(cid_str)), _KB_BACK)
+        _reply(token, chat_id, _cmd_top(n, _trend(cid_str)), _KB_BACK_NEW)
     elif cmd == "/dangiu":
-        _reply(token, chat_id, _cmd_dangiu(_trend(cid_str)), _KB_BACK)
+        _reply(token, chat_id, _cmd_dangiu(_trend(cid_str)), _KB_BACK_NEW)
     elif cmd == "/alert":
         reply = (
             _cmd_set_alert(cid_str, parts[1], parts[2])
             if len(parts) >= 3
             else "Dùng: <code>/alert VHM 25.5</code>"
         )
-        _reply(token, chat_id, reply, _KB_BACK)
+        _reply(token, chat_id, reply, _KB_BACK_NEW)
     elif cmd == "/alerts":
         text, kb = _cmd_list_alerts(cid_str)
         _reply(token, chat_id, text, kb)
@@ -1155,7 +1151,7 @@ def _dispatch(token: str, message: dict) -> None:
             if len(parts) >= 2
             else "Dùng: <code>/delalert &lt;id&gt;</code>"
         )
-        _reply(token, chat_id, reply, _KB_BACK)
+        _reply(token, chat_id, reply, _KB_BACK_NEW)
     else:
         _send_main_menu(token, chat_id)
 
