@@ -62,6 +62,27 @@ def _reply(token: str, chat_id: int | str, text: str, keyboard: dict | None = No
         logger.warning(f"send_reply error (chat={chat_id}): {e}")
 
 
+def _edit(token: str, chat_id: int | str, message_id: int,
+          text: str, keyboard: dict | None = None) -> None:
+    """Sửa tin nhắn hiện tại thay vì gửi tin mới — dùng cho navigation buttons."""
+    body: dict = {
+        "chat_id": chat_id,
+        "message_id": message_id,
+        "text": text,
+        "parse_mode": "HTML",
+    }
+    if keyboard:
+        body["reply_markup"] = keyboard
+    try:
+        resp = requests.post(_api(token, "editMessageText"), json=body, timeout=15, verify=False)
+        if not resp.ok and "message is not modified" not in resp.text:
+            # Fallback: gửi tin mới nếu edit thất bại
+            _reply(token, chat_id, text, keyboard)
+    except Exception as e:
+        logger.warning(f"edit_message error: {e}")
+        _reply(token, chat_id, text, keyboard)
+
+
 # ─── User preferences ────────────────────────────────────────────────────────
 
 _user_state: dict[str, str] = {}   # chat_id → "check" | "alert"
@@ -340,7 +361,7 @@ _FILTER_LABEL = {
 }
 
 
-def _send_admin_user_list(token: str, chat_id: int | str, f_key: str, page: int) -> None:
+def _send_admin_user_list(token: str, chat_id: int | str, f_key: str, page: int, message_id: int | None = None) -> None:
     from scanner.database import get_users_by_status, get_all_bot_users
     users = get_all_bot_users() if f_key == "all" else get_users_by_status(f_key)
     label = _FILTER_LABEL.get(f_key, f_key)
@@ -393,14 +414,18 @@ def _send_admin_user_list(token: str, chat_id: int | str, f_key: str, page: int)
         nav.append({"text": "Tiếp ►", "callback_data": f"adm_list_{f_key}_{page+1}"})
 
     kb = {"inline_keyboard": user_rows + [nav, [{"text": "🔙 Admin Panel", "callback_data": "admin_panel"}]]}
-    _reply(token, chat_id, "\n".join(lines), kb)
+    if message_id:
+        _edit(token, chat_id, message_id, "\n".join(lines), kb)
+    else:
+        _reply(token, chat_id, "\n".join(lines), kb)
 
 
 def _handle_callback(token: str, cq: dict) -> None:
     _answer_callback(token, cq["id"])
-    chat_id = cq["message"]["chat"]["id"]
-    cid_str = str(chat_id)
-    data    = cq.get("data", "")
+    chat_id    = cq["message"]["chat"]["id"]
+    message_id = cq["message"]["message_id"]
+    cid_str    = str(chat_id)
+    data       = cq.get("data", "")
 
     # ── Access control cho callback (trừ main_menu/guide để user pending vẫn thấy) ──
     _PUBLIC = {"main_menu", "guide"}
@@ -420,23 +445,31 @@ def _handle_callback(token: str, cq: dict) -> None:
 
     if data == "main_menu":
         _user_state.pop(cid_str, None)
-        _send_main_menu(token, chat_id)
+        _edit(token, chat_id, message_id,
+              f"👋 Chào mừng đến với <b>MDAlpha3 Bot</b>!\n"
+              f"Đang xem: <b>{_trend_label(cid_str)}</b>\n"
+              f"Chọn tính năng bạn muốn dùng:",
+              _kb_main(cid_str))
 
     elif data in ("trend_short", "trend_long"):
         _user_trend[cid_str] = "short" if data == "trend_short" else "long"
-        _send_main_menu(token, chat_id)
+        _edit(token, chat_id, message_id,
+              f"👋 Chào mừng đến với <b>MDAlpha3 Bot</b>!\n"
+              f"Đang xem: <b>{_trend_label(cid_str)}</b>\n"
+              f"Chọn tính năng bạn muốn dùng:",
+              _kb_main(cid_str))
 
     elif data == "guide":
-        _reply(token, chat_id, GUIDE, _KB_BACK)
+        _edit(token, chat_id, message_id, GUIDE, _KB_BACK)
 
     elif data == "input_check":
         _user_state[cid_str] = "check"
-        _reply(token, chat_id,
+        _edit(token, chat_id, message_id,
             f"🔍 Nhập mã cổ phiếu (VD: <code>VHM</code>)\n"
             f"<i>Đang xem: {_trend_label(cid_str)}</i>")
 
     elif data == "top_menu":
-        _reply(token, chat_id,
+        _edit(token, chat_id, message_id,
             f"Chọn số lượng mã muốn xem:\n<i>Đang xem: {_trend_label(cid_str)}</i>",
             _kb_top(cid_str))
 
@@ -480,17 +513,16 @@ def _handle_callback(token: str, cq: dict) -> None:
         p = len(get_users_by_status("pending"))
         a = len(get_users_by_status("active"))
         b = len(get_users_by_status("blocked"))
-        _reply(token, chat_id,
+        _edit(token, chat_id, message_id,
             f"<b>👮 Admin Panel</b>\n"
             f"⏳ Chờ duyệt: <b>{p}</b>  |  ✅ Active: <b>{a}</b>  |  🚫 Chặn: <b>{b}</b>",
             _kb_admin_menu(p, a, b))
 
     elif data.startswith("adm_list_") and _is_admin(cid_str):
-        # format: adm_list_<filter>_<page>
-        parts_d = data.split("_")   # ['adm','list','pending','0']
-        f_key   = parts_d[2]        # pending | active | blocked | all
+        parts_d = data.split("_")
+        f_key   = parts_d[2]
         page    = int(parts_d[3]) if len(parts_d) > 3 else 0
-        _send_admin_user_list(token, chat_id, f_key, page)
+        _send_admin_user_list(token, chat_id, f_key, page, message_id)
 
     # ── Admin: chọn thời hạn kích hoạt ───────────────────────────────────────
     elif data.startswith("sel_apv_") and _is_admin(cid_str):
@@ -498,7 +530,7 @@ def _handle_callback(token: str, cq: dict) -> None:
         from scanner.database import get_bot_user
         u = get_bot_user(target_id) or {}
         name = u.get("full_name") or target_id
-        _reply(token, chat_id,
+        _edit(token, chat_id, message_id,
             f"Kích hoạt <b>{name}</b> trong bao lâu?",
             _kb_approve_duration(target_id))
 
