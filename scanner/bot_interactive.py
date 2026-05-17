@@ -391,24 +391,25 @@ def _cmd_dangiu() -> str:
     if trend_col not in df.columns:
         return "Không có dữ liệu trend."
 
-    holding = df[df[trend_col] == 1]
-    if sig_col in df.columns:
-        holding = holding[holding[sig_col] == "MUA"]
+    holding = df[df[trend_col] == 1].copy()
     if holding.empty:
-        return "Hiện không có mã nào đang giữ (vùng xanh + tín hiệu MUA)."
+        return "Hiện không có mã nào trong vùng xanh."
 
     if pnl_col in holding.columns:
         holding = holding.sort_values(pnl_col, ascending=False, na_position="last")
 
-    lines = [f"<b>💼 Đang giữ — {len(holding)} mã:</b>"]
+    lines = [f"<b>💼 Vùng xanh — {len(holding)} mã:</b>"]
     for _, row in holding.iterrows():
+        sig       = str(row.get(sig_col) or "").strip()
         buy_date  = str(row.get(date_col) or "")[:10]
         buy_price = _val(row, price_col)
-        buy_info  = f" | mua {buy_date} @ {_fmt(buy_price)}" if buy_price else ""
+        tag       = " 🟢" if sig == "MUA" else ""
+        buy_info  = f" | từ {buy_date} @ {_fmt(buy_price)}" if buy_price else ""
         lines.append(
-            f"  <b>{row['ticker']}</b>: {_fmt(_val(row, 'close'))}"
+            f"  <b>{row['ticker']}</b>{tag}: {_fmt(_val(row, 'close'))}"
             f"{buy_info}{_pnl_str(_val(row, pnl_col))}"
         )
+    lines.append("\n<i>🟢 = có tín hiệu MUA xác nhận</i>")
     return "\n".join(lines)
 
 
