@@ -403,13 +403,24 @@ def _cmd_dangiu() -> str:
         sig       = str(row.get(sig_col) or "").strip()
         buy_date  = str(row.get(date_col) or "")[:10]
         buy_price = _val(row, price_col)
-        tag       = " 🟢" if sig == "MUA" else ""
         buy_info  = f" | từ {buy_date} @ {_fmt(buy_price)}" if buy_price else ""
+
+        # Trend tags
+        l_trend = int(_val(row, "long_trend")  or 0)
+        s_trend = int(_val(row, "short_trend") or 0)
+        if l_trend and s_trend:
+            trend_tag = "DH+NH"
+        elif l_trend:
+            trend_tag = "DH"
+        else:
+            trend_tag = "NH"
+
+        mua_tag = " 🟢" if sig == "MUA" else ""
         lines.append(
-            f"  <b>{row['ticker']}</b>{tag}: {_fmt(_val(row, 'close'))}"
-            f"{buy_info}{_pnl_str(_val(row, pnl_col))}"
+            f"  <b>{row['ticker']}</b> <i>[{trend_tag}]</i>{mua_tag}"
+            f": {_fmt(_val(row, 'close'))}{buy_info}{_pnl_str(_val(row, pnl_col))}"
         )
-    lines.append("\n<i>🟢 = có tín hiệu MUA xác nhận</i>")
+    lines.append("\n<i>DH=Dài hạn  NH=Ngắn hạn  🟢=có tín hiệu MUA</i>")
     return "\n".join(lines)
 
 
