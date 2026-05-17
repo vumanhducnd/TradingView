@@ -1,13 +1,9 @@
 """Fetch company-level and market-level investor statistics via vnstock."""
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
-
 import pandas as pd
 
 from scanner.utils import logger
-
-_MAX_WORKERS = 5
 
 _MARKET_FALLBACK = {
     "total":    9_200_000,
@@ -32,7 +28,6 @@ def fetch_company_overviews(tickers: list[str]) -> dict[str, dict]:
         if df is None or df.empty:
             return {}
 
-        # Flatten MultiIndex columns → "listing_symbol", "match_current_room", ...
         df.columns = ["_".join(c).strip("_") for c in df.columns]
 
         results: dict[str, dict] = {}
@@ -44,44 +39,15 @@ def fetch_company_overviews(tickers: list[str]) -> dict[str, dict]:
             if not sym or listed <= 0:
                 continue
             used_foreign    = max(total_room - current_room, 0)
-            foreign_pct     = round(used_foreign   / listed * 100, 2)
-            foreign_max_pct = round(total_room     / listed * 100, 2)
             results[sym] = {
-                "foreign_pct":     foreign_pct,
-                "foreign_max_pct": foreign_max_pct,
-                "free_float_pct":  "",   # không có trong price_board
+                "foreign_pct":     round(used_foreign / listed * 100, 2),
+                "foreign_max_pct": round(total_room   / listed * 100, 2),
             }
         logger.info(f"fetch_company_overviews (bulk): {len(results)}/{len(tickers)} OK")
         return results
     except Exception as e:
         logger.warning(f"fetch_company_overviews bulk failed — {e}")
         return {}
-
-
-def _one_shareholder_count(ticker: str) -> tuple[str, int]:
-    try:
-        from vnstock.api.company import Company
-        c = Company(symbol=ticker, source="VCI")
-        df = c.shareholders()
-        return ticker, len(df) if df is not None and not df.empty else 0
-    except Exception as e:
-        logger.debug(f"{ticker}: shareholders count failed — {e}")
-        return ticker, 0
-
-
-def fetch_shareholder_counts(tickers: list[str]) -> dict[str, int]:
-    """Parallel fetch số lượng cổ đông cho signal tickers. Returns {ticker: count}."""
-    if not tickers:
-        return {}
-    results: dict[str, int] = {}
-    with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as ex:
-        futs = {ex.submit(_one_shareholder_count, t): t for t in tickers}
-        for fut in as_completed(futs):
-            t, count = fut.result()
-            if count > 0:
-                results[t] = count
-    logger.info(f"fetch_shareholder_counts: {len(results)}/{len(tickers)} OK")
-    return results
 
 
 def fetch_market_investor_count() -> dict:
@@ -114,20 +80,10 @@ def fetch_market_investor_count() -> dict:
 def build_company_data(results: pd.DataFrame, signals: dict) -> dict:
     """
     Fetch all company data needed for Excel report.
-    - Overviews: bulk price_board cho tất cả tickers (1 API call)
-    - Shareholders: per-ticker chỉ cho signal tickers (~15 calls)
+    Overviews: bulk price_board cho tất cả tickers (1 API call).
     """
     all_tickers: list[str] = results["ticker"].tolist() if "ticker" in results.columns else []
-
-    signal_tickers: list[str] = []
-    for df in signals.values():
-        if not df.empty and "ticker" in df.columns:
-            signal_tickers.extend(df["ticker"].tolist())
-    signal_tickers = list(set(signal_tickers))
-
-    logger.info(f"Fetching company data: bulk overviews ({len(all_tickers)} tickers), shareholder counts ({len(signal_tickers)} signal tickers)")
-    overviews          = fetch_company_overviews(all_tickers)
-    shareholder_counts = fetch_shareholder_counts(signal_tickers)
-    market             = fetch_market_investor_count()
-
-    return {"overviews": overviews, "shareholder_counts": shareholder_counts, "market": market}
+    logger.info(f"Fetching company data: bulk price_board ({len(all_tickers)} tickers)")
+    overviews = fetch_company_overviews(all_tickers)
+    market    = fetch_market_investor_count()
+    return {"overviews": overviews, "market": market}
