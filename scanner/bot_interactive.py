@@ -145,7 +145,7 @@ def _kb_top(cid: str) -> dict:
     }
 
 
-def _kb_admin_menu(pending: int, active: int, blocked: int) -> dict:
+def _kb_admin_menu(pending: int, active: int, blocked: int, trial: int = 0) -> dict:
     return {
         "inline_keyboard": [
             [
@@ -153,9 +153,10 @@ def _kb_admin_menu(pending: int, active: int, blocked: int) -> dict:
                 {"text": f"✅ Active ({active})",     "callback_data": "adm_list_active_0"},
             ],
             [
+                {"text": f"⏱ Dùng thử ({trial})",    "callback_data": "adm_list_trial_0"},
                 {"text": f"🚫 Đã chặn ({blocked})",  "callback_data": "adm_list_blocked_0"},
-                {"text": "👥 Tất cả",                 "callback_data": "adm_list_all_0"},
             ],
+            [{"text": "👥 Tất cả",                    "callback_data": "adm_list_all_0"}],
             [{"text": "📢 Quản lý Channels",          "callback_data": "admin_channels"}],
             [{"text": "🔙 Menu chính",                 "callback_data": "main_menu"}],
         ]
@@ -419,6 +420,7 @@ _PAGE_SIZE = 8
 _FILTER_LABEL = {
     "pending": "⏳ Chờ duyệt",
     "active":  "✅ Active",
+    "trial":   "⏱ Dùng thử",
     "blocked": "🚫 Đã chặn",
     "all":     "👥 Tất cả",
 }
@@ -459,6 +461,11 @@ def _send_admin_user_list(token: str, chat_id: int | str, f_key: str, page: int,
         if u["status"] == "pending":
             row = [
                 {"text": f"✅ {(u['full_name'] or u['chat_id'])[:15]}", "callback_data": f"approve_{u['chat_id']}"},
+                {"text": "🚫", "callback_data": f"block_{u['chat_id']}"},
+            ]
+        elif u["status"] == "trial":
+            row = [
+                {"text": f"✅ {(u['full_name'] or u['chat_id'])[:15]}", "callback_data": f"sel_apv_{u['chat_id']}"},
                 {"text": "🚫", "callback_data": f"block_{u['chat_id']}"},
             ]
         elif u["status"] == "active":
@@ -587,10 +594,12 @@ def _handle_callback(token: str, cq: dict) -> None:
         p = len(get_users_by_status("pending"))
         a = len(get_users_by_status("active"))
         b = len(get_users_by_status("blocked"))
+        t = len(get_users_by_status("trial"))
         _edit(token, chat_id, message_id,
             f"<b>👮 Admin Panel</b>\n"
-            f"⏳ Chờ duyệt: <b>{p}</b>  |  ✅ Active: <b>{a}</b>  |  🚫 Chặn: <b>{b}</b>",
-            _kb_admin_menu(p, a, b))
+            f"⏳ Chờ duyệt: <b>{p}</b>  |  ✅ Active: <b>{a}</b>\n"
+            f"⏱ Dùng thử: <b>{t}</b>  |  🚫 Chặn: <b>{b}</b>",
+            _kb_admin_menu(p, a, b, t))
 
     elif data.startswith("adm_list_") and _is_admin(cid_str):
         parts_d = data.split("_")
