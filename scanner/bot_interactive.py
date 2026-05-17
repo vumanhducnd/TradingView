@@ -974,6 +974,27 @@ def _dispatch(token: str, message: dict) -> None:
         else:
             _reply(token, chat_id, "Không tìm thấy user.")
 
+    elif cmd == "/adduser" and _is_admin(cid_str):
+        # /adduser <chat_id> <phone> <ten>
+        # VD: /adduser 123456789 0912345678 Nguyen Van A
+        if len(parts) < 3:
+            _reply(token, chat_id,
+                "Dùng: <code>/adduser &lt;chat_id&gt; &lt;phone&gt; &lt;tên&gt;</code>\n"
+                "VD: <code>/adduser 123456789 0912345678 Nguyen Van A</code>")
+        else:
+            target_id = parts[1]
+            phone     = parts[2]
+            name      = " ".join(parts[3:]) if len(parts) > 3 else "Test User"
+            from scanner.database import upsert_bot_user
+            upsert_bot_user(target_id, phone, name)
+            _reply(token, chat_id,
+                f"✅ Đã tạo user pending:\n"
+                f"  ID: <code>{target_id}</code>\n"
+                f"  SĐT: <code>{phone}</code>\n"
+                f"  Tên: {name}\n\n"
+                f"Vào Admin Panel → Chờ duyệt để test duyệt/chặn.",
+                _KB_ADMIN_BACK)
+
     elif cmd == "/block_sdt" and _is_admin(cid_str) and len(parts) >= 2:
         from scanner.database import get_user_by_phone, set_user_status
         phone = parts[1]
