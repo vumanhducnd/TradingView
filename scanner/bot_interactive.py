@@ -126,6 +126,11 @@ _KB_BACK = {
     "inline_keyboard": [[{"text": "🔙 Menu chính", "callback_data": "main_menu"}]]
 }
 
+# Dùng cho guide — back gửi tin menu mới, không xoá guide
+_KB_BACK_NEW = {
+    "inline_keyboard": [[{"text": "🔙 Menu chính", "callback_data": "main_menu_new"}]]
+}
+
 _KB_ADMIN_BACK = {
     "inline_keyboard": [[{"text": "🔙 Admin Panel", "callback_data": "admin_panel"}]]
 }
@@ -468,6 +473,15 @@ def _handle_callback(token: str, cq: dict) -> None:
               f"Chọn tính năng bạn muốn dùng:",
               _kb_main(cid_str))
 
+    elif data == "main_menu_new":
+        # Gửi tin menu mới — giữ nguyên tin trước (vd: guide)
+        _user_state.pop(cid_str, None)
+        _reply(token, chat_id,
+               f"👋 Chào mừng đến với <b>MDAlpha3 Bot</b>!\n"
+               f"Đang xem: <b>{_trend_label(cid_str)}</b>\n"
+               f"Chọn tính năng bạn muốn dùng:",
+               _kb_main(cid_str))
+
     elif data in ("trend_short", "trend_long"):
         _user_trend[cid_str] = "short" if data == "trend_short" else "long"
         _edit(token, chat_id, message_id,
@@ -477,7 +491,7 @@ def _handle_callback(token: str, cq: dict) -> None:
               _kb_main(cid_str))
 
     elif data == "guide":
-        _reply(token, chat_id, GUIDE, _KB_BACK)  # content dài → tin mới
+        _reply(token, chat_id, GUIDE, _KB_BACK_NEW)  # tin mới, back không xoá guide
 
     elif data == "input_check":
         _user_state[cid_str] = "check"
