@@ -278,6 +278,51 @@ def _remove_keyboard(token: str, chat_id: int | str, text: str) -> None:
         logger.warning(f"_remove_keyboard error: {e}")
 
 
+def _auto_trial(chat_id: str, from_user: dict) -> None:
+    """Tự động tạo trial 3 ngày cho user mới."""
+    try:
+        full_name = " ".join(filter(None, [
+            from_user.get("first_name", ""),
+            from_user.get("last_name", ""),
+        ]))
+        username = from_user.get("username", "")
+        from scanner.database import upsert_bot_user, set_user_status
+        upsert_bot_user(chat_id, "", full_name, username)
+        set_user_status(chat_id, "trial", trial_days=3)
+    except Exception as e:
+        logger.warning(f"auto_trial error (chat={chat_id}): {e}")
+
+
+def _send_trial_expired_prompt(token: str, chat_id: int | str) -> None:
+    """Thông báo hết trial, yêu cầu đăng ký SĐT hoặc liên hệ admin."""
+    try:
+        requests.post(
+            _api(token, "sendMessage"),
+            json={
+                "chat_id": chat_id,
+                "text": (
+                    "⏰ <b>Thời gian dùng thử 3 ngày đã hết!</b>\n\n"
+                    "Để tiếp tục sử dụng đầy đủ tính năng:\n"
+                    "• Bấm nút bên dưới để gửi SĐT đăng ký\n"
+                    "• Hoặc liên hệ admin để được kích hoạt"
+                ),
+                "parse_mode": "HTML",
+                "reply_markup": {
+                    "keyboard": [[{
+                        "text": "📱 Gửi số điện thoại để đăng ký",
+                        "request_contact": True,
+                    }]],
+                    "resize_keyboard": True,
+                    "one_time_keyboard": True,
+                },
+            },
+            timeout=15,
+            verify=False,
+        )
+    except Exception as e:
+        logger.warning(f"_send_trial_expired_prompt error: {e}")
+
+
 def _handle_contact(token: str, message: dict) -> None:
     """Xử lý khi user gửi số điện thoại."""
     contact   = message["contact"]
@@ -289,14 +334,17 @@ def _handle_contact(token: str, message: dict) -> None:
     ]))
     username = message["chat"].get("username", "")
 
-    from scanner.database import upsert_bot_user
-    upsert_bot_user(chat_id, phone, full_name, username)
-
     _remove_keyboard(
         token, chat_id,
         "✅ Đã nhận thông tin!\n"
         "⏳ Tài khoản đang chờ admin duyệt. Bạn sẽ được thông báo khi được kích hoạt.",
     )
+
+    try:
+        from scanner.database import upsert_bot_user
+        upsert_bot_user(chat_id, phone, full_name, username)
+    except Exception as e:
+        logger.warning(f"upsert_bot_user failed: {e}")
 
     # Thông báo admin
     if ADMIN_CHAT_ID:
@@ -445,18 +493,17 @@ def _handle_callback(token: str, cq: dict) -> None:
         return
     _answer_callback(token, cq["id"])
 
-    # ── Access control cho callback (trừ main_menu/guide để user pending vẫn thấy) ──
-    _PUBLIC = {"main_menu", "guide"}
+    # ── Access control cho callback (menu/guide luôn truy cập được) ──
+    _PUBLIC = {"main_menu", "main_menu_new", "guide"}
     if data not in _PUBLIC and not _is_admin(cid_str):
         status = _check_access(cid_str)
         if status is None:
-            _send_registration_prompt(token, chat_id)
-            return
-        if status == "pending":
+            _auto_trial(cid_str, cq.get("from", {}))
+        elif status == "pending":
             _reply(token, chat_id, "⏳ Tài khoản đang chờ admin duyệt.")
             return
-        if status in ("blocked", "expired"):
-            _reply(token, chat_id, "🚫 Tài khoản không còn hiệu lực.")
+        elif status in ("blocked", "expired"):
+            _send_trial_expired_prompt(token, chat_id)
             return
 
     style = _trend(cid_str)
@@ -990,20 +1037,20 @@ def _dispatch(token: str, message: dict) -> None:
     # ── Kiểm tra quyền truy cập ───────────────────────────────────────────────
     status = _check_access(cid_str)
     if status is None:
-        _send_registration_prompt(token, chat_id)
-        return
+        _auto_trial(cid_str, message.get("from", {}))
+        status = "trial"
+
     if status == "pending":
         _reply(token, chat_id,
             "⏳ Tài khoản đang chờ admin duyệt.\nBạn sẽ được thông báo khi được kích hoạt.")
         return
-    if status == "expired":
-        _reply(token, chat_id,
-            "⏰ Thời gian dùng thử đã hết.\n"
-            "Liên hệ admin để được kích hoạt tài khoản đầy đủ.")
-        return
-    if status == "blocked":
-        _reply(token, chat_id, "🚫 Tài khoản của bạn đã bị chặn.")
-        return
+
+    if status in ("blocked", "expired"):
+        # /start, /help, /huongdan vẫn hoạt động để user thấy menu và hướng dẫn
+        cmd_peek = text.split()[0].lower().split("@")[0] if text.startswith("/") else ""
+        if cmd_peek not in ("/start", "/help", "/huongdan"):
+            _send_trial_expired_prompt(token, chat_id)
+            return
 
     # ── Xử lý state machine (user đang chờ nhập mã/giá) ──────────────────────
     if not text.startswith("/"):
