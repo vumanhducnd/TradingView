@@ -64,23 +64,8 @@ def _reply(token: str, chat_id: int | str, text: str, keyboard: dict | None = No
 
 def _edit(token: str, chat_id: int | str, message_id: int,
           text: str, keyboard: dict | None = None) -> None:
-    """Sửa tin nhắn hiện tại thay vì gửi tin mới — dùng cho navigation buttons."""
-    body: dict = {
-        "chat_id": chat_id,
-        "message_id": message_id,
-        "text": text,
-        "parse_mode": "HTML",
-    }
-    if keyboard:
-        body["reply_markup"] = keyboard
-    try:
-        resp = requests.post(_api(token, "editMessageText"), json=body, timeout=15, verify=False)
-        if not resp.ok and "message is not modified" not in resp.text:
-            # Fallback: gửi tin mới nếu edit thất bại
-            _reply(token, chat_id, text, keyboard)
-    except Exception as e:
-        logger.warning(f"edit_message error: {e}")
-        _reply(token, chat_id, text, keyboard)
+    """Wrapper về sendMessage — giữ signature để không cần sửa caller."""
+    _reply(token, chat_id, text, keyboard)
 
 
 # ─── User preferences ────────────────────────────────────────────────────────
