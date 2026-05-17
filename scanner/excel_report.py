@@ -27,6 +27,7 @@ def build_excel_report(
     scan_date: str | None = None,
     ai_analysis: dict | None = None,
     super_stocks: pd.DataFrame | None = None,
+    company_data: dict | None = None,
 ) -> dict[str, str]:
     """
     Dual mode  → 2 file riêng: report_long_*.xlsx và report_short_*.xlsx
@@ -57,22 +58,22 @@ def build_excel_report(
 
     if is_dual:
         paths["long"]  = _save_workbook(
-            _build_workbook(results, signals, "long",  scan_date, ai_analysis, super_stocks),
+            _build_workbook(results, signals, "long",  scan_date, ai_analysis, super_stocks, company_data),
             REPORTS_DIR / f"report_long_{scan_date}.xlsx",
         )
         paths["short"] = _save_workbook(
-            _build_workbook(results, signals, "short", scan_date, ai_analysis=None, super_stocks=None),
+            _build_workbook(results, signals, "short", scan_date, ai_analysis=None, super_stocks=None, company_data=company_data),
             REPORTS_DIR / f"report_short_{scan_date}.xlsx",
         )
     else:
         wb = Workbook()
-        _sheet_signals(wb, signals, ai_analysis=ai_analysis)
+        _sheet_signals(wb, signals, ai_analysis=ai_analysis, overviews=(company_data or {}).get("overviews"))
         if super_stocks is not None and not super_stocks.empty:
             _sheet_super_stocks(wb, super_stocks, scan_date)
         if ai_analysis:
             _sheet_ai(wb, ai_analysis, scan_date)
         _sheet_all(wb, results)
-        _sheet_stats(wb, results, scan_date, style=None)
+        _sheet_stats(wb, results, scan_date, style=None, company_data=company_data)
         if "Sheet" in wb.sheetnames:
             del wb["Sheet"]
         paths["long"] = _save_workbook(wb, REPORTS_DIR / f"report_{scan_date}.xlsx")
@@ -111,11 +112,15 @@ def _build_workbook(
     scan_date: str,
     ai_analysis: dict | None = None,
     super_stocks: pd.DataFrame | None = None,
+    company_data: dict | None = None,
 ) -> "Workbook":
     """Tạo 1 Workbook hoàn chỉnh cho 1 style (long hoặc short)."""
     wb = Workbook()
 
-    _sheet_signals(wb, signals, ai_analysis=ai_analysis, style_filter=style)
+    overviews    = (company_data or {}).get("overviews")
+    shareholders = (company_data or {}).get("shareholders")
+
+    _sheet_signals(wb, signals, ai_analysis=ai_analysis, style_filter=style, overviews=overviews)
     _sheet_nam_giu(wb, results, style=style)
     _sheet_dung_ngoai(wb, results, style=style)
     _sheet_super_stocks(wb, results, scan_date)
@@ -125,6 +130,12 @@ def _build_workbook(
         _sheet_ai(wb, ai_analysis, scan_date)
 
     _sheet_history(wb, results=results, style=style)
+
+    if shareholders:
+        signal_tickers = _extract_signal_tickers(signals, style_filter=style)
+        _sheet_co_dong(wb, shareholders, signal_tickers=signal_tickers)
+
+    _sheet_stats(wb, results, scan_date, style=style, company_data=company_data)
 
     if "Sheet" in wb.sheetnames:
         del wb["Sheet"]
@@ -420,7 +431,13 @@ def _sheet_ai(wb: Workbook, ai_analysis: dict, scan_date: str) -> None:
     ws.column_dimensions["D"].width = 14
 
 
-def _sheet_signals(wb: Workbook, signals: dict, ai_analysis: dict | None = None, style_filter: str | None = None) -> None:
+def _sheet_signals(
+    wb: Workbook,
+    signals: dict,
+    ai_analysis: dict | None = None,
+    style_filter: str | None = None,
+    overviews: dict | None = None,
+) -> None:
     """Tab đầu tiên: Tín hiệu trong ngày."""
     style_label = {"long": " Dài hạn", "short": " Ngắn hạn"}.get(style_filter or "", "")
     ws = wb.create_sheet(f"Tín hiệu trong ngày{style_label}")
@@ -431,6 +448,7 @@ def _sheet_signals(wb: Workbook, signals: dict, ai_analysis: dict | None = None,
         "STT", "Mã", "Tín hiệu", "Khung",
         "Ngày mua", "Giá mua/bán (ST)",
         "Thanh khoản (tỷ VND)", "BiasNorm",
+        "NN Sở hữu %", "NN Room %", "Free Float %",
     ]
     _write_header(ws, headers)
 
@@ -477,16 +495,21 @@ def _sheet_signals(wb: Workbook, signals: dict, ai_analysis: dict | None = None,
 
     row_idx = 2
     for stt, (tk, _, row, signal_label, khung, st_col, fill) in enumerate(collected, start=1):
-        st = row.get(st_col) or row.get("supertrend") or ""
+        st     = row.get(st_col) or row.get("supertrend") or ""
+        ticker = row.get("ticker", "")
+        ov     = (overviews or {}).get(ticker, {})
         vals = [
             stt,
-            row.get("ticker", ""),
+            ticker,
             signal_label,
             khung,
             today_str,
             round(float(st), 2) if st else "",
             round(tk / 1e9, 1) if tk else "",
             round(row.get("bias_norm", 0), 1),
+            ov.get("foreign_pct",    ""),
+            ov.get("foreign_max_pct", ""),
+            ov.get("free_float_pct", ""),
         ]
         for j, v in enumerate(vals, start=1):
             ws.cell(row=row_idx, column=j, value=v).fill = fill
@@ -505,6 +528,73 @@ def _sheet_signals(wb: Workbook, signals: dict, ai_analysis: dict | None = None,
     note_cell = ws.cell(row=note_row, column=1,
                         value="* Ưu tiên mã có Thanh khoản cao (≥ 50 tỷ/phiên) để dễ mua/bán khi cần.")
     note_cell.font = Font(italic=True, color="888888")
+
+
+_TICKER_HDR_FILL  = PatternFill("solid", fgColor="1F4E79")
+_TICKER_ROW_FILLS = [
+    PatternFill("solid", fgColor="EBF5FB"),
+    PatternFill("solid", fgColor="F5F5F5"),
+]
+
+
+def _extract_signal_tickers(signals: dict, style_filter: str | None = None) -> list[str]:
+    seen: list[str] = []
+    for df in signals.values():
+        if df.empty or "ticker" not in df.columns:
+            continue
+        for t in df["ticker"].tolist():
+            if t not in seen:
+                seen.append(t)
+    return seen
+
+
+def _sheet_co_dong(
+    wb: Workbook,
+    shareholders: dict[str, pd.DataFrame],
+    signal_tickers: list[str] | None = None,
+) -> None:
+    """Sheet cổ đông lớn: signal tickers trước (nổi bật), sau đó các mã còn lại."""
+    if not shareholders:
+        return
+
+    ws = wb.create_sheet("Cổ đông lớn")
+    headers = ["STT", "Mã", "Cổ đông", "Số cổ phần", "% Sở hữu"]
+    _write_header(ws, headers)
+
+    sig_set = set(signal_tickers or [])
+    ordered = [t for t in (signal_tickers or []) if t in shareholders]
+    ordered += [t for t in shareholders if t not in sig_set]
+
+    row_idx = 2
+    stt = 1
+    for i, ticker in enumerate(ordered):
+        df = shareholders.get(ticker, pd.DataFrame())
+        if df.empty:
+            continue
+
+        is_signal = ticker in sig_set
+        hdr_fill  = _TICKER_HDR_FILL if is_signal else HEADER_FILL
+        label     = f"{ticker}  ★ Tín hiệu hôm nay" if is_signal else ticker
+        for j in range(1, len(headers) + 1):
+            ws.cell(row=row_idx, column=j).fill = hdr_fill
+        ws.cell(row=row_idx, column=1, value=label).font = Font(bold=True, color="FFFFFF", size=11)
+        ws.merge_cells(f"A{row_idx}:E{row_idx}")
+        row_idx += 1
+
+        fill = _TICKER_ROW_FILLS[i % 2]
+        for _, r in df.iterrows():
+            pct = float(r.get("share_own_percent") or 0) * 100
+            vals = [stt, ticker, r.get("share_holder", ""), int(r.get("quantity") or 0), round(pct, 3)]
+            for j, v in enumerate(vals, start=1):
+                ws.cell(row=row_idx, column=j, value=v).fill = fill
+            row_idx += 1
+            stt += 1
+
+    note_row = row_idx + 1
+    ws.cell(row=note_row, column=1,
+            value="* Chỉ hiển thị cổ đông lớn đã công bố. Nguồn: VCI/vnstock").font = Font(italic=True, color="888888")
+    _auto_width(ws)
+    ws.freeze_panes = "B2"
 
 
 def _sheet_nam_giu(wb: Workbook, results: pd.DataFrame, style: str = "long") -> None:
@@ -600,7 +690,7 @@ def _sheet_dung_ngoai(wb: Workbook, results: pd.DataFrame, style: str = "long") 
     ws.auto_filter.ref = ws.dimensions
 
 
-def _sheet_stats(wb: Workbook, df: pd.DataFrame, scan_date: str, style: str | None = None) -> None:
+def _sheet_stats(wb: Workbook, df: pd.DataFrame, scan_date: str, style: str | None = None, company_data: dict | None = None) -> None:
     label = {"long": " Dài hạn", "short": " Ngắn hạn"}.get(style or "", "")
     ws = wb.create_sheet(f"Thống kê{label}")
 
@@ -672,6 +762,35 @@ def _sheet_stats(wb: Workbook, df: pd.DataFrame, scan_date: str, style: str | No
             fill = GREEN_FILL if tr.get("long_trend", 0) == 1 else RED_FILL
             for j in range(1, 7):
                 ws.cell(row=r, column=j).fill = fill
+
+    # ── Thống kê thị trường (tổng tài khoản NĐT) ─────────────────────────────
+    MARKET_HDR_FILL = PatternFill("solid", fgColor="2E75B6")
+    MARKET_ROW_FILL = PatternFill("solid", fgColor="DEEAF1")
+
+    mkt_start = 36
+    hdr_cell = ws.cell(row=mkt_start, column=1, value="THỐNG KÊ THỊ TRƯỜNG — Tài khoản nhà đầu tư")
+    hdr_cell.font = Font(bold=True, color="FFFFFF")
+    hdr_cell.fill = MARKET_HDR_FILL
+    ws.merge_cells(f"A{mkt_start}:B{mkt_start}")
+
+    market = (company_data or {}).get("market") or {}
+    total    = market.get("total",    0)
+    domestic = market.get("domestic", 0)
+    foreign  = market.get("foreign",  0)
+    as_of    = market.get("as_of",    "N/A")
+    source   = market.get("source",   "N/A")
+
+    rows_mkt = [
+        ("Tổng tài khoản NĐT",      f"{total:,}" if total else "N/A"),
+        ("  Trong nước",             f"{domestic:,}" if domestic else "N/A"),
+        ("  Nước ngoài",             f"{foreign:,}" if foreign else "N/A"),
+        ("Cập nhật đến",             as_of),
+        ("Nguồn",                    source),
+    ]
+    for offset, (k, v) in enumerate(rows_mkt, start=1):
+        r = mkt_start + offset
+        ws.cell(row=r, column=1, value=k).fill  = MARKET_ROW_FILL
+        ws.cell(row=r, column=2, value=v).fill  = MARKET_ROW_FILL
 
     _auto_width(ws)
 

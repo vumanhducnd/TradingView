@@ -138,8 +138,10 @@ def run_full_pipeline(force: bool = False) -> None:
 
     # Step 5: Excel
     try:
+        from scanner.company_data import build_company_data
         from scanner.excel_report import build_excel_report
-        build_excel_report(results, signals)
+        company_data = build_company_data(results, signals)
+        build_excel_report(results, signals, company_data=company_data)
     except Exception as e:
         logger.warning(f"Excel failed: {e}")
 

@@ -364,8 +364,15 @@ def send_daily_report(
 
     # ── Excel — mỗi file gửi đúng bot ────────────────────────────────────────
     try:
+        from scanner.company_data import build_company_data
         from scanner.excel_report import build_excel_report
-        excel_paths = build_excel_report(results, signals, ai_analysis=ai_analysis, super_stocks=super_stocks)
+        company_data = build_company_data(results, signals)
+        excel_paths = build_excel_report(
+            results, signals,
+            ai_analysis=ai_analysis,
+            super_stocks=super_stocks,
+            company_data=company_data,
+        )
         for file_style, path in excel_paths.items():
             if path:
                 send_file(
