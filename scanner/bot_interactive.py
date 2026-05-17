@@ -59,42 +59,59 @@ def _reply(token: str, chat_id: int | str, text: str, keyboard: dict | None = No
         logger.warning(f"send_reply error (chat={chat_id}): {e}")
 
 
+# ─── User preferences ────────────────────────────────────────────────────────
+
+_user_state: dict[str, str] = {}   # chat_id → "check" | "alert"
+_user_trend: dict[str, str] = {}   # chat_id → "short" | "long"  (default: "short")
+
+
+def _trend(cid: str) -> str:
+    return _user_trend.get(cid, "short")
+
+def _trend_label(cid: str) -> str:
+    return "⚡ Ngắn hạn" if _trend(cid) == "short" else "📈 Dài hạn"
+
+
 # ─── Keyboard layouts ─────────────────────────────────────────────────────────
 
-_KB_MAIN = {
-    "inline_keyboard": [
-        [{"text": "📖 Hướng dẫn giao dịch", "callback_data": "guide"}],
-        [
-            {"text": "🔍 Tra cứu mã",    "callback_data": "input_check"},
-            {"text": "🏆 Top vùng xanh", "callback_data": "top_menu"},
-        ],
-        [
-            {"text": "💼 Đang giữ",      "callback_data": "dangiu"},
-            {"text": "⏰ Đặt cảnh báo", "callback_data": "input_alert"},
-        ],
-        [{"text": "📋 Cảnh báo của tôi", "callback_data": "alerts"}],
-    ]
-}
+def _kb_main(cid: str) -> dict:
+    t = _trend(cid)
+    short_btn = "⚡ Ngắn hạn ✓" if t == "short" else "⚡ Ngắn hạn"
+    long_btn  = "📈 Dài hạn ✓"  if t == "long"  else "📈 Dài hạn"
+    return {
+        "inline_keyboard": [
+            [{"text": "📖 Hướng dẫn giao dịch", "callback_data": "guide"}],
+            [
+                {"text": "🔍 Tra cứu mã",    "callback_data": "input_check"},
+                {"text": "🏆 Top vùng xanh", "callback_data": "top_menu"},
+            ],
+            [
+                {"text": "💼 Đang giữ",      "callback_data": "dangiu"},
+                {"text": "⏰ Đặt cảnh báo", "callback_data": "input_alert"},
+            ],
+            [{"text": "📋 Cảnh báo của tôi", "callback_data": "alerts"}],
+            [
+                {"text": short_btn, "callback_data": "trend_short"},
+                {"text": long_btn,  "callback_data": "trend_long"},
+            ],
+        ]
+    }
 
 _KB_BACK = {
     "inline_keyboard": [[{"text": "🔙 Menu chính", "callback_data": "main_menu"}]]
 }
 
-_KB_TOP = {
-    "inline_keyboard": [
-        [
-            {"text": "Top 5",  "callback_data": "top_5"},
-            {"text": "Top 10", "callback_data": "top_10"},
-            {"text": "Top 20", "callback_data": "top_20"},
-        ],
-        [{"text": "🔙 Menu chính", "callback_data": "main_menu"}],
-    ]
-}
-
-
-# ─── Conversation state (chờ user nhập mã / giá) ─────────────────────────────
-
-_user_state: dict[str, str] = {}  # chat_id (str) → "check" | "alert"
+def _kb_top(cid: str) -> dict:
+    return {
+        "inline_keyboard": [
+            [
+                {"text": "Top 5",  "callback_data": "top_5"},
+                {"text": "Top 10", "callback_data": "top_10"},
+                {"text": "Top 20", "callback_data": "top_20"},
+            ],
+            [{"text": "🔙 Menu chính", "callback_data": "main_menu"}],
+        ]
+    }
 
 
 # ─── Telegram API helpers ─────────────────────────────────────────────────────
@@ -112,10 +129,13 @@ def _answer_callback(token: str, callback_id: str) -> None:
 
 
 def _send_main_menu(token: str, chat_id: int | str) -> None:
+    cid = str(chat_id)
     _reply(
         token, chat_id,
-        "👋 Chào mừng đến với <b>MDAlpha3 Bot</b>!\nChọn tính năng bạn muốn dùng:",
-        _KB_MAIN,
+        f"👋 Chào mừng đến với <b>MDAlpha3 Bot</b>!\n"
+        f"Đang xem: <b>{_trend_label(cid)}</b>\n"
+        f"Chọn tính năng bạn muốn dùng:",
+        _kb_main(cid),
     )
 
 
@@ -125,8 +145,14 @@ def _handle_callback(token: str, cq: dict) -> None:
     cid_str = str(chat_id)
     data    = cq.get("data", "")
 
+    style = _trend(cid_str)
+
     if data == "main_menu":
         _user_state.pop(cid_str, None)
+        _send_main_menu(token, chat_id)
+
+    elif data in ("trend_short", "trend_long"):
+        _user_trend[cid_str] = "short" if data == "trend_short" else "long"
         _send_main_menu(token, chat_id)
 
     elif data == "guide":
@@ -134,17 +160,21 @@ def _handle_callback(token: str, cq: dict) -> None:
 
     elif data == "input_check":
         _user_state[cid_str] = "check"
-        _reply(token, chat_id, "🔍 Nhập mã cổ phiếu (VD: <code>VHM</code>):")
+        _reply(token, chat_id,
+            f"🔍 Nhập mã cổ phiếu (VD: <code>VHM</code>)\n"
+            f"<i>Đang xem: {_trend_label(cid_str)}</i>")
 
     elif data == "top_menu":
-        _reply(token, chat_id, "Chọn số lượng mã muốn xem:", _KB_TOP)
+        _reply(token, chat_id,
+            f"Chọn số lượng mã muốn xem:\n<i>Đang xem: {_trend_label(cid_str)}</i>",
+            _kb_top(cid_str))
 
     elif data in ("top_5", "top_10", "top_20"):
         n = int(data.split("_")[1])
-        _reply(token, chat_id, _cmd_top(n), _KB_BACK)
+        _reply(token, chat_id, _cmd_top(n, style), _KB_BACK)
 
     elif data == "dangiu":
-        _reply(token, chat_id, _cmd_dangiu(), _KB_BACK)
+        _reply(token, chat_id, _cmd_dangiu(style), _KB_BACK)
 
     elif data == "input_alert":
         _user_state[cid_str] = "alert"
@@ -277,14 +307,15 @@ MENU = (
 
 # ─── Command handlers ─────────────────────────────────────────────────────────
 
-def _cmd_check(ticker: str) -> str:
+def _cmd_check(ticker: str, style: str = "short") -> str:
     ticker = ticker.upper()
     df = _scan_df()
     if df.empty or ticker not in df["ticker"].values:
         return f"Không tìm thấy <b>{ticker}</b> trong watchlist."
 
     r = df[df["ticker"] == ticker].iloc[0]
-    is_dual = "long_trend" in df.columns
+    p = f"{style}_"  # "long_" hoặc "short_"
+    style_label = "⚡ Ngắn hạn" if style == "short" else "📈 Dài hạn"
 
     bias  = float(_val(r, "bias_norm") or 0)
     close = _val(r, "close")
@@ -293,28 +324,17 @@ def _cmd_check(ticker: str) -> str:
     def _badge(v) -> str:
         return "✅ Xu hướng tăng" if int(v or 0) == 1 else "🔴 Xu hướng giảm"
 
+    trend_val  = _val(r, f"{p}trend", "trend")
+    st_val     = _val(r, f"{p}supertrend", "supertrend")
+    sig_type   = _val(r, f"{p}last_signal_type",  "last_signal_type")  or "–"
+    sig_date   = str(_val(r, f"{p}last_signal_date",  "last_signal_date")  or "")[:10]
+    sig_price  = _val(r, f"{p}last_signal_price", "last_signal_price")
+    pnl        = _val(r, f"{p}signal_pnl_pct",    "signal_pnl_pct")
     support    = _val(r, "support")
     resistance = _val(r, "resistance")
 
-    if is_dual:
-        trend_block = (
-            f"Dài hạn : {_badge(_val(r, 'long_trend'))}\n"
-            f"Ngắn hạn: {_badge(_val(r, 'short_trend'))}"
-        )
-        sig_type  = _val(r, "long_last_signal_type") or "–"
-        sig_date  = str(_val(r, "long_last_signal_date") or "")[:10]
-        sig_price = _val(r, "long_last_signal_price")
-        pnl       = _val(r, "long_signal_pnl_pct")
-    else:
-        trend_block = _badge(_val(r, "trend"))
-        sig_type  = _val(r, "last_signal_type") or "–"
-        sig_date  = str(_val(r, "last_signal_date") or "")[:10]
-        sig_price = _val(r, "last_signal_price")
-        pnl       = _val(r, "signal_pnl_pct")
-
-    ht_kc = ""
-    if support or resistance:
-        ht_kc = f"\nHỗ trợ: {_fmt(support)}  |  Kháng cự: {_fmt(resistance)}"
+    trend_block = f"{style_label}: {_badge(trend_val)}"
+    ht_kc = f"\nHỗ trợ: {_fmt(support)}  |  Kháng cự: {_fmt(resistance)}" if (support or resistance) else ""
 
     sig_block = f"\nTín hiệu: <b>{sig_type}</b> ngày {sig_date} @ {_fmt(sig_price)}"
     if pnl is not None:
@@ -323,8 +343,7 @@ def _cmd_check(ticker: str) -> str:
     parts = [("✅" if r.get(f"bull_{k}") else "❌") + v for k, v in _BULL_LABELS.items()]
     crit = "  " + "  ".join(parts[:5]) + "\n  " + "  ".join(parts[5:])
 
-    # SL đặt 1–2% dưới vùng hỗ trợ; fallback về long_supertrend nếu chưa có support
-    sl_base = float(support) if support else _val(r, "long_supertrend", "supertrend")
+    sl_base = float(support) if support else (float(st_val) if st_val else None)
     sl_tp = ""
     if sl_base and close:
         sl_tp = (
@@ -345,25 +364,24 @@ def _cmd_check(ticker: str) -> str:
     )
 
 
-def _cmd_top(n: int = 10) -> str:
+def _cmd_top(n: int = 10, style: str = "short") -> str:
     df = _scan_df()
     if df.empty:
         return "Chưa có dữ liệu scan."
 
-    is_dual = "long_trend" in df.columns
-    trend_col = "long_trend" if is_dual else "trend"
-    pnl_col   = "long_signal_pnl_pct" if is_dual else "signal_pnl_pct"
+    p = f"{style}_"
+    style_label = "⚡ Ngắn hạn" if style == "short" else "📈 Dài hạn"
+    trend_col = f"{p}trend" if f"{p}trend" in df.columns else "trend"
+    pnl_col   = f"{p}signal_pnl_pct" if f"{p}signal_pnl_pct" in df.columns else "signal_pnl_pct"
 
     subset = df[df[trend_col] == 1] if trend_col in df.columns else df
     if subset.empty:
-        return "Không có mã nào trong vùng xanh hiện tại."
+        return f"Không có mã nào trong vùng xanh ({style_label})."
 
-    if "turnover" in subset.columns:
-        top = subset.nlargest(min(n, 20), "turnover")
-    else:
-        top = subset.nlargest(min(n, 20), "bias_norm")
+    top = subset.nlargest(min(n, 20), "turnover") if "turnover" in subset.columns \
+          else subset.nlargest(min(n, 20), "bias_norm")
 
-    lines = [f"<b>🏆 Top {len(top)} Vùng Xanh (Thanh khoản cao nhất):</b>"]
+    lines = [f"<b>🏆 Top {len(top)} Vùng Xanh — {style_label} (Thanh khoản cao nhất):</b>"]
     for i, (_, row) in enumerate(top.iterrows(), 1):
         tk = float(row.get("turnover") or 0)
         tk_str = f"{tk/1e9:.1f} tỷ" if tk > 0 else "–"
@@ -376,51 +394,41 @@ def _cmd_top(n: int = 10) -> str:
     return "\n".join(lines)
 
 
-def _cmd_dangiu() -> str:
+def _cmd_dangiu(style: str = "short") -> str:
     df = _scan_df()
     if df.empty:
         return "Chưa có dữ liệu scan."
 
-    is_dual = "long_trend" in df.columns
-    trend_col = "long_trend" if is_dual else "trend"
-    pnl_col   = "long_signal_pnl_pct" if is_dual else "signal_pnl_pct"
-    date_col  = "long_last_signal_date"  if is_dual else "last_signal_date"
-    price_col = "long_last_signal_price" if is_dual else "last_signal_price"
-    sig_col   = "long_last_signal_type"  if is_dual else "last_signal_type"
+    p = f"{style}_"
+    style_label = "⚡ Ngắn hạn" if style == "short" else "📈 Dài hạn"
+    trend_col = f"{p}trend" if f"{p}trend" in df.columns else "trend"
+    pnl_col   = f"{p}signal_pnl_pct"   if f"{p}signal_pnl_pct"   in df.columns else "signal_pnl_pct"
+    date_col  = f"{p}last_signal_date"  if f"{p}last_signal_date"  in df.columns else "last_signal_date"
+    price_col = f"{p}last_signal_price" if f"{p}last_signal_price" in df.columns else "last_signal_price"
+    sig_col   = f"{p}last_signal_type"  if f"{p}last_signal_type"  in df.columns else "last_signal_type"
 
     if trend_col not in df.columns:
         return "Không có dữ liệu trend."
 
     holding = df[df[trend_col] == 1].copy()
     if holding.empty:
-        return "Hiện không có mã nào trong vùng xanh."
+        return f"Hiện không có mã nào trong vùng xanh ({style_label})."
 
     if pnl_col in holding.columns:
         holding = holding.sort_values(pnl_col, ascending=False, na_position="last")
 
-    lines = [f"<b>💼 Vùng xanh — {len(holding)} mã:</b>"]
+    lines = [f"<b>💼 Đang giữ — {style_label} — {len(holding)} mã:</b>"]
     for _, row in holding.iterrows():
         sig       = str(row.get(sig_col) or "").strip()
         buy_date  = str(row.get(date_col) or "")[:10]
         buy_price = _val(row, price_col)
         buy_info  = f" | từ {buy_date} @ {_fmt(buy_price)}" if buy_price else ""
-
-        # Trend tags
-        l_trend = int(_val(row, "long_trend")  or 0)
-        s_trend = int(_val(row, "short_trend") or 0)
-        if l_trend and s_trend:
-            trend_tag = "DH+NH"
-        elif l_trend:
-            trend_tag = "DH"
-        else:
-            trend_tag = "NH"
-
-        mua_tag = " 🟢" if sig == "MUA" else ""
+        mua_tag   = " 🟢" if sig == "MUA" else ""
         lines.append(
-            f"  <b>{row['ticker']}</b> <i>[{trend_tag}]</i>{mua_tag}"
+            f"  <b>{row['ticker']}</b>{mua_tag}"
             f": {_fmt(_val(row, 'close'))}{buy_info}{_pnl_str(_val(row, pnl_col))}"
         )
-    lines.append("\n<i>DH=Dài hạn  NH=Ngắn hạn  🟢=có tín hiệu MUA</i>")
+    lines.append("\n<i>🟢 = có tín hiệu MUA xác nhận</i>")
     return "\n".join(lines)
 
 
@@ -525,7 +533,7 @@ def _dispatch(token: str, message: dict) -> None:
     if not text.startswith("/"):
         state = _user_state.pop(cid_str, None)
         if state == "check":
-            _reply(token, chat_id, _cmd_check(text.split()[0]), _KB_BACK)
+            _reply(token, chat_id, _cmd_check(text.split()[0], _trend(cid_str)), _KB_BACK)
         elif state == "alert":
             parts = text.split()
             if len(parts) >= 2:
@@ -544,13 +552,13 @@ def _dispatch(token: str, message: dict) -> None:
     elif cmd == "/huongdan":
         _reply(token, chat_id, GUIDE, _KB_BACK)
     elif cmd == "/check":
-        reply = _cmd_check(parts[1]) if len(parts) >= 2 else "Dùng: <code>/check VHM</code>"
+        reply = _cmd_check(parts[1], _trend(cid_str)) if len(parts) >= 2 else "Dùng: <code>/check VHM</code>"
         _reply(token, chat_id, reply, _KB_BACK)
     elif cmd == "/top":
         n = int(parts[1]) if len(parts) >= 2 and parts[1].isdigit() else 10
-        _reply(token, chat_id, _cmd_top(n), _KB_BACK)
+        _reply(token, chat_id, _cmd_top(n, _trend(cid_str)), _KB_BACK)
     elif cmd == "/dangiu":
-        _reply(token, chat_id, _cmd_dangiu(), _KB_BACK)
+        _reply(token, chat_id, _cmd_dangiu(_trend(cid_str)), _KB_BACK)
     elif cmd == "/alert":
         reply = (
             _cmd_set_alert(cid_str, parts[1], parts[2])
