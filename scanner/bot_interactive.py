@@ -64,8 +64,22 @@ def _reply(token: str, chat_id: int | str, text: str, keyboard: dict | None = No
 
 def _edit(token: str, chat_id: int | str, message_id: int,
           text: str, keyboard: dict | None = None) -> None:
-    """Wrapper về sendMessage — giữ signature để không cần sửa caller."""
-    _reply(token, chat_id, text, keyboard)
+    """Cập nhật tin hiện tại — dùng cho navigation buttons."""
+    body: dict = {
+        "chat_id": chat_id,
+        "message_id": message_id,
+        "text": text,
+        "parse_mode": "HTML",
+    }
+    if keyboard:
+        body["reply_markup"] = keyboard
+    try:
+        resp = requests.post(_api(token, "editMessageText"), json=body, timeout=15, verify=False)
+        if not resp.ok and "message is not modified" not in resp.text:
+            _reply(token, chat_id, text, keyboard)
+    except Exception as e:
+        logger.warning(f"edit error: {e}")
+        _reply(token, chat_id, text, keyboard)
 
 
 # ─── User preferences ────────────────────────────────────────────────────────
@@ -463,7 +477,7 @@ def _handle_callback(token: str, cq: dict) -> None:
               _kb_main(cid_str))
 
     elif data == "guide":
-        _edit(token, chat_id, message_id, GUIDE, _KB_BACK)
+        _reply(token, chat_id, GUIDE, _KB_BACK)  # content dài → tin mới
 
     elif data == "input_check":
         _user_state[cid_str] = "check"
