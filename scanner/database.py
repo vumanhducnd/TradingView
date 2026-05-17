@@ -1031,17 +1031,20 @@ def add_bot_channel(chat_id: str, title: str, style: str) -> None:
 def get_bot_channels(style: str | None = None, active_only: bool = True) -> list[dict]:
     _ensure_bot_channels_table()
     with db_cursor(commit=False) as cur:
-        if style:
+        if style and active_only:
             cur.execute(
-                "SELECT * FROM bot_channels WHERE style=%s AND is_active=%s ORDER BY added_at",
-                (style, active_only),
+                "SELECT * FROM bot_channels WHERE style=%s AND is_active=TRUE ORDER BY added_at",
+                (style,),
             )
+        elif style:
+            cur.execute(
+                "SELECT * FROM bot_channels WHERE style=%s ORDER BY added_at",
+                (style,),
+            )
+        elif active_only:
+            cur.execute("SELECT * FROM bot_channels WHERE is_active=TRUE ORDER BY added_at")
         else:
-            sql = "SELECT * FROM bot_channels"
-            if active_only:
-                sql += " WHERE is_active=TRUE"
-            sql += " ORDER BY added_at"
-            cur.execute(sql)
+            cur.execute("SELECT * FROM bot_channels ORDER BY added_at")
         return [dict(r) for r in cur.fetchall()]
 
 
