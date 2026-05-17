@@ -419,14 +419,17 @@ def _cmd_set_alert(chat_id: str, ticker: str, target_str: str) -> str:
     except ValueError:
         return "Giá không hợp lệ.\nVí dụ: <code>/alert VHM 25.5</code>"
 
+    from scanner.database import save_price_alert, get_price_alerts
+    existing = get_price_alerts(chat_id)
+    if len(existing) >= 5:
+        return "⚠️ Bạn đã đặt tối đa 5 cảnh báo.\nXoá bớt trước khi thêm mới."
+
     df = _scan_df()
     current = None
     if not df.empty and ticker in df["ticker"].values:
         current = _val(df[df["ticker"] == ticker].iloc[0], "close")
 
     direction = "above" if (current is None or float(current) < target) else "below"
-
-    from scanner.database import save_price_alert
     aid = save_price_alert(chat_id, ticker, target, direction)
 
     dir_str = "📈 tăng lên ≥" if direction == "above" else "📉 giảm xuống ≤"
