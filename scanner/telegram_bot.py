@@ -61,10 +61,23 @@ _CRITERIA_LABELS = {
 
 
 def _chat_ids(style: str) -> tuple[str, list[str]]:
-    """Trả về (token, [chat_id, ...]) theo style: 'long' | 'short'."""
+    """
+    Trả về (token, [chat_id, ...]) theo style: 'long' | 'short'.
+    Ưu tiên DB (bot_channels), fallback về .env nếu DB rỗng.
+    """
+    token = TELEGRAM_TOKEN_SHORT if style == "short" else TELEGRAM_TOKEN
+    # Thử lấy từ DB
+    try:
+        from scanner.database import get_bot_channels
+        db_ids = [c["chat_id"] for c in get_bot_channels(style=style, active_only=True)]
+        if db_ids:
+            return token, db_ids
+    except Exception as e:
+        logger.debug(f"get_bot_channels failed, fallback to env: {e}")
+    # Fallback .env
     if style == "short":
-        return TELEGRAM_TOKEN_SHORT, TELEGRAM_CHAT_IDS_SHORT or [TELEGRAM_CHAT_ID_SHORT]
-    return TELEGRAM_TOKEN, TELEGRAM_CHAT_IDS_LONG or [TELEGRAM_CHAT_ID]
+        return token, TELEGRAM_CHAT_IDS_SHORT or [TELEGRAM_CHAT_ID_SHORT]
+    return token, TELEGRAM_CHAT_IDS_LONG or [TELEGRAM_CHAT_ID]
 
 
 def _send_raw(text: str, token: str, chat_id: str, parse_mode: str = "HTML") -> bool:

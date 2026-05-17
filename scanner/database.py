@@ -992,6 +992,76 @@ def delete_price_alert(chat_id: str, alert_id: int) -> bool:
         return cur.rowcount > 0
 
 
+# ─── Bot Channels (Multi-tenant) ─────────────────────────────────────────────
+
+_channels_table_ensured = False
+
+
+def _ensure_bot_channels_table() -> None:
+    global _channels_table_ensured
+    if _channels_table_ensured:
+        return
+    with db_cursor() as cur:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS bot_channels (
+                id        SERIAL PRIMARY KEY,
+                chat_id   TEXT NOT NULL UNIQUE,
+                title     TEXT,
+                style     TEXT NOT NULL,   -- 'long' | 'short'
+                is_active BOOLEAN DEFAULT TRUE,
+                added_at  TIMESTAMP DEFAULT NOW()
+            )
+        """)
+    _channels_table_ensured = True
+
+
+def add_bot_channel(chat_id: str, title: str, style: str) -> None:
+    _ensure_bot_channels_table()
+    with db_cursor() as cur:
+        cur.execute("""
+            INSERT INTO bot_channels (chat_id, title, style)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (chat_id) DO UPDATE SET
+                title     = EXCLUDED.title,
+                style     = EXCLUDED.style,
+                is_active = TRUE
+        """, (chat_id, title, style))
+
+
+def get_bot_channels(style: str | None = None, active_only: bool = True) -> list[dict]:
+    _ensure_bot_channels_table()
+    with db_cursor(commit=False) as cur:
+        if style:
+            cur.execute(
+                "SELECT * FROM bot_channels WHERE style=%s AND is_active=%s ORDER BY added_at",
+                (style, active_only),
+            )
+        else:
+            sql = "SELECT * FROM bot_channels"
+            if active_only:
+                sql += " WHERE is_active=TRUE"
+            sql += " ORDER BY added_at"
+            cur.execute(sql)
+        return [dict(r) for r in cur.fetchall()]
+
+
+def set_channel_active(chat_id: str, is_active: bool) -> bool:
+    _ensure_bot_channels_table()
+    with db_cursor() as cur:
+        cur.execute(
+            "UPDATE bot_channels SET is_active=%s WHERE chat_id=%s",
+            (is_active, chat_id),
+        )
+        return cur.rowcount > 0
+
+
+def delete_bot_channel(chat_id: str) -> bool:
+    _ensure_bot_channels_table()
+    with db_cursor() as cur:
+        cur.execute("DELETE FROM bot_channels WHERE chat_id=%s", (chat_id,))
+        return cur.rowcount > 0
+
+
 # ─── Bot Users (Access Control) ───────────────────────────────────────────────
 
 _users_table_ensured = False

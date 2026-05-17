@@ -156,7 +156,8 @@ def _kb_admin_menu(pending: int, active: int, blocked: int) -> dict:
                 {"text": f"🚫 Đã chặn ({blocked})",  "callback_data": "adm_list_blocked_0"},
                 {"text": "👥 Tất cả",                 "callback_data": "adm_list_all_0"},
             ],
-            [{"text": "🔙 Menu chính", "callback_data": "main_menu"}],
+            [{"text": "📢 Quản lý Channels",          "callback_data": "admin_channels"}],
+            [{"text": "🔙 Menu chính",                 "callback_data": "main_menu"}],
         ]
     }
 
@@ -558,6 +559,47 @@ def _handle_callback(token: str, cq: dict) -> None:
             _reply(token, chat_id, "Không tìm thấy user.")
 
     # ── Admin: dùng thử ───────────────────────────────────────────────────────
+    # ── Channel management ────────────────────────────────────────────────────
+    elif data == "admin_channels" and _is_admin(cid_str):
+        text, kb = _cmd_list_channels()
+        _edit(token, chat_id, message_id, text, kb)
+
+    elif data.startswith("addch_") and _is_admin(cid_str):
+        # format: addch_<style>_<channel_id>
+        parts_d  = data.split("_", 2)
+        style    = parts_d[1]          # long | short
+        ch_id    = parts_d[2]
+        pending  = _pending_channel.pop(cid_str, {})
+        title    = pending.get("title", ch_id)
+        from scanner.database import add_bot_channel
+        add_bot_channel(ch_id, title, style)
+        style_label = "📈 Dài hạn" if style == "long" else "⚡ Ngắn hạn"
+        _reply(token, chat_id,
+            f"✅ Đã thêm channel <b>{title}</b> → {style_label}\n"
+            f"Bot sẽ gửi báo cáo vào channel này từ lần tới.")
+        text, kb = _cmd_list_channels()
+        _reply(token, chat_id, text, kb)
+
+    elif data.startswith("chtoggle_") and _is_admin(cid_str):
+        ch_id = data[9:]
+        from scanner.database import get_bot_channels, set_channel_active
+        chs = [c for c in get_bot_channels(active_only=False) if c["chat_id"] == ch_id]
+        if chs:
+            new_state = not chs[0]["is_active"]
+            set_channel_active(ch_id, new_state)
+            state_txt = "bật" if new_state else "tắt"
+            _reply(token, chat_id, f"{'▶' if new_state else '⏸'} Đã {state_txt} channel.")
+        text, kb = _cmd_list_channels()
+        _reply(token, chat_id, text, kb)
+
+    elif data.startswith("chdelete_") and _is_admin(cid_str):
+        ch_id = data[9:]
+        from scanner.database import delete_bot_channel
+        delete_bot_channel(ch_id)
+        _reply(token, chat_id, "🗑 Đã xoá channel.")
+        text, kb = _cmd_list_channels()
+        _reply(token, chat_id, text, kb)
+
     elif data.startswith("trial_") and _is_admin(cid_str):
         target_id = data[6:]
         from scanner.database import set_user_status, get_bot_user
@@ -1090,6 +1132,58 @@ def _dispatch(token: str, message: dict) -> None:
 
 # ─── Main loop ────────────────────────────────────────────────────────────────
 
+# ─── Channel management ───────────────────────────────────────────────────────
+
+_pending_channel: dict[str, dict] = {}  # chat_id → {channel_id, title} chờ chọn style
+
+
+def _handle_forward_channel(token: str, message: dict) -> None:
+    """Admin forward tin từ channel → bot hỏi style."""
+    fwd  = message["forward_from_chat"]
+    cid  = str(message["chat"]["id"])
+    ch_id = str(fwd["id"])
+    title = fwd.get("title", ch_id)
+
+    _pending_channel[cid] = {"channel_id": ch_id, "title": title}
+    _reply(token, cid,
+        f"📢 Phát hiện channel: <b>{title}</b>\n"
+        f"ID: <code>{ch_id}</code>\n\n"
+        f"Channel này nhận loại báo cáo nào?",
+        {"inline_keyboard": [
+            [
+                {"text": "📈 Dài hạn",  "callback_data": f"addch_long_{ch_id}"},
+                {"text": "⚡ Ngắn hạn", "callback_data": f"addch_short_{ch_id}"},
+            ],
+            [{"text": "❌ Huỷ", "callback_data": "admin_channels"}],
+        ]})
+
+
+def _cmd_list_channels() -> tuple[str, dict]:
+    from scanner.database import get_bot_channels
+    channels = get_bot_channels(active_only=False)
+    if not channels:
+        return (
+            "Chưa có channel nào.\n\n"
+            "Forward một tin nhắn từ channel vào đây để thêm.",
+            _KB_ADMIN_BACK
+        )
+    lines = [f"<b>📢 Danh sách channel ({len(channels)}):</b>"]
+    rows  = []
+    for c in channels:
+        icon  = "✅" if c["is_active"] else "⏸"
+        style = "📈 DH" if c["style"] == "long" else "⚡ NH"
+        lines.append(f"{icon} {style} | <b>{c['title'] or c['chat_id']}</b>")
+        toggle_text = "⏸ Tắt" if c["is_active"] else "▶ Bật"
+        rows.append([
+            {"text": f"{toggle_text} {(c['title'] or '')[:15]}", "callback_data": f"chtoggle_{c['chat_id']}"},
+            {"text": "🗑 Xoá", "callback_data": f"chdelete_{c['chat_id']}"},
+        ])
+    rows.append([{"text": "🔙 Admin Panel", "callback_data": "admin_panel"}])
+    return "\n".join(lines), {"inline_keyboard": rows}
+
+
+# ─── Main loop ────────────────────────────────────────────────────────────────
+
 def run(token: str | None = None) -> None:
     token = token or TELEGRAM_TOKEN
     if not token:
@@ -1110,6 +1204,8 @@ def run(token: str | None = None) -> None:
                     elif msg := upd.get("message"):
                         if msg.get("contact"):
                             _handle_contact(token, msg)
+                        elif msg.get("forward_from_chat") and _is_admin(str(msg["chat"]["id"])):
+                            _handle_forward_channel(token, msg)
                         elif msg.get("text"):
                             _dispatch(token, msg)
                 except Exception as e:
