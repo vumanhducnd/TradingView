@@ -1139,10 +1139,19 @@ _pending_channel: dict[str, dict] = {}  # chat_id → {channel_id, title} chờ 
 
 def _handle_forward_channel(token: str, message: dict) -> None:
     """Admin forward tin từ channel → bot hỏi style."""
-    fwd  = message["forward_from_chat"]
-    cid  = str(message["chat"]["id"])
-    ch_id = str(fwd["id"])
+    cid = str(message["chat"]["id"])
+
+    # Hỗ trợ cả Telegram API cũ (forward_from_chat) và mới (forward_origin)
+    fwd = message.get("forward_from_chat") or message.get("forward_origin", {}).get("chat", {})
+    if not fwd:
+        _reply(token, cid, "⚠️ Không đọc được thông tin channel. Thử forward tin khác.")
+        return
+
+    ch_id = str(fwd.get("id", ""))
     title = fwd.get("title", ch_id)
+    if not ch_id:
+        _reply(token, cid, "⚠️ Không lấy được channel ID.")
+        return
 
     _pending_channel[cid] = {"channel_id": ch_id, "title": title}
     _reply(token, cid,
@@ -1204,7 +1213,10 @@ def run(token: str | None = None) -> None:
                     elif msg := upd.get("message"):
                         if msg.get("contact"):
                             _handle_contact(token, msg)
-                        elif msg.get("forward_from_chat") and _is_admin(str(msg["chat"]["id"])):
+                        elif _is_admin(str(msg["chat"]["id"])) and (
+                            msg.get("forward_from_chat") or
+                            msg.get("forward_origin", {}).get("type") == "channel"
+                        ):
                             _handle_forward_channel(token, msg)
                         elif msg.get("text"):
                             _dispatch(token, msg)
