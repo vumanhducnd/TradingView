@@ -148,7 +148,15 @@ def _handle_callback(token: str, cq: dict) -> None:
 
     elif data == "input_alert":
         _user_state[cid_str] = "alert"
-        _reply(token, chat_id, "⏰ Nhập mã và giá mục tiêu (VD: <code>VHM 25.5</code>):")
+        _reply(
+            token, chat_id,
+            "⏰ <b>Đặt cảnh báo giá</b>\n\n"
+            "Nhập mã và giá mục tiêu:\n"
+            "<code>VHM 25.5</code>\n\n"
+            "Bot tự xác định hướng:\n"
+            "  • Giá đặt <b>cao hơn</b> giá hiện tại → cảnh báo khi <b>tăng lên</b>\n"
+            "  • Giá đặt <b>thấp hơn</b> giá hiện tại → cảnh báo khi <b>giảm xuống</b>",
+        )
 
     elif data == "alerts":
         text, kb = _cmd_list_alerts(cid_str)
@@ -421,10 +429,10 @@ def _cmd_set_alert(chat_id: str, ticker: str, target_str: str) -> str:
     from scanner.database import save_price_alert
     aid = save_price_alert(chat_id, ticker, target, direction)
 
-    dir_str = "vượt lên ≥" if direction == "above" else "giảm xuống ≤"
+    dir_str = "📈 tăng lên ≥" if direction == "above" else "📉 giảm xuống ≤"
     cur_str = f"\n  Giá hiện tại: {_fmt(current)}" if current else ""
     return (
-        f"⏰ Cảnh báo #{aid} đã đặt!\n"
+        f"✅ Cảnh báo #{aid} đã đặt!\n"
         f"  <b>{ticker}</b> khi giá {dir_str} <b>{fmt_price(target)}</b>"
         f"{cur_str}"
     )
