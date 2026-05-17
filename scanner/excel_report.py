@@ -132,7 +132,7 @@ def _build_workbook(
     if style == "long" and ai_analysis is not None:
         _sheet_ai(wb, ai_analysis, scan_date)
 
-    _sheet_history(wb, results=results, style=style)
+    _sheet_history(wb, results=results, style=style, overviews=overviews)
     _sheet_stats(wb, results, scan_date, style=style, company_data=company_data)
 
     if "Sheet" in wb.sheetnames:
@@ -798,7 +798,7 @@ OPEN_FILL   = PatternFill("solid", fgColor="DDEBF7")
 CLOSED_FILL = PatternFill("solid", fgColor="F2F2F2")
 
 
-def _sheet_history(wb: Workbook, results: pd.DataFrame, style: str = "long") -> None:
+def _sheet_history(wb: Workbook, results: pd.DataFrame, style: str = "long", overviews: dict | None = None) -> None:
     """Tab lịch sử lệnh: 1 giao dịch gần nhất/mã (MUA→BÁN), sort theo Thanh khoản cao→thấp."""
     ws = wb.create_sheet("Lịch sử lệnh")
 
@@ -806,6 +806,7 @@ def _sheet_history(wb: Workbook, results: pd.DataFrame, style: str = "long") -> 
         "STT", "Mã", "Ngày Mua", "Giá Mua",
         "Ngày Bán", "Giá Bán",
         "Lời/Lỗ %", "Trạng thái", "Thanh khoản (tỷ)",
+        "NN Sở hữu %", "NN Room %",
     ]
     _write_header(ws, headers)
 
@@ -850,6 +851,7 @@ def _sheet_history(wb: Workbook, results: pd.DataFrame, style: str = "long") -> 
         pnl_str    = f"{pnl:+.2f}%" if pnl is not None else ""
         status_str = "Đang giữ" if status == "Dang giu" else "Đã đóng"
 
+        ov = (overviews or {}).get(ticker, {})
         vals = [
             i - 1,
             ticker,
@@ -860,6 +862,8 @@ def _sheet_history(wb: Workbook, results: pd.DataFrame, style: str = "long") -> 
             pnl_str,
             status_str,
             tk_ty or "",
+            ov.get("foreign_pct",     ""),
+            ov.get("foreign_max_pct", ""),
         ]
         for j, v in enumerate(vals, start=1):
             ws.cell(row=i, column=j, value=v)
