@@ -23,8 +23,8 @@ class _HealthHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(b"OK")
 
-    def log_message(self, *args):
-        pass  # tắt access log
+    def log_message(self, format, *args):
+        print(f"[health] {self.address_string()} {format % args}", flush=True)
 
 
 def _start_health_server():
