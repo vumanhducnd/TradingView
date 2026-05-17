@@ -1,18 +1,27 @@
 """
 Entry point cho bot interactive.
 Chạy đồng thời: Telegram long-polling + HTTP health check (cho Render free tier).
-UptimeRobot ping /health mỗi 14 phút để giữ service không bị spin down.
+UptimeRobot ping /health mỗi 5 phút để giữ service không bị spin down.
+Health check trả 503 nếu bot thread chết → Render tự restart.
 """
 import os
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
+
+_bot_thread: threading.Thread | None = None
 
 
 class _HealthHandler(BaseHTTPRequestHandler):
     def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"OK")
+        if _bot_thread is None or not _bot_thread.is_alive():
+            self.send_response(503)
+            self.end_headers()
+            self.wfile.write(b"Bot thread dead")
+        else:
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"OK")
 
     def log_message(self, *args):
         pass  # tắt access log
@@ -24,7 +33,20 @@ def _start_health_server():
     server.serve_forever()
 
 
+def _run_bot_with_restart():
+    """Chạy bot, tự restart nếu crash."""
+    from scanner.bot_interactive import run
+    while True:
+        try:
+            run()
+        except Exception as e:
+            print(f"[run_bot] Bot crashed: {e} — restart sau 10s")
+            time.sleep(10)
+
+
 if __name__ == "__main__":
     threading.Thread(target=_start_health_server, daemon=True).start()
-    from scanner.bot_interactive import run
-    run()
+
+    _bot_thread = threading.Thread(target=_run_bot_with_restart, daemon=False)
+    _bot_thread.start()
+    _bot_thread.join()
