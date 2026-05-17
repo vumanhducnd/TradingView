@@ -315,7 +315,7 @@ def _handle_contact(token: str, message: dict) -> None:
 # ─── Telegram API helpers ─────────────────────────────────────────────────────
 
 _last_callback: dict[str, float] = {}  # chat_id → timestamp
-_RATE_LIMIT = 1.5  # giây tối thiểu giữa 2 lần bấm
+_RATE_LIMIT = 2.0  # giây tối thiểu giữa 2 lần bấm
 
 
 def _answer_callback(token: str, callback_id: str, text: str = "", alert: bool = False) -> None:
@@ -334,7 +334,7 @@ def _is_rate_limited(chat_id: str, callback_id: str, token: str) -> bool:
     now = time.time()
     last = _last_callback.get(chat_id, 0)
     if now - last < _RATE_LIMIT:
-        _answer_callback(token, callback_id, "⏳ Vui lòng chờ...", alert=False)
+        _answer_callback(token, callback_id, "⏳ Vui lòng chờ một chút!", alert=True)
         return True
     _last_callback[chat_id] = now
     return False
