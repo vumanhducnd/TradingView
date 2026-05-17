@@ -18,36 +18,44 @@ _MARKET_FALLBACK = {
 }
 
 
-def _one_overview(ticker: str) -> tuple[str, dict | None]:
-    try:
-        from vnstock.api.company import Company
-        c = Company(symbol=ticker, source="VCI")
-        df = c.overview()
-        if df is None or df.empty:
-            return ticker, None
-        r = df.iloc[0]
-        return ticker, {
-            "foreign_pct":     round(float(r.get("foreigner_percentage")       or 0) * 100, 2),
-            "foreign_max_pct": round(float(r.get("maximum_foreign_percentage") or 0) * 100, 2),
-            "free_float_pct":  round(float(r.get("free_float_percentage")      or 0) * 100, 2),
-            "state_pct":       round(float(r.get("state_percentage")           or 0) * 100, 2),
-        }
-    except Exception as e:
-        logger.debug(f"{ticker}: overview failed — {e}")
-        return ticker, None
-
-
 def fetch_company_overviews(tickers: list[str]) -> dict[str, dict]:
-    """Parallel fetch foreign ownership data. Returns {ticker: {foreign_pct, ...}}."""
-    results: dict[str, dict] = {}
-    with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as ex:
-        futs = {ex.submit(_one_overview, t): t for t in tickers}
-        for fut in as_completed(futs):
-            t, data = fut.result()
-            if data:
-                results[t] = data
-    logger.info(f"fetch_company_overviews: {len(results)}/{len(tickers)} OK")
-    return results
+    """
+    Bulk fetch foreign ownership via Trading.price_board() — 1 API call cho tất cả tickers.
+    Tính: foreign_pct, foreign_max_pct từ current_room / total_room / listed_share.
+    """
+    if not tickers:
+        return {}
+    try:
+        from vnstock.api.trading import Trading
+        t = Trading(symbol=tickers[0], source="VCI")
+        df = t.price_board(symbols_list=tickers)
+        if df is None or df.empty:
+            return {}
+
+        # Flatten MultiIndex columns → "listing_symbol", "match_current_room", ...
+        df.columns = ["_".join(c).strip("_") for c in df.columns]
+
+        results: dict[str, dict] = {}
+        for _, row in df.iterrows():
+            sym          = str(row.get("listing_symbol", "")).upper()
+            listed       = float(row.get("listing_listed_share") or 0)
+            total_room   = float(row.get("match_total_room")     or 0)
+            current_room = float(row.get("match_current_room")   or 0)
+            if not sym or listed <= 0:
+                continue
+            used_foreign    = max(total_room - current_room, 0)
+            foreign_pct     = round(used_foreign   / listed * 100, 2)
+            foreign_max_pct = round(total_room     / listed * 100, 2)
+            results[sym] = {
+                "foreign_pct":     foreign_pct,
+                "foreign_max_pct": foreign_max_pct,
+                "free_float_pct":  "",   # không có trong price_board
+            }
+        logger.info(f"fetch_company_overviews (bulk): {len(results)}/{len(tickers)} OK")
+        return results
+    except Exception as e:
+        logger.warning(f"fetch_company_overviews bulk failed — {e}")
+        return {}
 
 
 def _one_shareholders(ticker: str, top_n: int) -> tuple[str, pd.DataFrame]:
@@ -66,7 +74,9 @@ def _one_shareholders(ticker: str, top_n: int) -> tuple[str, pd.DataFrame]:
 
 
 def fetch_shareholders_batch(tickers: list[str], top_n: int = 10) -> dict[str, pd.DataFrame]:
-    """Parallel fetch top shareholders for given tickers. Returns {ticker: DataFrame}."""
+    """Parallel fetch top shareholders cho signal tickers. Returns {ticker: DataFrame}."""
+    if not tickers:
+        return {}
     results: dict[str, pd.DataFrame] = {}
     with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as ex:
         futs = {ex.submit(_one_shareholders, t, top_n): t for t in tickers}
@@ -105,20 +115,22 @@ def fetch_market_investor_count() -> dict:
     return _MARKET_FALLBACK
 
 
-def build_company_data(signals: dict) -> dict:
+def build_company_data(results: pd.DataFrame, signals: dict) -> dict:
     """
     Fetch all company data needed for Excel report.
-    Chỉ fetch overviews + shareholders cho signal tickers (không cả watchlist)
-    để tránh vượt rate limit 60 req/phút của vnstock community.
+    - Overviews: bulk price_board cho tất cả tickers (1 API call)
+    - Shareholders: per-ticker chỉ cho signal tickers (~15 calls)
     """
+    all_tickers: list[str] = results["ticker"].tolist() if "ticker" in results.columns else []
+
     signal_tickers: list[str] = []
     for df in signals.values():
         if not df.empty and "ticker" in df.columns:
             signal_tickers.extend(df["ticker"].tolist())
     signal_tickers = list(set(signal_tickers))
 
-    logger.info(f"Fetching company data: {len(signal_tickers)} signal tickers (overviews + shareholders)")
-    overviews    = fetch_company_overviews(signal_tickers)
+    logger.info(f"Fetching company data: bulk overviews ({len(all_tickers)} tickers), shareholders ({len(signal_tickers)} signal tickers)")
+    overviews    = fetch_company_overviews(all_tickers)
     shareholders = fetch_shareholders_batch(signal_tickers)
     market       = fetch_market_investor_count()
 
