@@ -992,3 +992,83 @@ def delete_price_alert(chat_id: str, alert_id: int) -> bool:
         return cur.rowcount > 0
 
 
+# ─── Bot Users (Access Control) ───────────────────────────────────────────────
+
+_users_table_ensured = False
+
+
+def _ensure_bot_users_table() -> None:
+    global _users_table_ensured
+    if _users_table_ensured:
+        return
+    with db_cursor() as cur:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS bot_users (
+                chat_id      TEXT PRIMARY KEY,
+                phone        TEXT,
+                full_name    TEXT,
+                username     TEXT,
+                status       TEXT DEFAULT 'pending',
+                created_at   TIMESTAMP DEFAULT NOW(),
+                activated_at TIMESTAMP
+            )
+        """)
+    _users_table_ensured = True
+
+
+def get_bot_user(chat_id: str) -> dict | None:
+    _ensure_bot_users_table()
+    with db_cursor(commit=False) as cur:
+        cur.execute("SELECT * FROM bot_users WHERE chat_id = %s", (chat_id,))
+        r = cur.fetchone()
+        return dict(r) if r else None
+
+
+def upsert_bot_user(chat_id: str, phone: str, full_name: str, username: str = "") -> None:
+    """Tạo user mới với status=pending (nếu chưa tồn tại)."""
+    _ensure_bot_users_table()
+    with db_cursor() as cur:
+        cur.execute("""
+            INSERT INTO bot_users (chat_id, phone, full_name, username)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (chat_id) DO UPDATE SET
+                phone     = EXCLUDED.phone,
+                full_name = EXCLUDED.full_name,
+                username  = EXCLUDED.username
+        """, (chat_id, phone, full_name, username))
+
+
+def set_user_status(chat_id: str, status: str) -> bool:
+    """status: 'active' | 'blocked' | 'pending'. Trả về True nếu tìm thấy user."""
+    _ensure_bot_users_table()
+    with db_cursor() as cur:
+        if status == "active":
+            cur.execute(
+                "UPDATE bot_users SET status = 'active', activated_at = NOW() WHERE chat_id = %s",
+                (chat_id,),
+            )
+        else:
+            cur.execute(
+                "UPDATE bot_users SET status = %s WHERE chat_id = %s",
+                (status, chat_id),
+            )
+        return cur.rowcount > 0
+
+
+def get_users_by_status(status: str) -> list[dict]:
+    _ensure_bot_users_table()
+    with db_cursor(commit=False) as cur:
+        cur.execute(
+            "SELECT * FROM bot_users WHERE status = %s ORDER BY created_at DESC",
+            (status,),
+        )
+        return [dict(r) for r in cur.fetchall()]
+
+
+def get_all_bot_users() -> list[dict]:
+    _ensure_bot_users_table()
+    with db_cursor(commit=False) as cur:
+        cur.execute("SELECT * FROM bot_users ORDER BY created_at DESC")
+        return [dict(r) for r in cur.fetchall()]
+
+

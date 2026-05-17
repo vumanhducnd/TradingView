@@ -13,6 +13,7 @@ Commands:
 """
 
 import math
+import os
 import time
 
 import pandas as pd
@@ -23,6 +24,8 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 from scanner.config import TELEGRAM_TOKEN
 from scanner.utils import bias_label, fmt_price, logger
+
+ADMIN_CHAT_ID = os.getenv("TELEGRAM_ADMIN_CHAT_ID", "")
 
 
 # ─── Telegram helpers ─────────────────────────────────────────────────────────
@@ -114,6 +117,117 @@ def _kb_top(cid: str) -> dict:
     }
 
 
+# ─── Access control ───────────────────────────────────────────────────────────
+
+def _is_admin(chat_id: str) -> bool:
+    return bool(ADMIN_CHAT_ID) and str(chat_id) == str(ADMIN_CHAT_ID)
+
+
+def _check_access(chat_id: str) -> str | None:
+    """Trả về status: 'active' | 'pending' | 'blocked' | None (chưa đăng ký)."""
+    if not ADMIN_CHAT_ID:
+        return "active"          # Chưa cấu hình admin → cho qua hết
+    if _is_admin(chat_id):
+        return "active"          # Admin luôn có quyền
+    from scanner.database import get_bot_user
+    user = get_bot_user(chat_id)
+    return user["status"] if user else None
+
+
+def _send_registration_prompt(token: str, chat_id: int | str) -> None:
+    try:
+        requests.post(
+            _api(token, "sendMessage"),
+            json={
+                "chat_id": chat_id,
+                "text": (
+                    "👋 Chào mừng đến với <b>MDAlpha3 Bot</b>!\n\n"
+                    "Để sử dụng bot, vui lòng xác thực số điện thoại của bạn.\n"
+                    "Bấm nút bên dưới để gửi số điện thoại:"
+                ),
+                "parse_mode": "HTML",
+                "reply_markup": {
+                    "keyboard": [[{
+                        "text": "📱 Gửi số điện thoại để đăng ký",
+                        "request_contact": True,
+                    }]],
+                    "resize_keyboard": True,
+                    "one_time_keyboard": True,
+                },
+            },
+            timeout=15,
+            verify=False,
+        )
+    except Exception as e:
+        logger.warning(f"_send_registration_prompt error: {e}")
+
+
+def _remove_keyboard(token: str, chat_id: int | str, text: str) -> None:
+    try:
+        requests.post(
+            _api(token, "sendMessage"),
+            json={
+                "chat_id": chat_id,
+                "text": text,
+                "parse_mode": "HTML",
+                "reply_markup": {"remove_keyboard": True},
+            },
+            timeout=15,
+            verify=False,
+        )
+    except Exception as e:
+        logger.warning(f"_remove_keyboard error: {e}")
+
+
+def _handle_contact(token: str, message: dict) -> None:
+    """Xử lý khi user gửi số điện thoại."""
+    contact   = message["contact"]
+    chat_id   = str(message["chat"]["id"])
+    phone     = contact.get("phone_number", "")
+    full_name = " ".join(filter(None, [
+        contact.get("first_name", ""),
+        contact.get("last_name", ""),
+    ]))
+    username = message["chat"].get("username", "")
+
+    from scanner.database import upsert_bot_user
+    upsert_bot_user(chat_id, phone, full_name, username)
+
+    _remove_keyboard(
+        token, chat_id,
+        "✅ Đã nhận thông tin!\n"
+        "⏳ Tài khoản đang chờ admin duyệt. Bạn sẽ được thông báo khi được kích hoạt.",
+    )
+
+    # Thông báo admin
+    if ADMIN_CHAT_ID:
+        try:
+            requests.post(
+                _api(token, "sendMessage"),
+                json={
+                    "chat_id": ADMIN_CHAT_ID,
+                    "text": (
+                        f"🔔 <b>Người dùng mới đăng ký</b>\n"
+                        f"Tên: {full_name}\n"
+                        f"SĐT: <code>{phone}</code>\n"
+                        f"Username: @{username or '–'}\n"
+                        f"Chat ID: <code>{chat_id}</code>"
+                    ),
+                    "parse_mode": "HTML",
+                    "reply_markup": {
+                        "inline_keyboard": [[
+                            {"text": "✅ Duyệt", "callback_data": f"approve_{chat_id}"},
+                            {"text": "🚫 Chặn",  "callback_data": f"block_{chat_id}"},
+                        ]]
+                    },
+                },
+                timeout=15,
+                verify=False,
+            )
+        except Exception as e:
+            logger.warning(f"notify admin failed: {e}")
+
+
 # ─── Telegram API helpers ─────────────────────────────────────────────────────
 
 def _answer_callback(token: str, callback_id: str) -> None:
@@ -195,10 +309,28 @@ def _handle_callback(token: str, cq: dict) -> None:
     elif data.startswith("del_"):
         aid = data[4:]
         reply = _cmd_delete_alert(cid_str, aid)
-        # Sau khi xoá, hiện lại danh sách cập nhật
         text, kb = _cmd_list_alerts(cid_str)
         _reply(token, chat_id, reply)
         _reply(token, chat_id, text, kb)
+
+    # ── Admin: duyệt / chặn user ──────────────────────────────────────────────
+    elif data.startswith("approve_") or data.startswith("block_"):
+        if not _is_admin(cid_str):
+            return
+        action, target_id = data.split("_", 1)
+        from scanner.database import set_user_status, get_bot_user
+        ok = set_user_status(target_id, "active" if action == "approve" else "blocked")
+        if ok:
+            u = get_bot_user(target_id) or {}
+            name = u.get("full_name") or target_id
+            if action == "approve":
+                _reply(token, chat_id, f"✅ Đã kích hoạt tài khoản: <b>{name}</b>")
+                _reply(token, target_id,
+                    "🎉 Tài khoản của bạn đã được kích hoạt!\nGõ /start để bắt đầu.")
+            else:
+                _reply(token, chat_id, f"🚫 Đã chặn tài khoản: <b>{name}</b>")
+        else:
+            _reply(token, chat_id, "Không tìm thấy user.")
 
 
 # ─── Scan results cache (TTL 5 phút) ─────────────────────────────────────────
@@ -529,6 +661,19 @@ def _dispatch(token: str, message: dict) -> None:
     cid_str = str(chat_id)
     text    = (message.get("text") or "").strip()
 
+    # ── Kiểm tra quyền truy cập ───────────────────────────────────────────────
+    status = _check_access(cid_str)
+    if status is None:
+        _send_registration_prompt(token, chat_id)
+        return
+    if status == "pending":
+        _reply(token, chat_id,
+            "⏳ Tài khoản đang chờ admin duyệt.\nBạn sẽ được thông báo khi được kích hoạt.")
+        return
+    if status == "blocked":
+        _reply(token, chat_id, "🚫 Tài khoản của bạn đã bị chặn.")
+        return
+
     # ── Xử lý state machine (user đang chờ nhập mã/giá) ──────────────────────
     if not text.startswith("/"):
         state = _user_state.pop(cid_str, None)
@@ -551,6 +696,70 @@ def _dispatch(token: str, message: dict) -> None:
         _send_main_menu(token, chat_id)
     elif cmd == "/huongdan":
         _reply(token, chat_id, GUIDE, _KB_BACK)
+
+    # ── Admin commands ────────────────────────────────────────────────────────
+    elif cmd == "/users" and _is_admin(cid_str):
+        from scanner.database import get_all_bot_users
+        users = get_all_bot_users()
+        if not users:
+            _reply(token, chat_id, "Chưa có user nào.")
+            return
+        lines = [f"<b>👥 Danh sách user ({len(users)}):</b>"]
+        for u in users:
+            icon = {"active": "✅", "pending": "⏳", "blocked": "🚫"}.get(u["status"], "❓")
+            lines.append(
+                f"{icon} <b>{u['full_name'] or '–'}</b> | {u['phone'] or '–'}"
+                f" | <code>{u['chat_id']}</code>"
+            )
+        _reply(token, chat_id, "\n".join(lines))
+
+    elif cmd == "/pending" and _is_admin(cid_str):
+        from scanner.database import get_users_by_status
+        users = get_users_by_status("pending")
+        if not users:
+            _reply(token, chat_id, "Không có user nào đang chờ duyệt.")
+            return
+        for u in users:
+            requests.post(
+                _api(token, "sendMessage"),
+                json={
+                    "chat_id": chat_id,
+                    "text": (
+                        f"⏳ <b>{u['full_name'] or '–'}</b>\n"
+                        f"SĐT: <code>{u['phone'] or '–'}</code>\n"
+                        f"@{u['username'] or '–'} | <code>{u['chat_id']}</code>"
+                    ),
+                    "parse_mode": "HTML",
+                    "reply_markup": {"inline_keyboard": [[
+                        {"text": "✅ Duyệt", "callback_data": f"approve_{u['chat_id']}"},
+                        {"text": "🚫 Chặn",  "callback_data": f"block_{u['chat_id']}"},
+                    ]]},
+                },
+                timeout=15, verify=False,
+            )
+
+    elif cmd == "/approve" and _is_admin(cid_str) and len(parts) >= 2:
+        from scanner.database import set_user_status, get_bot_user
+        target = parts[1]
+        ok = set_user_status(target, "active")
+        if ok:
+            u = get_bot_user(target) or {}
+            _reply(token, chat_id, f"✅ Đã kích hoạt: <b>{u.get('full_name', target)}</b>")
+            _reply(token, target, "🎉 Tài khoản đã được kích hoạt! Gõ /start để bắt đầu.")
+        else:
+            _reply(token, chat_id, "Không tìm thấy user.")
+
+    elif cmd == "/block" and _is_admin(cid_str) and len(parts) >= 2:
+        from scanner.database import set_user_status, get_bot_user
+        target = parts[1]
+        ok = set_user_status(target, "blocked")
+        if ok:
+            u = get_bot_user(target) or {}
+            _reply(token, chat_id, f"🚫 Đã chặn: <b>{u.get('full_name', target)}</b>")
+        else:
+            _reply(token, chat_id, "Không tìm thấy user.")
+
+    # ── User commands ─────────────────────────────────────────────────────────
     elif cmd == "/check":
         reply = _cmd_check(parts[1], _trend(cid_str)) if len(parts) >= 2 else "Dùng: <code>/check VHM</code>"
         _reply(token, chat_id, reply, _KB_BACK)
@@ -600,7 +809,9 @@ def run(token: str | None = None) -> None:
                     if cq := upd.get("callback_query"):
                         _handle_callback(token, cq)
                     elif msg := upd.get("message"):
-                        if msg.get("text"):
+                        if msg.get("contact"):
+                            _handle_contact(token, msg)
+                        elif msg.get("text"):
                             _dispatch(token, msg)
                 except Exception as e:
                     logger.warning(f"dispatch error: {e}")
