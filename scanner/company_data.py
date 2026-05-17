@@ -58,33 +58,29 @@ def fetch_company_overviews(tickers: list[str]) -> dict[str, dict]:
         return {}
 
 
-def _one_shareholders(ticker: str, top_n: int) -> tuple[str, pd.DataFrame]:
+def _one_shareholder_count(ticker: str) -> tuple[str, int]:
     try:
         from vnstock.api.company import Company
         c = Company(symbol=ticker, source="VCI")
         df = c.shareholders()
-        if df is None or df.empty:
-            return ticker, pd.DataFrame()
-        df = df[["share_holder", "quantity", "share_own_percent"]].head(top_n).copy()
-        df["ticker"] = ticker
-        return ticker, df
+        return ticker, len(df) if df is not None and not df.empty else 0
     except Exception as e:
-        logger.debug(f"{ticker}: shareholders failed — {e}")
-        return ticker, pd.DataFrame()
+        logger.debug(f"{ticker}: shareholders count failed — {e}")
+        return ticker, 0
 
 
-def fetch_shareholders_batch(tickers: list[str], top_n: int = 10) -> dict[str, pd.DataFrame]:
-    """Parallel fetch top shareholders cho signal tickers. Returns {ticker: DataFrame}."""
+def fetch_shareholder_counts(tickers: list[str]) -> dict[str, int]:
+    """Parallel fetch số lượng cổ đông cho signal tickers. Returns {ticker: count}."""
     if not tickers:
         return {}
-    results: dict[str, pd.DataFrame] = {}
+    results: dict[str, int] = {}
     with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as ex:
-        futs = {ex.submit(_one_shareholders, t, top_n): t for t in tickers}
+        futs = {ex.submit(_one_shareholder_count, t): t for t in tickers}
         for fut in as_completed(futs):
-            t, df = fut.result()
-            if not df.empty:
-                results[t] = df
-    logger.info(f"fetch_shareholders_batch: {len(results)}/{len(tickers)} OK")
+            t, count = fut.result()
+            if count > 0:
+                results[t] = count
+    logger.info(f"fetch_shareholder_counts: {len(results)}/{len(tickers)} OK")
     return results
 
 
@@ -129,9 +125,9 @@ def build_company_data(results: pd.DataFrame, signals: dict) -> dict:
             signal_tickers.extend(df["ticker"].tolist())
     signal_tickers = list(set(signal_tickers))
 
-    logger.info(f"Fetching company data: bulk overviews ({len(all_tickers)} tickers), shareholders ({len(signal_tickers)} signal tickers)")
-    overviews    = fetch_company_overviews(all_tickers)
-    shareholders = fetch_shareholders_batch(signal_tickers)
-    market       = fetch_market_investor_count()
+    logger.info(f"Fetching company data: bulk overviews ({len(all_tickers)} tickers), shareholder counts ({len(signal_tickers)} signal tickers)")
+    overviews          = fetch_company_overviews(all_tickers)
+    shareholder_counts = fetch_shareholder_counts(signal_tickers)
+    market             = fetch_market_investor_count()
 
-    return {"overviews": overviews, "shareholders": shareholders, "market": market}
+    return {"overviews": overviews, "shareholder_counts": shareholder_counts, "market": market}

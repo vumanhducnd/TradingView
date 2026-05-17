@@ -67,7 +67,9 @@ def build_excel_report(
         )
     else:
         wb = Workbook()
-        _sheet_signals(wb, signals, ai_analysis=ai_analysis, overviews=(company_data or {}).get("overviews"))
+        _sheet_signals(wb, signals, ai_analysis=ai_analysis,
+                       overviews=(company_data or {}).get("overviews"),
+                       shareholder_counts=(company_data or {}).get("shareholder_counts"))
         if super_stocks is not None and not super_stocks.empty:
             _sheet_super_stocks(wb, super_stocks, scan_date)
         if ai_analysis:
@@ -117,10 +119,11 @@ def _build_workbook(
     """Tạo 1 Workbook hoàn chỉnh cho 1 style (long hoặc short)."""
     wb = Workbook()
 
-    overviews    = (company_data or {}).get("overviews")
-    shareholders = (company_data or {}).get("shareholders")
+    overviews          = (company_data or {}).get("overviews")
+    shareholder_counts = (company_data or {}).get("shareholder_counts")
 
-    _sheet_signals(wb, signals, ai_analysis=ai_analysis, style_filter=style, overviews=overviews)
+    _sheet_signals(wb, signals, ai_analysis=ai_analysis, style_filter=style,
+                   overviews=overviews, shareholder_counts=shareholder_counts)
     _sheet_nam_giu(wb, results, style=style)
     _sheet_dung_ngoai(wb, results, style=style)
     _sheet_super_stocks(wb, results, scan_date)
@@ -130,11 +133,6 @@ def _build_workbook(
         _sheet_ai(wb, ai_analysis, scan_date)
 
     _sheet_history(wb, results=results, style=style)
-
-    if shareholders:
-        signal_tickers = _extract_signal_tickers(signals, style_filter=style)
-        _sheet_co_dong(wb, shareholders, signal_tickers=signal_tickers)
-
     _sheet_stats(wb, results, scan_date, style=style, company_data=company_data)
 
     if "Sheet" in wb.sheetnames:
@@ -437,6 +435,7 @@ def _sheet_signals(
     ai_analysis: dict | None = None,
     style_filter: str | None = None,
     overviews: dict | None = None,
+    shareholder_counts: dict | None = None,
 ) -> None:
     """Tab đầu tiên: Tín hiệu trong ngày."""
     style_label = {"long": " Dài hạn", "short": " Ngắn hạn"}.get(style_filter or "", "")
@@ -448,7 +447,7 @@ def _sheet_signals(
         "STT", "Mã", "Tín hiệu", "Khung",
         "Ngày mua", "Giá mua/bán (ST)",
         "Thanh khoản (tỷ VND)", "BiasNorm",
-        "NN Sở hữu %", "NN Room %", "Free Float %",
+        "NN Sở hữu %", "NN Room %", "Số CĐ",
     ]
     _write_header(ws, headers)
 
@@ -509,7 +508,7 @@ def _sheet_signals(
             round(row.get("bias_norm", 0), 1),
             ov.get("foreign_pct",    ""),
             ov.get("foreign_max_pct", ""),
-            ov.get("free_float_pct", ""),
+            (shareholder_counts or {}).get(ticker, ""),
         ]
         for j, v in enumerate(vals, start=1):
             ws.cell(row=row_idx, column=j, value=v).fill = fill
