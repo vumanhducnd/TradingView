@@ -492,7 +492,7 @@ def _handle_callback(token: str, cq: dict) -> None:
 
     elif data in ("top_5", "top_10", "top_20"):
         n = int(data.split("_")[1])
-        _reply(token, chat_id, _cmd_top(n, style), _KB_BACK)
+        _edit(token, chat_id, message_id, _cmd_top(n, style), _KB_BACK)
 
     elif data == "dangiu":
         try:
