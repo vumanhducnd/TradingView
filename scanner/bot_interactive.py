@@ -342,8 +342,9 @@ def _handle_contact(token: str, message: dict) -> None:
     )
 
     try:
-        from scanner.database import upsert_bot_user
+        from scanner.database import upsert_bot_user, set_user_status
         upsert_bot_user(chat_id, phone, full_name, username)
+        set_user_status(chat_id, "pending")
     except Exception as e:
         logger.warning(f"upsert_bot_user failed: {e}")
 
@@ -355,7 +356,7 @@ def _handle_contact(token: str, message: dict) -> None:
                 json={
                     "chat_id": ADMIN_CHAT_ID,
                     "text": (
-                        f"🔔 <b>Người dùng mới đăng ký</b>\n"
+                        f"🔔 <b>Người dùng đăng ký xác thực</b>\n"
                         f"Tên: {full_name}\n"
                         f"SĐT: <code>{phone}</code>\n"
                         f"Username: @{username or '–'}\n"
@@ -363,10 +364,13 @@ def _handle_contact(token: str, message: dict) -> None:
                     ),
                     "parse_mode": "HTML",
                     "reply_markup": {
-                        "inline_keyboard": [[
-                            {"text": "✅ Duyệt", "callback_data": f"approve_{chat_id}"},
-                            {"text": "🚫 Chặn",  "callback_data": f"block_{chat_id}"},
-                        ]]
+                        "inline_keyboard": [
+                            [
+                                {"text": "✅ Kích hoạt", "callback_data": f"sel_apv_{chat_id}"},
+                                {"text": "⏱ Thử 3 ngày", "callback_data": f"trial_{chat_id}"},
+                            ],
+                            [{"text": "🚫 Chặn", "callback_data": f"block_{chat_id}"}],
+                        ]
                     },
                 },
                 timeout=15,
