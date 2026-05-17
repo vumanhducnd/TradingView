@@ -105,21 +105,20 @@ def fetch_market_investor_count() -> dict:
     return _MARKET_FALLBACK
 
 
-def build_company_data(results: pd.DataFrame, signals: dict) -> dict:
+def build_company_data(signals: dict) -> dict:
     """
     Fetch all company data needed for Excel report.
-    Overviews: tất cả tickers. Shareholders: chỉ tickers có tín hiệu hôm nay.
+    Chỉ fetch overviews + shareholders cho signal tickers (không cả watchlist)
+    để tránh vượt rate limit 60 req/phút của vnstock community.
     """
-    tickers = results["ticker"].tolist() if "ticker" in results.columns else []
-
     signal_tickers: list[str] = []
     for df in signals.values():
         if not df.empty and "ticker" in df.columns:
             signal_tickers.extend(df["ticker"].tolist())
     signal_tickers = list(set(signal_tickers))
 
-    logger.info(f"Fetching company data: {len(tickers)} overviews, {len(signal_tickers)} shareholder lookups")
-    overviews    = fetch_company_overviews(tickers)
+    logger.info(f"Fetching company data: {len(signal_tickers)} signal tickers (overviews + shareholders)")
+    overviews    = fetch_company_overviews(signal_tickers)
     shareholders = fetch_shareholders_batch(signal_tickers)
     market       = fetch_market_investor_count()
 

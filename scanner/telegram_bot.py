@@ -366,7 +366,7 @@ def send_daily_report(
     try:
         from scanner.company_data import build_company_data
         from scanner.excel_report import build_excel_report
-        company_data = build_company_data(results, signals)
+        company_data = build_company_data(signals)
         excel_paths = build_excel_report(
             results, signals,
             ai_analysis=ai_analysis,
