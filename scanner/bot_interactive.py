@@ -151,7 +151,16 @@ def _handle_callback(token: str, cq: dict) -> None:
         _reply(token, chat_id, "⏰ Nhập mã và giá mục tiêu (VD: <code>VHM 25.5</code>):")
 
     elif data == "alerts":
-        _reply(token, chat_id, _cmd_list_alerts(cid_str), _KB_BACK)
+        text, kb = _cmd_list_alerts(cid_str)
+        _reply(token, chat_id, text, kb)
+
+    elif data.startswith("del_"):
+        aid = data[4:]
+        reply = _cmd_delete_alert(cid_str, aid)
+        # Sau khi xoá, hiện lại danh sách cập nhật
+        text, kb = _cmd_list_alerts(cid_str)
+        _reply(token, chat_id, reply)
+        _reply(token, chat_id, text, kb)
 
 
 # ─── Scan results cache (TTL 5 phút) ─────────────────────────────────────────
@@ -421,17 +430,25 @@ def _cmd_set_alert(chat_id: str, ticker: str, target_str: str) -> str:
     )
 
 
-def _cmd_list_alerts(chat_id: str) -> str:
+def _cmd_list_alerts(chat_id: str) -> tuple[str, dict]:
+    """Trả về (text, keyboard) — keyboard có nút xoá từng cảnh báo."""
     from scanner.database import get_price_alerts
     alerts = get_price_alerts(chat_id)
     if not alerts:
-        return "Bạn chưa có cảnh báo nào.\nVí dụ: <code>/alert VHM 25.5</code>"
+        return "Bạn chưa có cảnh báo nào.\nBấm ⏰ Đặt cảnh báo để thêm mới.", _KB_BACK
+
     lines = [f"<b>⏰ Cảnh báo của bạn ({len(alerts)}):</b>"]
+    buttons = []
     for a in alerts:
         arrow = "↑" if a["direction"] == "above" else "↓"
-        lines.append(f"  #{a['id']} <b>{a['ticker']}</b> {arrow} {fmt_price(float(a['target_price']))}")
-    lines.append("\nXoá: <code>/delalert &lt;id&gt;</code>")
-    return "\n".join(lines)
+        lines.append(f"  <b>{a['ticker']}</b> {arrow} {fmt_price(float(a['target_price']))}")
+        buttons.append([{
+            "text": f"🗑 Xoá {a['ticker']} {arrow} {fmt_price(float(a['target_price']))}",
+            "callback_data": f"del_{a['id']}",
+        }])
+    buttons.append([{"text": "🔙 Menu chính", "callback_data": "main_menu"}])
+
+    return "\n".join(lines), {"inline_keyboard": buttons}
 
 
 def _cmd_delete_alert(chat_id: str, id_str: str) -> str:
@@ -519,7 +536,8 @@ def _dispatch(token: str, message: dict) -> None:
         )
         _reply(token, chat_id, reply, _KB_BACK)
     elif cmd == "/alerts":
-        _reply(token, chat_id, _cmd_list_alerts(cid_str), _KB_BACK)
+        text, kb = _cmd_list_alerts(cid_str)
+        _reply(token, chat_id, text, kb)
     elif cmd == "/delalert":
         reply = (
             _cmd_delete_alert(cid_str, parts[1])
