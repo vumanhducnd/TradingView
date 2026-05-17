@@ -110,9 +110,26 @@ def _send_raw(text: str, token: str, chat_id: str, parse_mode: str = "HTML") -> 
 def send_message(text: str, style: str = "long", parse_mode: str = "HTML") -> bool:
     """Gửi tin nhắn đến tất cả channel theo style ('long' | 'short')."""
     token, chat_ids = _chat_ids(style)
+    if not chat_ids:
+        logger.info(f"[{style.upper()}] Không có channel nào đang active — bỏ qua.")
+        return False
+
+    # Lấy title từ DB để log rõ hơn
+    try:
+        from scanner.database import get_bot_channels
+        title_map = {c["chat_id"]: c.get("title") or c["chat_id"]
+                     for c in get_bot_channels(style=style, active_only=False)}
+    except Exception:
+        title_map = {}
+
     results = []
     for cid in chat_ids:
         ok = _send_raw(text, token, cid, parse_mode)
+        label = title_map.get(cid, cid)
+        if ok:
+            logger.info(f"[{style.upper()}] ✓ Đã gửi → {label} ({cid})")
+        else:
+            logger.warning(f"[{style.upper()}] ✗ Gửi thất bại → {label} ({cid})")
         results.append(ok)
         if len(chat_ids) > 1:
             time.sleep(0.3)
