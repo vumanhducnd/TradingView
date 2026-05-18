@@ -137,6 +137,16 @@ def tv_link(ticker: str, exchange: str = "") -> str:
     return f'<a href="{url}">{ticker}</a>'
 
 
+def tk_emoji(tk_ty: float) -> str:
+    """Emoji màu theo mức thanh khoản TB20 (đơn vị: tỷ VND).
+    💎 ≥100 tỷ (vốn >5 tỷ) | 🟢 20-100 tỷ (1-5 tỷ) | 🟡 5-20 tỷ (200tr-1 tỷ) | 🔴 <5 tỷ (<200tr)
+    """
+    if tk_ty >= 100: return "💎"
+    if tk_ty >= 20:  return "🟢"
+    if tk_ty >= 5:   return "🟡"
+    return "🔴"
+
+
 def fmt_pct(value: float) -> str:
     sign = "+" if value > 0 else ""
     return f"{sign}{value:.1f}%"
