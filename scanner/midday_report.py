@@ -13,7 +13,7 @@ from datetime import date, timedelta
 
 import scanner.config  # noqa: F401 — bắt buộc để load_dotenv() chạy trước DB
 from scanner.database import load_exchange_map
-from scanner.utils import fmt_price, is_trading_day, logger, tk_emoji, tv_link
+from scanner.utils import fmt_price, is_trading_day, logger, tk_label, tv_link
 
 
 # ─── Lấy top mã biến động ─────────────────────────────────────────────────────
@@ -264,7 +264,7 @@ def run(force: bool = False) -> None:
             return "–"
         sign = "+" if float(lst[0]["pct_chg"]) > 0 else ""
         top  = "  ".join(
-            f"{tk_emoji(float(m.get('turnover') or 0)/1e9)}{tv_link(m['ticker'], exch_map.get(m['ticker'], ''))}({sign}{float(m['pct_chg']):.1f}%)"
+            f"{tv_link(m['ticker'], exch_map.get(m['ticker'], ''))}({sign}{float(m['pct_chg']):.1f}%·{tk_label(float(m.get('turnover') or 0)/1e9, short=True)})"
             for m in lst[:show]
         )
         rest = len(lst) - show

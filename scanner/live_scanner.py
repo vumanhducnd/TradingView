@@ -25,7 +25,7 @@ from scanner.data_fetcher import _set_api_key, _snap_to_tick, load_all_from_db
 from scanner.database import bulk_upsert_today, get_top300_thanh_khoan, get_vn100_watchlist, load_all_ohlcv_bulk, load_ohlcv, upsert_ohlcv
 from scanner.indicators import calc_bias_norm, calc_supertrend, calc_supertrend_next, get_supertrend_state
 from scanner.telegram_bot import send_message
-from scanner.utils import fmt_price, logger, tk_emoji, tv_link
+from scanner.utils import fmt_price, logger, tk_label, tv_link
 
 # ─── Config ───────────────────────────────────────────────────────────────────
 SCAN_INTERVAL_SEC      = 5 * 60      # quét mỗi 5 phút
@@ -76,7 +76,7 @@ def _fmt_pre_row(r: dict) -> str:
     exch   = r.get("exchange", "")
     prefix = f"{exch}:" if exch else ""
     tk_ty  = r["turnover"] / 1e9 if r.get("turnover") else 0.0
-    tk_str = f"{tk_emoji(tk_ty)} {tk_ty:.1f} tỷ" if tk_ty > 0 else "–"
+    tk_str = f"{tk_ty:.1f} tỷ ({tk_label(tk_ty)})" if tk_ty > 0 else "–"
     return (
         f"  <b>{prefix}{tv_link(r['ticker'], exch)}</b> | "
         f"Giá {fmt_price(r['close'])} | "
@@ -748,7 +748,7 @@ def run_session(interval: int = 180, session: str = "full") -> None:
             style  = flip["style"]
             tk     = float(tk_map.get(ticker, 0) or 0)
             tk_ty  = tk / 1e6
-            tk_str = f"{tk_emoji(tk_ty)} {tk_ty:.1f} tỷ" if tk > 0 else "–"
+            tk_str = f"{tk_ty:.1f} tỷ ({tk_label(tk_ty)})" if tk > 0 else "–"
             time_str = now.strftime("%H:%M")
 
             exch    = flip.get("exchange", "")

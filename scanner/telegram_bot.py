@@ -19,7 +19,7 @@ from scanner.config import (
     TELEGRAM_CHAT_IDS_LONG, TELEGRAM_CHAT_IDS_SHORT,
 )
 from scanner.database import load_exchange_map
-from scanner.utils import bias_label, fmt_price, logger, tk_emoji, tv_link
+from scanner.utils import bias_label, fmt_price, logger, tk_label, tv_link
 
 
 def _val(row, *names, default=None):
@@ -39,18 +39,17 @@ def _fmt(v, default="–") -> str:
 
 
 def _fmt_tk(row) -> str:
-    """Thanh khoản hôm nay + TB20 ngày trong ngoặc, kèm emoji mức thanh khoản."""
+    """Thanh khoản hôm nay + TB20 + nhãn mức trong ngoặc."""
     tk = _val(row, "turnover")
     if tk and tk > 0:
         avg = _val(row, "avg_turnover_20d")
         avg_f = float(avg) if avg else 0.0
-        # Dùng TB20 để chọn emoji (ổn định hơn), fallback hôm nay
         ref_ty = avg_f / 1e6 if avg_f > 0 else float(tk) / 1e9
-        emoji = tk_emoji(ref_ty)
+        label = tk_label(ref_ty)
         today_str = f"{float(tk) / 1e9:.1f} tỷ"
         if avg_f > 0:
-            return f"{emoji} {today_str} (TB20: {avg_f / 1e6:.1f} tỷ)"
-        return f"{emoji} {today_str}"
+            return f"{today_str} (TB20: {avg_f / 1e6:.1f} tỷ · {label})"
+        return f"{today_str} ({label})"
     vol = _val(row, "volume")
     if vol and vol > 0:
         return f"{vol / 1e6:.1f}M cp"
