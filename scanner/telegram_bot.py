@@ -39,10 +39,14 @@ def _fmt(v, default="–") -> str:
 
 
 def _fmt_tk(row) -> str:
-    """Thanh khoản: ưu tiên turnover (tỷ VND), fallback volume (triệu cp)."""
+    """Thanh khoản hôm nay + TB20 ngày trong ngoặc."""
     tk = _val(row, "turnover")
     if tk and tk > 0:
-        return f"{tk / 1e9:.1f} tỷ"
+        today_str = f"{tk / 1e9:.1f} tỷ"
+        avg = _val(row, "avg_turnover_20d")
+        if avg and float(avg) > 0:
+            return f"{today_str} (TB20: {float(avg) / 1e6:.1f} tỷ)"
+        return today_str
     vol = _val(row, "volume")
     if vol and vol > 0:
         return f"{vol / 1e6:.1f}M cp"
@@ -191,9 +195,14 @@ def send_daily_report(
     today = date.today().strftime("%d/%m/%Y")
     is_dual = "long_buy_signal" in results.columns
 
-    # Load exchange để tạo TradingView link cho từng mã
+    # Load exchange + avg_turnover_20d để enrich results
     tickers_all = results["ticker"].tolist() if not results.empty else []
     _exch_map = load_exchange_map(tickers_all)
+    from scanner.database import load_avg_turnover
+    _avg_tk = load_avg_turnover(tickers_all)
+    if _avg_tk and "avg_turnover_20d" not in results.columns:
+        results = results.copy()
+        results["avg_turnover_20d"] = results["ticker"].map(_avg_tk)
 
     TOP_N = 5
     # Ưu tiên turnover (giá trị giao dịch), fallback volume
