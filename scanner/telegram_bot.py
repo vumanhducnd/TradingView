@@ -388,7 +388,6 @@ def send_daily_report(
         company_data = build_company_data(results, signals)
         excel_paths = build_excel_report(
             results, signals,
-            ai_analysis=ai_analysis,
             super_stocks=super_stocks,
             company_data=company_data,
         )
@@ -396,7 +395,7 @@ def send_daily_report(
             if path:
                 send_file(
                     path,
-                    caption=f"📊 Report {'Dài hạn' if file_style == 'long' else 'Ngắn hạn'} {today}",
+                    caption=f" Report {'Dài hạn' if file_style == 'long' else 'Ngắn hạn'} {today}",
                     style=file_style,
                 )
                 time.sleep(0.5)
