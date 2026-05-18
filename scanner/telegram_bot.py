@@ -322,8 +322,8 @@ def send_daily_report(
         # Header + AI gộp 1 tin
         disclaimer = "<i>📌 Tín hiệu kỹ thuật để tham khảo — bạn vẫn là người ra quyết định nhé!</i>"
         header_lines = [
-            f"<b>📊 Báo cáo cuối phiên — {today} — {style_name}</b>",
-            f"🟢 Bứt phá: <b>{len(buy_df)}</b> mã  |  🔴 Đảo chiều: <b>{len(sell_df)}</b> mã",
+            f"<b>Báo cáo cuối phiên — {today} — {style_name}</b>",
+            f"💰 Bứt phá: <b>{len(buy_df)}</b> mã  |  💸 Đảo chiều: <b>{len(sell_df)}</b> mã",
         ]
         if ai_end:
             header_lines.append(f"\n{ai_end}")
@@ -336,8 +336,8 @@ def send_daily_report(
 
         st_col = f"{p}supertrend"
         for lines in [
-            _signal_lines(buy_df,  "🚀", "Tín hiệu bứt phá xác nhận", st_col, direction="buy"),
-            _signal_lines(sell_df, "🔻", "Tín hiệu đảo chiều giảm",   st_col, direction="sell"),
+            _signal_lines(buy_df,  "💰", "Tín hiệu bứt phá xác nhận", st_col, direction="buy"),
+            _signal_lines(sell_df, "💸", "Tín hiệu đảo chiều giảm",   st_col, direction="sell"),
         ]:
             if lines:
                 send_message("\n".join(lines), style=style)
@@ -370,8 +370,8 @@ def send_daily_report(
         _send_top_vung_xanh(results, style="long")
         time.sleep(0.8)
         for lines in [
-            _signal_lines(buy_df,  "🚀", "Tín hiệu bứt phá xác nhận", "supertrend", direction="buy"),
-            _signal_lines(sell_df, "🔻", "Tín hiệu đảo chiều giảm",   "supertrend", direction="sell"),
+            _signal_lines(buy_df,  "💰", "Tín hiệu bứt phá xác nhận", "supertrend", direction="buy"),
+            _signal_lines(sell_df, "💸", "Tín hiệu đảo chiều giảm",   "supertrend", direction="sell"),
         ]:
             if lines:
                 send_message("\n".join(lines), style="long")

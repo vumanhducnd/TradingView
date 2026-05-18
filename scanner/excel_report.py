@@ -125,7 +125,7 @@ def _build_workbook(
     _sheet_nam_giu(wb, results, style=style)
     _sheet_dung_ngoai(wb, results, style=style)
     _sheet_super_stocks(wb, results, scan_date)
-    _sheet_rut_chan(wb, style=style, scan_date=scan_date)
+    _sheet_rut_chan(wb, results=results, style=style, scan_date=scan_date)
 
     if style == "long" and ai_analysis is not None:
         _sheet_ai(wb, ai_analysis, scan_date)
@@ -881,71 +881,120 @@ def _sheet_history(wb: Workbook, results: pd.DataFrame, style: str = "long", ove
 _RUT_CHAN_FILL = PatternFill("solid", fgColor="FCE4D6")
 
 
-def _sheet_rut_chan(wb: Workbook, style: str, scan_date: str) -> None:
-    """Tab tín hiệu rút chân: giá, thanh khoản, ngưỡng ST bị phá, % rút chân."""
+def _sheet_rut_chan(wb: Workbook, results: pd.DataFrame, style: str, scan_date: str) -> None:
+    """
+    Rút chân: nến hôm nay vượt ngưỡng SuperTrend nhưng đóng cửa quay lại bên kia.
+    - MUA rút chân: high > ST nhưng close < ST  (tín hiệu mua bị phá vỡ cuối phiên)
+    - BÁN rút chân: low  < ST nhưng close > ST  (tín hiệu bán bị phá vỡ cuối phiên)
+    """
+    st_col = f"{style}_supertrend" if f"{style}_supertrend" in results.columns else "supertrend"
+    if st_col not in results.columns:
+        return
+
     try:
         from scanner.database import db_cursor
         with db_cursor(commit=False) as cur:
+            tickers = results["ticker"].tolist()
             cur.execute(
                 """
-                SELECT
-                    s.ticker,
-                    s.signal_type,
-                    s.signal_price,
-                    s.signal_st,
-                    o.close           AS final_close,
-                    w.avg_turnover_20d AS turnover
-                FROM signals s
-                LEFT JOIN ohlcv o
-                    ON o.ticker = s.ticker AND o.date = %s
-                LEFT JOIN watchlist w
-                    ON w.ticker = s.ticker
-                WHERE s.signal_date = %s AND s.style = %s AND s.is_fakeout = TRUE
-                ORDER BY w.avg_turnover_20d DESC NULLS LAST
+                SELECT o.ticker, o.high, o.low, o.close
+                FROM ohlcv o
+                WHERE o.date = %s AND o.ticker = ANY(%s)
                 """,
-                (scan_date, scan_date, style),
+                (scan_date, tickers),
             )
-            rows = cur.fetchall()
+            ohlcv_rows = {r["ticker"]: r for r in cur.fetchall()}
     except Exception as e:
-        logger.warning(f"_sheet_rut_chan query failed: {e}")
+        logger.warning(f"_sheet_rut_chan: query OHLCV failed: {e}")
         return
 
-    if not rows:
+    if not ohlcv_rows:
         return
 
-    ws = wb.create_sheet("Tín hiệu rút chân")
+    # Lấy avg_turnover từ watchlist để sort
+    try:
+        from scanner.database import load_avg_turnover
+        tk_map = load_avg_turnover(tickers)
+    except Exception:
+        tk_map = {}
+
+    records = []
+    for _, row in results.iterrows():
+        ticker = row.get("ticker", "")
+        o = ohlcv_rows.get(ticker)
+        if not o:
+            continue
+        st_val = float(row.get(st_col) or 0)
+        if st_val <= 0:
+            continue
+
+        high  = float(o["high"]  or 0)
+        low   = float(o["low"]   or 0)
+        close = float(o["close"] or 0)
+        if close <= 0:
+            continue
+
+        rut_type = None
+        if high > st_val and close < st_val:
+            rut_type = "MUA rút chân"   # vượt lên nhưng đóng dưới ST
+        elif low < st_val and close > st_val:
+            rut_type = "BÁN rút chân"   # phá xuống nhưng đóng trên ST
+
+        if rut_type is None:
+            continue
+
+        pct_vs_st = round((close - st_val) / st_val * 100, 2)
+        tk = tk_map.get(ticker, float(row.get("turnover") or 0))
+        records.append({
+            "ticker":    ticker,
+            "rut_type":  rut_type,
+            "high":      high,
+            "low":       low,
+            "close":     close,
+            "st_val":    st_val,
+            "pct_vs_st": pct_vs_st,
+            "turnover":  tk,
+        })
+
+    if not records:
+        return
+
+    records.sort(key=lambda x: x["turnover"], reverse=True)
+
+    ws = wb.create_sheet("Rút chân hôm nay")
     headers = [
-        "STT", "Mã", "Tín hiệu", "Giá tín hiệu",
-        "Ngưỡng ST bị phá", "Giá đóng cửa", "Rút chân %", "Thanh khoản TB (tỷ)",
+        "STT", "Mã", "Loại", "High", "Low", "Đóng cửa",
+        "SuperTrend", "Đóng/ST %", "Thanh khoản TB (tỷ)",
     ]
     _write_header(ws, headers)
 
-    for i, row in enumerate(rows, start=2):
-        sig_p   = float(row["signal_price"] or 0)
-        final   = float(row["final_close"]  or 0)
-        st_lvl  = float(row["signal_st"]    or 0)
-        tk      = float(row["turnover"]     or 0)
-        pct     = round((final - sig_p) / sig_p * 100, 2) if sig_p else None
-        pct_str = f"{pct:+.2f}%" if pct is not None else ""
-
+    for i, rec in enumerate(records, start=2):
+        pct_str = f"{rec['pct_vs_st']:+.2f}%"
+        tk_ty   = round(rec["turnover"] / 1e9, 1) if rec["turnover"] else ""
         vals = [
             i - 1,
-            row["ticker"],
-            row["signal_type"],
-            round(sig_p, 2)  if sig_p  else "",
-            round(st_lvl, 2) if st_lvl else "",
-            round(final, 2)  if final  else "",
+            rec["ticker"],
+            rec["rut_type"],
+            round(rec["high"],   2),
+            round(rec["low"],    2),
+            round(rec["close"],  2),
+            round(rec["st_val"], 2),
             pct_str,
-            round(tk / 1e6, 1) if tk else "",
+            tk_ty,
         ]
+        fill = RED_FILL if "MUA" in rec["rut_type"] else YELLOW_FILL
         for j, v in enumerate(vals, start=1):
-            ws.cell(row=i, column=j, value=v).fill = _RUT_CHAN_FILL
+            ws.cell(row=i, column=j, value=v).fill = fill
 
-        if pct is not None and abs(pct) >= 2:
-            ws.cell(row=i, column=7).fill = RED_FILL  # cột "Rút chân %" = 7 sau khi thêm STT
+    note_row = len(records) + 3
+    ws.cell(
+        row=note_row, column=1,
+        value="* MUA rút chân: high vượt ST nhưng đóng dưới ST. BÁN rút chân: low phá ST nhưng đóng trên ST.",
+    ).font = Font(italic=True, color="888888")
 
     _auto_width(ws)
     ws.freeze_panes = "B2"
+    ws.auto_filter.ref = ws.dimensions
 
 
 def _write_header(ws, headers: list) -> None:
