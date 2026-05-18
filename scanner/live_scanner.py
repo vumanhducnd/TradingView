@@ -67,7 +67,7 @@ def _wait_until_ict(hour: int, minute: int, abort_after_hour: int | None = None,
 
 # ─── Pre-session (7:00 ICT) ───────────────────────────────────────────────────
 
-_NEAR_THRESHOLD_PCT = 3.0   # % cách ST để coi là "gần điểm mua/bán"
+_NEAR_THRESHOLD_PCT = 1.5   # % cách ST để coi là "gần điểm mua/bán"
 _TOP_N_PRE          = 10    # số mã hiển thị mỗi nhóm
 
 
