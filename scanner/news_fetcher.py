@@ -52,10 +52,12 @@ def fetch_news(tickers: list[str] | None = None, max_items: int = 20) -> list[di
                     if not any(t in combined for t in ticker_set):
                         continue
 
+                link = (item.findtext("link") or "").strip()
                 results.append({
                     "title":   title,
                     "summary": desc,
                     "source":  source_name,
+                    "link":    link,
                 })
         except Exception as e:
             logger.warning(f"RSS fetch failed [{source_name}]: {e}")

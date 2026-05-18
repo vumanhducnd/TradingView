@@ -274,7 +274,14 @@ def run(force: bool = False) -> None:
     all_news = news_ticker[:4] + [n for n in news_hot if n not in news_ticker][:3]
     news_block = ""
     if all_news:
-        news_lines = "\n".join(f"  • {n['title']} <i>({n['source']})</i>" for n in all_news[:6])
+        def _fmt_news(n: dict) -> str:
+            title = n["title"]
+            src   = n["source"]
+            link  = n.get("link", "")
+            label = f'<a href="{link}">{title}</a>' if link else title
+            return f"  • {label} <i>({src})</i>"
+
+        news_lines = "\n".join(_fmt_news(n) for n in all_news[:6])
         news_block = f"\n\n<b>📋 Tin nổi bật:</b>\n{news_lines}"
 
     today_str = today.strftime("%d/%m/%Y")
