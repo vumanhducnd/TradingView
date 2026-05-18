@@ -18,7 +18,7 @@ from scanner.config import (
     TELEGRAM_TOKEN_SHORT, TELEGRAM_CHAT_ID_SHORT,
     TELEGRAM_CHAT_IDS_LONG, TELEGRAM_CHAT_IDS_SHORT,
 )
-from scanner.utils import bias_label, fmt_price, logger
+from scanner.utils import bias_label, fmt_price, logger, tv_link
 
 
 def _val(row, *names, default=None):
@@ -189,6 +189,19 @@ def send_daily_report(
     today = date.today().strftime("%d/%m/%Y")
     is_dual = "long_buy_signal" in results.columns
 
+    # Load exchange để tạo TradingView link cho từng mã
+    try:
+        from scanner.database import db_cursor
+        tickers_all = results["ticker"].tolist() if not results.empty else []
+        with db_cursor(commit=False) as _cur:
+            _cur.execute(
+                "SELECT ticker, exchange FROM watchlist WHERE ticker = ANY(%s)",
+                (tickers_all,),
+            )
+            _exch_map: dict[str, str] = {r["ticker"]: r["exchange"] for r in _cur.fetchall()}
+    except Exception:
+        _exch_map = {}
+
     TOP_N = 5
     # Ưu tiên turnover (giá trị giao dịch), fallback volume
     vol_col = "turnover" if "turnover" in results.columns else ("volume" if "volume" in results.columns else None)
@@ -219,10 +232,11 @@ def send_daily_report(
         for _, row in top.iterrows():
             st    = _val(row, st_col, "supertrend")
             close = _val(row, "close")
+            _ticker_link = f"<b>{tv_link(row['ticker'], _exch_map.get(row['ticker'], ''))}</b>"
             if direction == "buy":
                 sl_str = _fmt(float(st) * 0.98) if st and float(st) > 0 else "–"
                 lines.append(
-                    f"  <b>{row['ticker']}</b>\n"
+                    f"  {_ticker_link}\n"
                     f"    Giá mua       : {_fmt(close)}\n"
                     f"    Giá SL         : {sl_str}\n"
                     f"    Thanh khoản   : {_fmt_tk(row)}"
@@ -242,7 +256,7 @@ def send_daily_report(
                 date_str = buy_date if buy_date and buy_date not in ("", "N", "None") else None
                 has_buy  = buy_price and float(buy_price) > 0
 
-                block = f"  <b>{row['ticker']}</b>\n"
+                block = f"  {_ticker_link}\n"
                 if has_buy:
                     if date_str:
                         block += f"    Ngày mua      : {date_str}\n"

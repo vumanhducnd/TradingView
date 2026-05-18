@@ -25,7 +25,7 @@ from scanner.data_fetcher import _set_api_key, _snap_to_tick, load_all_from_db
 from scanner.database import bulk_upsert_today, get_top300_thanh_khoan, get_vn100_watchlist, load_all_ohlcv_bulk, load_ohlcv, upsert_ohlcv
 from scanner.indicators import calc_bias_norm, calc_supertrend, calc_supertrend_next, get_supertrend_state
 from scanner.telegram_bot import send_message
-from scanner.utils import fmt_price, logger
+from scanner.utils import fmt_price, logger, tv_link
 
 # ─── Config ───────────────────────────────────────────────────────────────────
 SCAN_INTERVAL_SEC      = 5 * 60      # quét mỗi 5 phút
@@ -77,7 +77,7 @@ def _fmt_pre_row(r: dict) -> str:
     prefix = f"{exch}:" if exch else ""
     tk_str = f"{r['turnover']/1e9:.1f} tỷ" if r.get("turnover") else "–"
     return (
-        f"  <b>{prefix}{r['ticker']}</b> | "
+        f"  <b>{prefix}{tv_link(r['ticker'], exch)}</b> | "
         f"Giá {fmt_price(r['close'])} | "
         f"TK {tk_str}"
     )
@@ -690,6 +690,7 @@ def run_session(interval: int = 180, session: str = "full") -> None:
                         flips.append({
                             "ticker": ticker, "direction": "buy",
                             "price": bar["close"], "st": _st, "style": style_key,
+                            "exchange": exchange_map.get(ticker, ""),
                         })
                         alerted_today.add(alert_key)
                         _save_signal_to_db(ticker, "MUA", style_key, price=bar["close"], st=_st)
@@ -702,6 +703,7 @@ def run_session(interval: int = 180, session: str = "full") -> None:
                         flips.append({
                             "ticker": ticker, "direction": "sell",
                             "price": bar["close"], "st": _st, "style": style_key,
+                            "exchange": exchange_map.get(ticker, ""),
                         })
                         alerted_today.add(alert_key)
                         _save_signal_to_db(ticker, "BÁN", style_key, price=bar["close"], st=_st)
@@ -743,9 +745,11 @@ def run_session(interval: int = 180, session: str = "full") -> None:
             tk_str = f"{tk/1e6:.1f} tỷ" if tk > 0 else "–"
             time_str = now.strftime("%H:%M")
 
+            exch    = flip.get("exchange", "")
+            ticker_link = tv_link(ticker, exch)
             if flip["direction"] == "buy":
                 msg = (
-                    f"🟢 <b>{ticker}</b> — Vùng mua tốt\n"
+                    f"🟢 <b>{ticker_link}</b> — Vùng mua tốt\n"
                     f"Giá vừa bứt phá ngưỡng kháng cự lên trên\n"
                     f"Giá hiện tại  : <b>{fmt_price(price)}</b>\n"
                     f"Kháng cự      : {fmt_price(st)}\n"
@@ -772,7 +776,7 @@ def run_session(interval: int = 180, session: str = "full") -> None:
                         f"\nGiá mua       : {fmt_price(buy_p)} → {pnl:+.2f}%"
                     )
                 msg = (
-                    f"🔴 <b>{ticker}</b> — Vùng cân nhắc thoát lệnh\n"
+                    f"🔴 <b>{ticker_link}</b> — Vùng cân nhắc thoát lệnh\n"
                     f"Giá vừa thủng ngưỡng hỗ trợ\n"
                     f"Giá hiện tại  : <b>{fmt_price(price)}</b>\n"
                     f"Hỗ trợ        : {fmt_price(st)}\n"

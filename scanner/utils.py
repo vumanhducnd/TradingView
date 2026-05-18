@@ -130,6 +130,13 @@ def fmt_price(price: float) -> str:
     return f"{price:.2f}"
 
 
+def tv_link(ticker: str, exchange: str = "") -> str:
+    """HTML <a> link mở TradingView chart. exchange: HOSE / HNX / UPCOM."""
+    exch = exchange.upper() if exchange else "HOSE"
+    url = f"https://www.tradingview.com/chart/?symbol={exch}:{ticker}"
+    return f'<a href="{url}">{ticker}</a>'
+
+
 def fmt_pct(value: float) -> str:
     sign = "+" if value > 0 else ""
     return f"{sign}{value:.1f}%"
