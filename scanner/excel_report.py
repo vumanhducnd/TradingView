@@ -25,7 +25,6 @@ def build_excel_report(
     results: pd.DataFrame,
     signals: dict[str, pd.DataFrame],
     scan_date: str | None = None,
-    ai_analysis: dict | None = None,
     super_stocks: pd.DataFrame | None = None,
     company_data: dict | None = None,
 ) -> dict[str, str]:
@@ -58,21 +57,18 @@ def build_excel_report(
 
     if is_dual:
         paths["long"]  = _save_workbook(
-            _build_workbook(results, signals, "long",  scan_date, ai_analysis, super_stocks, company_data),
+            _build_workbook(results, signals, "long",  scan_date, super_stocks, company_data),
             REPORTS_DIR / f"report_long_{scan_date}.xlsx",
         )
         paths["short"] = _save_workbook(
-            _build_workbook(results, signals, "short", scan_date, ai_analysis=None, super_stocks=None, company_data=company_data),
+            _build_workbook(results, signals, "short", scan_date, super_stocks=None, company_data=company_data),
             REPORTS_DIR / f"report_short_{scan_date}.xlsx",
         )
     else:
         wb = Workbook()
-        _sheet_signals(wb, signals, ai_analysis=ai_analysis,
-                       overviews=(company_data or {}).get("overviews"))
+        _sheet_signals(wb, signals, overviews=(company_data or {}).get("overviews"))
         if super_stocks is not None and not super_stocks.empty:
             _sheet_super_stocks(wb, super_stocks, scan_date)
-        if ai_analysis:
-            _sheet_ai(wb, ai_analysis, scan_date)
         _sheet_all(wb, results)
         _sheet_stats(wb, results, scan_date, style=None, company_data=company_data)
         if "Sheet" in wb.sheetnames:
@@ -111,7 +107,6 @@ def _build_workbook(
     signals: dict[str, pd.DataFrame],
     style: str,
     scan_date: str,
-    ai_analysis: dict | None = None,
     super_stocks: pd.DataFrame | None = None,
     company_data: dict | None = None,
 ) -> "Workbook":
@@ -120,15 +115,11 @@ def _build_workbook(
 
     overviews = (company_data or {}).get("overviews")
 
-    _sheet_signals(wb, signals, ai_analysis=ai_analysis, style_filter=style,
-                   overviews=overviews)
+    _sheet_signals(wb, signals, style_filter=style, overviews=overviews)
     _sheet_nam_giu(wb, results, style=style)
     _sheet_dung_ngoai(wb, results, style=style)
     _sheet_super_stocks(wb, results, scan_date)
     _sheet_rut_chan(wb, results=results, style=style, scan_date=scan_date)
-
-    if style == "long" and ai_analysis is not None:
-        _sheet_ai(wb, ai_analysis, scan_date)
 
     _sheet_history(wb, results=results, style=style, overviews=overviews)
     _sheet_stats(wb, results, scan_date, style=style, company_data=company_data)
@@ -370,67 +361,9 @@ def _sheet_super_stocks(wb: Workbook, df: pd.DataFrame, scan_date: str) -> None:
     ws.auto_filter.ref = ws.dimensions
 
 
-def _sheet_ai(wb: Workbook, ai_analysis: dict, scan_date: str) -> None:
-    """Sheet phân tích AI: overview + bảng từng tín hiệu."""
-    ws = wb.create_sheet("Phân tích AI")
-
-    WRAP = Alignment(wrap_text=True, vertical="top")
-    AI_FILL = PatternFill("solid", fgColor="EAF4FB")
-
-    ws.cell(row=1, column=1, value="NHẬN ĐỊNH TỔNG QUAN THỊ TRƯỜNG").font = Font(bold=True, size=13)
-    ws.cell(row=1, column=1).fill = PatternFill("solid", fgColor="2F75B6")
-    ws.cell(row=1, column=1).font = Font(bold=True, size=13, color="FFFFFF")
-    ws.merge_cells("A1:D1")
-
-    overview = ai_analysis.get("overview", "") or "(AI không phân tích được — kiểm tra GROQ_API_KEY / GEMINI_API_KEY)"
-    ws.cell(row=2, column=1, value=overview).alignment = WRAP
-    ws.merge_cells("A2:D2")
-    ws.row_dimensions[2].height = max(60, len(overview) // 5)
-
-    buy_signals  = ai_analysis.get("buy_signals",  [])
-    sell_signals = ai_analysis.get("sell_signals", [])
-
-    row = 4
-    for section_label, signals_list in [
-        ("PHÂN TÍCH TÍN HIỆU MUA", buy_signals),
-        ("PHÂN TÍCH TÍN HIỆU BÁN", sell_signals),
-    ]:
-        if not signals_list:
-            continue
-        ws.cell(row=row, column=1, value=section_label).font = Font(bold=True, color="FFFFFF")
-        ws.cell(row=row, column=1).fill = PatternFill("solid", fgColor="375623" if "MUA" in section_label else "9C0006")
-        ws.merge_cells(f"A{row}:D{row}")
-        row += 1
-
-        header_row = row
-        for j, h in enumerate(["STT", "Mã", "Nhận định AI", "Ngày quét"], start=1):
-            c = ws.cell(row=header_row, column=j, value=h)
-            c.fill = HEADER_FILL
-            c.font = HEADER_FONT
-        row += 1
-
-        for stt, item in enumerate(signals_list, start=1):
-            ws.cell(row=row, column=1, value=stt)
-            ws.cell(row=row, column=2, value=item.get("ticker", "")).font = Font(bold=True)
-            cell = ws.cell(row=row, column=3, value=item.get("analysis", ""))
-            cell.alignment = WRAP
-            cell.fill = AI_FILL
-            ws.cell(row=row, column=4, value=scan_date)
-            ws.row_dimensions[row].height = 40
-            row += 1
-
-        row += 1
-
-    ws.column_dimensions["A"].width = 6
-    ws.column_dimensions["B"].width = 8
-    ws.column_dimensions["C"].width = 80
-    ws.column_dimensions["D"].width = 14
-
-
 def _sheet_signals(
     wb: Workbook,
     signals: dict,
-    ai_analysis: dict | None = None,
     style_filter: str | None = None,
     overviews: dict | None = None,
 ) -> None:
