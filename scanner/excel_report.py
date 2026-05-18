@@ -66,7 +66,8 @@ def build_excel_report(
         )
     else:
         wb = Workbook()
-        _sheet_signals(wb, signals, overviews=(company_data or {}).get("overviews"))
+        _sheet_signals(wb, signals, overviews=(company_data or {}).get("overviews"),
+                       results=results, scan_date=scan_date)
         if super_stocks is not None and not super_stocks.empty:
             _sheet_super_stocks(wb, super_stocks, scan_date)
         _sheet_all(wb, results)
@@ -115,11 +116,11 @@ def _build_workbook(
 
     overviews = (company_data or {}).get("overviews")
 
-    _sheet_signals(wb, signals, style_filter=style, overviews=overviews)
+    _sheet_signals(wb, signals, style_filter=style, overviews=overviews,
+                   results=results, scan_date=scan_date)
     _sheet_nam_giu(wb, results, style=style)
     _sheet_dung_ngoai(wb, results, style=style)
     _sheet_super_stocks(wb, results, scan_date)
-    _sheet_rut_chan(wb, results=results, style=style, scan_date=scan_date)
 
     _sheet_history(wb, results=results, style=style, overviews=overviews)
     _sheet_stats(wb, results, scan_date, style=style, company_data=company_data)
@@ -366,6 +367,8 @@ def _sheet_signals(
     signals: dict,
     style_filter: str | None = None,
     overviews: dict | None = None,
+    results: pd.DataFrame | None = None,
+    scan_date: str | None = None,
 ) -> None:
     """Tab đầu tiên: Tín hiệu trong ngày."""
     style_label = {"long": " Dài hạn", "short": " Ngắn hạn"}.get(style_filter or "", "")
@@ -375,7 +378,7 @@ def _sheet_signals(
 
     headers = [
         "STT", "Mã", "Tín hiệu", "Khung",
-        "Ngày mua", "Giá mua/bán (ST)",
+        "Ngày mua", "Giá Break", "Giá hiện tại",
         "Thanh khoản (tỷ VND)", "BiasNorm",
         "NN Sở hữu %", "NN Room %",
     ]
@@ -425,6 +428,7 @@ def _sheet_signals(
     row_idx = 2
     for stt, (tk, _, row, signal_label, khung, st_col, fill) in enumerate(collected, start=1):
         st     = row.get(st_col) or row.get("supertrend") or ""
+        close  = row.get("close") or ""
         ticker = row.get("ticker", "")
         ov     = (overviews or {}).get(ticker, {})
         vals = [
@@ -433,7 +437,8 @@ def _sheet_signals(
             signal_label,
             khung,
             today_str,
-            round(float(st), 2) if st else "",
+            round(float(st),    2) if st    else "",
+            round(float(close), 2) if close else "",
             round(tk / 1e9, 1) if tk else "",
             round(row.get("bias_norm", 0), 1),
             ov.get("foreign_pct",    ""),
@@ -446,9 +451,9 @@ def _sheet_signals(
     for r in range(2, row_idx):
         ws.row_dimensions[r].height = 40
 
-    ws.column_dimensions["J"].width = 60
+    ws.column_dimensions["K"].width = 60
     _auto_width(ws)
-    ws.column_dimensions["J"].width = max(ws.column_dimensions["J"].width, 60)
+    ws.column_dimensions["K"].width = max(ws.column_dimensions["K"].width, 60)
     ws.freeze_panes = "B2"
     ws.auto_filter.ref = ws.dimensions
 
@@ -456,6 +461,99 @@ def _sheet_signals(
     note_cell = ws.cell(row=note_row, column=1,
                         value="* Ưu tiên mã có Thanh khoản cao (≥ 50 tỷ/phiên) để dễ mua/bán khi cần.")
     note_cell.font = Font(italic=True, color="888888")
+
+    # ── Rút chân section ──────────────────────────────────────────────────────
+    if results is not None and not results.empty and scan_date:
+        style = style_filter or "long"
+        st_col = f"{style}_supertrend" if f"{style}_supertrend" in results.columns else "supertrend"
+
+        if st_col in results.columns:
+            try:
+                from scanner.database import db_cursor, load_avg_turnover
+                tickers_all = results["ticker"].tolist()
+                with db_cursor(commit=False) as cur:
+                    cur.execute(
+                        "SELECT ticker, high, low, close FROM ohlcv WHERE date = %s AND ticker = ANY(%s)",
+                        (scan_date, tickers_all),
+                    )
+                    ohlcv_map = {r["ticker"]: r for r in cur.fetchall()}
+                try:
+                    tk_map = load_avg_turnover(tickers_all)
+                except Exception:
+                    tk_map = {}
+
+                rut_records = []
+                for _, rrow in results.iterrows():
+                    ticker = rrow.get("ticker", "")
+                    o = ohlcv_map.get(ticker)
+                    if not o:
+                        continue
+                    st_val = float(rrow.get(st_col) or 0)
+                    if st_val <= 0:
+                        continue
+                    high  = float(o["high"]  or 0)
+                    low   = float(o["low"]   or 0)
+                    close = float(o["close"] or 0)
+                    if close <= 0:
+                        continue
+                    if high > st_val and close < st_val:
+                        rut_type = "MUA rút chân"
+                    elif low < st_val and close > st_val:
+                        rut_type = "BÁN rút chân"
+                    else:
+                        continue
+                    rut_records.append({
+                        "ticker":    ticker,
+                        "rut_type":  rut_type,
+                        "close":     close,
+                        "st_val":    st_val,
+                        "turnover":  tk_map.get(ticker, float(rrow.get("turnover") or 0)),
+                        "bias_norm": rrow.get("bias_norm", 0),
+                    })
+
+                if rut_records:
+                    rut_records.sort(key=lambda x: x["turnover"], reverse=True)
+                    khung = {"long": "Dài hạn", "short": "Ngắn hạn"}.get(style, "Dài hạn")
+                    n_cols = len(headers)
+
+                    sep_row = note_row + 2
+                    hdr_cell = ws.cell(row=sep_row, column=1, value="⚠ RÚT CHÂN HÔM NAY")
+                    hdr_cell.font  = Font(bold=True, size=12, color="FFFFFF")
+                    hdr_cell.fill  = PatternFill("solid", fgColor="C55A11")
+                    hdr_cell.alignment = Alignment(horizontal="center")
+                    ws.merge_cells(f"A{sep_row}:{get_column_letter(n_cols)}{sep_row}")
+
+                    sub_hdr_row = sep_row + 1
+                    _write_header(ws, headers, start_row=sub_hdr_row)
+
+                    rut_row = sub_hdr_row + 1
+                    for stt2, rec in enumerate(rut_records, start=1):
+                        ov   = (overviews or {}).get(rec["ticker"], {})
+                        fill = RED_FILL if "MUA" in rec["rut_type"] else YELLOW_FILL
+                        vals = [
+                            stt2,
+                            rec["ticker"],
+                            rec["rut_type"],
+                            khung,
+                            today_str,
+                            round(rec["st_val"], 2),
+                            round(rec["close"],  2),
+                            round(rec["turnover"] / 1e9, 1) if rec["turnover"] else "",
+                            round(float(rec["bias_norm"] or 0), 1),
+                            ov.get("foreign_pct",     ""),
+                            ov.get("foreign_max_pct", ""),
+                        ]
+                        for j, v in enumerate(vals, start=1):
+                            ws.cell(row=rut_row, column=j, value=v).fill = fill
+                        rut_row += 1
+
+                    ws.cell(
+                        row=rut_row + 1, column=1,
+                        value="* MUA rút chân: high vượt ST nhưng đóng dưới ST. BÁN rút chân: low phá ST nhưng đóng trên ST.",
+                    ).font = Font(italic=True, color="888888")
+
+            except Exception as e:
+                logger.warning(f"_sheet_signals rut_chan section: {e}")
 
 
 _TICKER_HDR_FILL  = PatternFill("solid", fgColor="1F4E79")
@@ -811,128 +909,10 @@ def _sheet_history(wb: Workbook, results: pd.DataFrame, style: str = "long", ove
     ws.auto_filter.ref = ws.dimensions
 
 
-_RUT_CHAN_FILL = PatternFill("solid", fgColor="FCE4D6")
 
-
-def _sheet_rut_chan(wb: Workbook, results: pd.DataFrame, style: str, scan_date: str) -> None:
-    """
-    Rút chân: nến hôm nay vượt ngưỡng SuperTrend nhưng đóng cửa quay lại bên kia.
-    - MUA rút chân: high > ST nhưng close < ST  (tín hiệu mua bị phá vỡ cuối phiên)
-    - BÁN rút chân: low  < ST nhưng close > ST  (tín hiệu bán bị phá vỡ cuối phiên)
-    """
-    st_col = f"{style}_supertrend" if f"{style}_supertrend" in results.columns else "supertrend"
-    if st_col not in results.columns:
-        return
-
-    try:
-        from scanner.database import db_cursor
-        with db_cursor(commit=False) as cur:
-            tickers = results["ticker"].tolist()
-            cur.execute(
-                """
-                SELECT o.ticker, o.high, o.low, o.close
-                FROM ohlcv o
-                WHERE o.date = %s AND o.ticker = ANY(%s)
-                """,
-                (scan_date, tickers),
-            )
-            ohlcv_rows = {r["ticker"]: r for r in cur.fetchall()}
-    except Exception as e:
-        logger.warning(f"_sheet_rut_chan: query OHLCV failed: {e}")
-        return
-
-    if not ohlcv_rows:
-        return
-
-    # Lấy avg_turnover từ watchlist để sort
-    try:
-        from scanner.database import load_avg_turnover
-        tk_map = load_avg_turnover(tickers)
-    except Exception:
-        tk_map = {}
-
-    records = []
-    for _, row in results.iterrows():
-        ticker = row.get("ticker", "")
-        o = ohlcv_rows.get(ticker)
-        if not o:
-            continue
-        st_val = float(row.get(st_col) or 0)
-        if st_val <= 0:
-            continue
-
-        high  = float(o["high"]  or 0)
-        low   = float(o["low"]   or 0)
-        close = float(o["close"] or 0)
-        if close <= 0:
-            continue
-
-        rut_type = None
-        if high > st_val and close < st_val:
-            rut_type = "MUA rút chân"   # vượt lên nhưng đóng dưới ST
-        elif low < st_val and close > st_val:
-            rut_type = "BÁN rút chân"   # phá xuống nhưng đóng trên ST
-
-        if rut_type is None:
-            continue
-
-        pct_vs_st = round((close - st_val) / st_val * 100, 2)
-        tk = tk_map.get(ticker, float(row.get("turnover") or 0))
-        records.append({
-            "ticker":    ticker,
-            "rut_type":  rut_type,
-            "high":      high,
-            "low":       low,
-            "close":     close,
-            "st_val":    st_val,
-            "pct_vs_st": pct_vs_st,
-            "turnover":  tk,
-        })
-
-    if not records:
-        return
-
-    records.sort(key=lambda x: x["turnover"], reverse=True)
-
-    ws = wb.create_sheet("Rút chân hôm nay")
-    headers = [
-        "STT", "Mã", "Loại", "High", "Low", "Đóng cửa",
-        "SuperTrend", "Đóng/ST %", "Thanh khoản TB (tỷ)",
-    ]
-    _write_header(ws, headers)
-
-    for i, rec in enumerate(records, start=2):
-        pct_str = f"{rec['pct_vs_st']:+.2f}%"
-        tk_ty   = round(rec["turnover"] / 1e9, 1) if rec["turnover"] else ""
-        vals = [
-            i - 1,
-            rec["ticker"],
-            rec["rut_type"],
-            round(rec["high"],   2),
-            round(rec["low"],    2),
-            round(rec["close"],  2),
-            round(rec["st_val"], 2),
-            pct_str,
-            tk_ty,
-        ]
-        fill = RED_FILL if "MUA" in rec["rut_type"] else YELLOW_FILL
-        for j, v in enumerate(vals, start=1):
-            ws.cell(row=i, column=j, value=v).fill = fill
-
-    note_row = len(records) + 3
-    ws.cell(
-        row=note_row, column=1,
-        value="* MUA rút chân: high vượt ST nhưng đóng dưới ST. BÁN rút chân: low phá ST nhưng đóng trên ST.",
-    ).font = Font(italic=True, color="888888")
-
-    _auto_width(ws)
-    ws.freeze_panes = "B2"
-    ws.auto_filter.ref = ws.dimensions
-
-
-def _write_header(ws, headers: list) -> None:
+def _write_header(ws, headers: list, start_row: int = 1) -> None:
     for j, h in enumerate(headers, start=1):
-        cell = ws.cell(row=1, column=j, value=h)
+        cell = ws.cell(row=start_row, column=j, value=h)
         cell.fill = HEADER_FILL
         cell.font = HEADER_FONT
         cell.alignment = Alignment(horizontal="center")
