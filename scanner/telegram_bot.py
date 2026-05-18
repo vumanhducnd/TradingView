@@ -90,7 +90,8 @@ def _send_raw(text: str, token: str, chat_id: str, parse_mode: str = "HTML") -> 
         try:
             resp = requests.post(
                 url,
-                json={"chat_id": chat_id, "text": text, "parse_mode": parse_mode},
+                json={"chat_id": chat_id, "text": text, "parse_mode": parse_mode,
+                      "link_preview_options": {"is_disabled": True}},
                 timeout=30,
                 verify=False,
             )
