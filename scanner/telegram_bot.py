@@ -18,6 +18,7 @@ from scanner.config import (
     TELEGRAM_TOKEN_SHORT, TELEGRAM_CHAT_ID_SHORT,
     TELEGRAM_CHAT_IDS_LONG, TELEGRAM_CHAT_IDS_SHORT,
 )
+from scanner.database import load_exchange_map
 from scanner.utils import bias_label, fmt_price, logger, tv_link
 
 
@@ -191,17 +192,8 @@ def send_daily_report(
     is_dual = "long_buy_signal" in results.columns
 
     # Load exchange để tạo TradingView link cho từng mã
-    try:
-        from scanner.database import db_cursor
-        tickers_all = results["ticker"].tolist() if not results.empty else []
-        with db_cursor(commit=False) as _cur:
-            _cur.execute(
-                "SELECT ticker, exchange FROM watchlist WHERE ticker = ANY(%s)",
-                (tickers_all,),
-            )
-            _exch_map: dict[str, str] = {r["ticker"]: r["exchange"] for r in _cur.fetchall()}
-    except Exception:
-        _exch_map = {}
+    tickers_all = results["ticker"].tolist() if not results.empty else []
+    _exch_map = load_exchange_map(tickers_all)
 
     TOP_N = 5
     # Ưu tiên turnover (giá trị giao dịch), fallback volume
@@ -341,7 +333,7 @@ def send_daily_report(
 
         if buy_df.empty and sell_df.empty:
             top5 = results.nlargest(5, "bias_norm")[["ticker", "bias_norm"]]
-            txt = "\n".join(f"  • {r['ticker']}: {r['bias_norm']:.0f}/100" for _, r in top5.iterrows())
+            txt = "\n".join(f"  • {tv_link(r['ticker'], _exch_map.get(r['ticker'], ''))}: {r['bias_norm']:.0f}/100" for _, r in top5.iterrows())
             send_message(f"Hôm nay không có tín hiệu mới.\n\n<b>Top 5 mạnh nhất:</b>\n{txt}", style=style)
 
     if is_dual:
@@ -374,7 +366,7 @@ def send_daily_report(
                 time.sleep(0.5)
         if buy_df.empty and sell_df.empty:
             top5 = results.nlargest(5, "bias_norm")[["ticker", "bias_norm"]]
-            txt = "\n".join(f"  • {r['ticker']}: {r['bias_norm']:.0f}/100" for _, r in top5.iterrows())
+            txt = "\n".join(f"  • {tv_link(r['ticker'], _exch_map.get(r['ticker'], ''))}: {r['bias_norm']:.0f}/100" for _, r in top5.iterrows())
             send_message(f"Hôm nay không có tín hiệu mới.\n\n<b>Top 5 mạnh nhất:</b>\n{txt}", style="long")
 
     # ── Excel — mỗi file gửi đúng bot ────────────────────────────────────────
@@ -454,6 +446,7 @@ def _format_signal(row: pd.Series, signal_type: str) -> str:
 def _send_super_stocks(df: pd.DataFrame, style: str = "long") -> None:
     """Gửi danh sách siêu cổ phiếu vùng mua."""
     lines = ["<b>⭐ SIÊU CỔ PHIẾU VÙNG MUA:</b>"]
+    exch_map = load_exchange_map(df["ticker"].tolist() if not df.empty else [])
 
     for _, row in df.iterrows():
         ticker   = row["ticker"]
@@ -480,7 +473,7 @@ def _send_super_stocks(df: pd.DataFrame, style: str = "long") -> None:
             signal_tag = " 🟢NH"
 
         lines.append(
-            f"\n<b>{ticker}</b>{signal_tag} | Score: {score:.0f}"
+            f"\n<b>{tv_link(ticker, exch_map.get(ticker, ''))}</b>{signal_tag} | Score: {score:.0f}"
             f"\n  Giá: {fmt_price(close)} | Bias: {bias:.0f}/100 | Bull: {b_score}/9"
             f"\n  HT: {fmt_price(sup)} ({dist_s:+.1f}%) → KC: {fmt_price(res)} ({dist_r:+.1f}%)"
         )
@@ -491,6 +484,7 @@ def _send_super_stocks(df: pd.DataFrame, style: str = "long") -> None:
 def _send_top_vung_xanh(results: pd.DataFrame, style: str = "long", top_n: int = 5) -> None:
     """Top N mã vùng xanh (long_trend=1) theo TK cao nhất."""
     p = f"{style}_"
+    exch_map = load_exchange_map(results["ticker"].tolist() if not results.empty else [])
     trend_col = f"{p}trend" if f"{p}trend" in results.columns else "trend"
     df = results[results.get(trend_col, results.get("trend", pd.Series(dtype=int))) == 1].copy()
     if df.empty:
@@ -515,7 +509,7 @@ def _send_top_vung_xanh(results: pd.DataFrame, style: str = "long", top_n: int =
               if close and buy_p and float(buy_p) > 0 else None
         pnl_str = f" | {pnl:+.1f}%" if pnl is not None else ""
 
-        lines.append(f"  <b>{ticker}</b> | Giá {_fmt(close)} | TK {tk_str}{pnl_str} | Từ {bd}")
+        lines.append(f"  <b>{tv_link(ticker, exch_map.get(ticker, ''))}</b> | Giá {_fmt(close)} | TK {tk_str}{pnl_str} | Từ {bd}")
 
     send_message("\n".join(lines), style=style)
 

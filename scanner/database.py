@@ -701,6 +701,21 @@ def load_daily_change(tickers: list[str]) -> dict[str, float]:
         return {}
 
 
+def load_exchange_map(tickers: list[str]) -> dict[str, str]:
+    """Lấy {ticker: exchange} từ watchlist."""
+    if not tickers:
+        return {}
+    try:
+        with db_cursor(commit=False) as cur:
+            cur.execute(
+                "SELECT ticker, exchange FROM watchlist WHERE ticker = ANY(%s)",
+                (tickers,),
+            )
+            return {r["ticker"]: (r["exchange"] or "") for r in cur.fetchall()}
+    except Exception:
+        return {}
+
+
 def load_avg_turnover(tickers: list[str]) -> dict[str, float]:
     """Lấy avg_turnover_20d (VND/1000) từ watchlist cho danh sách tickers."""
     if not tickers:

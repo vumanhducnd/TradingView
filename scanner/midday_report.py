@@ -12,7 +12,8 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 import scanner.config  # noqa: F401 — bắt buộc để load_dotenv() chạy trước DB
-from scanner.utils import fmt_price, is_trading_day, logger
+from scanner.database import load_exchange_map
+from scanner.utils import fmt_price, is_trading_day, logger, tv_link
 
 
 # ─── Lấy top mã biến động ─────────────────────────────────────────────────────
@@ -256,11 +257,16 @@ def run(force: bool = False) -> None:
     up   = [m for m in movers if float(m["pct_chg"]) > 0]
     down = [m for m in movers if float(m["pct_chg"]) < 0]
 
+    exch_map = load_exchange_map([m["ticker"] for m in movers])
+
     def _ticker_list(lst: list[dict], show: int = 8) -> str:
         if not lst:
             return "–"
         sign = "+" if float(lst[0]["pct_chg"]) > 0 else ""
-        top  = "  ".join(f"{m['ticker']}({sign}{float(m['pct_chg']):.1f}%)" for m in lst[:show])
+        top  = "  ".join(
+            f"{tv_link(m['ticker'], exch_map.get(m['ticker'], ''))}({sign}{float(m['pct_chg']):.1f}%)"
+            for m in lst[:show]
+        )
         rest = len(lst) - show
         return f"{top}  (+{rest} mã khác)" if rest > 0 else top
 

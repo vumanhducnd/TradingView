@@ -543,10 +543,14 @@ def _send_alerts(alerts: list[dict]) -> None:
         send_message(f"⚠️ <b>{len(alerts)} tín hiệu trong phiên</b> — Hiển thị top 10:")
         alerts = alerts[:10]
 
+    from scanner.database import load_exchange_map
+    exch_map = load_exchange_map([a["ticker"] for a in alerts])
+
     for a in alerts:
+        ticker_link = tv_link(a["ticker"], exch_map.get(a["ticker"], ""))
         text = (
             f"{a['msg']}\n"
-            f"<b>{a['ticker']}</b> | Giá: <b>{fmt_price(a['price'])}</b>\n"
+            f"<b>{ticker_link}</b> | Giá: <b>{fmt_price(a['price'])}</b>\n"
             f"SuperTrend: {fmt_price(a['st'])} | Cách: {a['dist_pct']:.2f}%"
         )
         send_message(text)
