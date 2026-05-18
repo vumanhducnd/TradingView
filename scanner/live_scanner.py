@@ -740,6 +740,12 @@ def run_session(interval: int = 180, session: str = "full") -> None:
             except Exception:
                 tk_map, pos_map = {}, {}
 
+            # Loại mã TK TB20 < 5 tỷ (mức "Rất thấp")
+            flips = [f for f in flips if tk_map.get(f["ticker"], 0) / 1e6 >= 5.0]
+            if len(flips) < len(flip_tickers):
+                dropped = len(flip_tickers) - len(flips)
+                logger.info(f"  Bo qua {dropped} flip vi TK TB20 < 5 ty")
+
         # ── Gửi Telegram cho từng flip ──
         for flip in flips:
             ticker = flip["ticker"]
