@@ -141,7 +141,7 @@ def tk_label(tk_ty: float, short: bool = False) -> str:
     """Nhãn mức thanh khoản theo tỷ VND (TB20).
     short=True: RT/T/TB/C  |  short=False: Rất thấp/Thấp/Trung bình/Cao
     """
-    if tk_ty >= 100: return "C"   if short else "Cao"
+    if tk_ty >= 100: return "💎C"  if short else "💎 Cao"
     if tk_ty >= 20:  return "TB"  if short else "Trung bình"
     if tk_ty >= 5:   return "T"   if short else "Thấp"
     return "RT" if short else "Rất thấp"
