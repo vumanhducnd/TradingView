@@ -469,7 +469,7 @@ def _sheet_signals(
 
         if st_col in results.columns:
             try:
-                from scanner.database import db_cursor, load_avg_turnover
+                from scanner.database import db_cursor
                 tickers_all = results["ticker"].tolist()
                 with db_cursor(commit=False) as cur:
                     cur.execute(
@@ -477,10 +477,6 @@ def _sheet_signals(
                         (scan_date, tickers_all),
                     )
                     ohlcv_map = {r["ticker"]: r for r in cur.fetchall()}
-                try:
-                    tk_map = load_avg_turnover(tickers_all)
-                except Exception:
-                    tk_map = {}
 
                 rut_records = []
                 for _, rrow in results.iterrows():
@@ -507,7 +503,7 @@ def _sheet_signals(
                         "rut_type":  rut_type,
                         "close":     close,
                         "st_val":    st_val,
-                        "turnover":  tk_map.get(ticker, float(rrow.get("turnover") or 0)),
+                        "turnover":  float(rrow.get("turnover") or 0),
                         "bias_norm": rrow.get("bias_norm", 0),
                     })
 
