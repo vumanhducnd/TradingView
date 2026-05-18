@@ -374,11 +374,9 @@ def _sheet_signals(
     style_label = {"long": " Dài hạn", "short": " Ngắn hạn"}.get(style_filter or "", "")
     ws = wb.create_sheet(f"Tín hiệu trong ngày{style_label}")
 
-    today_str = date.today().strftime("%d/%m/%Y")
-
     headers = [
         "STT", "Mã", "Tín hiệu", "Khung",
-        "Ngày mua", "Giá Break", "Giá hiện tại",
+        "Giá Break", "Giá hiện tại",
         "Thanh khoản (tỷ VND)", "BiasNorm",
         "NN Sở hữu %", "NN Room %",
     ]
@@ -436,7 +434,6 @@ def _sheet_signals(
             ticker,
             signal_label,
             khung,
-            today_str,
             round(float(st),    2) if st    else "",
             round(float(close), 2) if close else "",
             round(tk / 1e9, 1) if tk else "",
@@ -531,7 +528,6 @@ def _sheet_signals(
                             rec["ticker"],
                             rec["rut_type"],
                             khung,
-                            today_str,
                             round(rec["st_val"], 2),
                             round(rec["close"],  2),
                             round(rec["turnover"] / 1e9, 1) if rec["turnover"] else "",
