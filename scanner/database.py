@@ -570,7 +570,20 @@ def _ensure_signals_schema() -> None:
                 cur.execute(f"ALTER TABLE signals DROP COLUMN IF EXISTS {col}")
             except Exception:
                 pass
-        # Unique constraint
+        # Xóa constraint cũ (3 cột, không có style) nếu còn tồn tại
+        cur.execute("""
+            DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = 'signals_ticker_signal_date_signal_type_key'
+                ) THEN
+                    ALTER TABLE signals
+                    DROP CONSTRAINT signals_ticker_signal_date_signal_type_key;
+                END IF;
+            END$$;
+        """)
+        # Unique constraint mới gồm cả style
         cur.execute("""
             DO $$
             BEGIN
