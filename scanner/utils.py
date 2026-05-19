@@ -123,6 +123,14 @@ class StepTimer:
         sys.stdout.flush()
 
 
+def fmt_date(d) -> str:
+    """Chuyển 'YYYY-MM-DD' hoặc date/Timestamp sang 'DD/MM/YYYY'. Trả '' nếu rỗng."""
+    s = str(d or "")[:10]
+    if len(s) == 10 and s[4] == "-":
+        return f"{s[8:10]}/{s[5:7]}/{s[:4]}"
+    return s
+
+
 def fmt_price(price: float) -> str:
     """Format VND price: 25500 → '25,500', 255.5 → '255.50'"""
     if price >= 1000:

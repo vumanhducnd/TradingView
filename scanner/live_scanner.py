@@ -25,7 +25,7 @@ from scanner.data_fetcher import _set_api_key, _snap_to_tick, load_all_from_db
 from scanner.database import bulk_upsert_today, get_top300_thanh_khoan, get_vn100_watchlist, load_all_ohlcv_bulk, load_ohlcv, upsert_ohlcv
 from scanner.indicators import calc_bias_norm, calc_supertrend, calc_supertrend_next, get_supertrend_state
 from scanner.telegram_bot import send_message
-from scanner.utils import fmt_price, logger, tk_label, tv_link
+from scanner.utils import fmt_date, fmt_price, logger, tk_label, tv_link
 
 # ─── Config ───────────────────────────────────────────────────────────────────
 SCAN_INTERVAL_SEC      = 5 * 60      # quét mỗi 5 phút
@@ -783,7 +783,7 @@ def run_session(interval: int = 180, session: str = "full") -> None:
                 buy_price_key = f"{style}_last_signal_price"
                 buy_date_key  = f"{style}_last_signal_date"
                 buy_p  = float(pos.get(buy_price_key) or 0)
-                buy_dt = str(pos.get(buy_date_key) or "")[:10]
+                buy_dt = fmt_date(pos.get(buy_date_key))
                 if buy_p > 0:
                     pnl = round((price - buy_p) / buy_p * 100, 2)
                     try:

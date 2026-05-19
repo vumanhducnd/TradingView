@@ -19,7 +19,7 @@ from scanner.config import (
     TELEGRAM_CHAT_IDS_LONG, TELEGRAM_CHAT_IDS_SHORT,
 )
 from scanner.database import load_exchange_map
-from scanner.utils import bias_label, fmt_price, logger, tk_label, tv_link
+from scanner.utils import bias_label, fmt_date, fmt_price, logger, tk_label, tv_link
 
 
 def _val(row, *names, default=None):
@@ -248,7 +248,7 @@ def send_daily_report(
                 )
             else:
                 # Lấy lần MUA trước đó + giá BÁN = high của nến bán hôm nay
-                buy_date   = str(_val(row, f"{_pfx}prev_buy_date",    "prev_buy_date")    or "")[:10]
+                buy_date   = fmt_date(_val(row, f"{_pfx}prev_buy_date", "prev_buy_date"))
                 buy_price  = _val(row, f"{_pfx}prev_buy_price",  "prev_buy_price")
                 sell_price = _val(row, f"{_pfx}last_signal_price", "last_signal_price", default=close)
                 try:
@@ -429,7 +429,7 @@ def _format_signal(row: pd.Series, signal_type: str) -> str:
     kc_str = f"{fmt_price(resistance)} ({dist_kc:+.1f}%)" if dist_kc is not None else fmt_price(resistance)
 
     # Vị thế đang mở
-    buy_date  = str(row.get("buy_date", ""))[:10]
+    buy_date  = fmt_date(row.get("buy_date", ""))
     buy_price = row.get("buy_price")
     pnl       = row.get("pnl_pct")
     position_line = ""
@@ -511,7 +511,7 @@ def _send_top_vung_xanh(results: pd.DataFrame, style: str = "long", top_n: int =
     for _, row in df.iterrows():
         ticker = row.get("ticker", "")
         close  = _val(row, "close")
-        bd     = str(row.get(date_col) or "")[:10]
+        bd     = fmt_date(row.get(date_col))
         buy_p  = _val(row, price_col)
         tk     = float(row.get("turnover") or 0)
         tk_str = f"{tk/1e9:.1f} tỷ" if tk > 0 else "–"
