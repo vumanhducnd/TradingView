@@ -592,6 +592,15 @@ def run_session(interval: int = 180, session: str = "full") -> None:
         logger.error("Watchlist trống")
         return
 
+    # ── Load exchange map cho top 300 ──
+    try:
+        from scanner.database import db_cursor
+        with db_cursor(commit=False) as cur:
+            cur.execute("SELECT ticker, exchange FROM watchlist WHERE ticker = ANY(%s)", (top300,))
+            exchange_map = {r["ticker"]: r["exchange"] for r in cur.fetchall()}
+    except Exception:
+        exchange_map = {}
+
     # ── Load lịch sử OHLCV cho top 300 (dùng để tính ST) ──
     logger.info(f"Load lịch sử OHLCV top 300 từ DB ({len(top300)} mã)...")
     ticker_data = load_all_ohlcv_bulk(tickers=top300, days=300)
