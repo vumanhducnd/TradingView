@@ -764,7 +764,7 @@ def run_session(interval: int = 180, session: str = "full") -> None:
             tk     = float(tk_map.get(ticker, 0) or 0)
             tk_ty  = tk / 1e6
             tk_str = f"{tk_ty:.1f} tỷ ({tk_label(tk_ty)})" if tk > 0 else "–"
-            time_str = now.strftime("%H:%M")
+            time_str = now.strftime("%d/%m/%Y %H:%M")
 
             exch    = flip.get("exchange", "")
             ticker_link = tv_link(ticker, exch)
@@ -775,7 +775,7 @@ def run_session(interval: int = 180, session: str = "full") -> None:
                     f"Giá hiện tại  : <b>{fmt_price(price)}</b>\n"
                     f"Kháng cự      : {fmt_price(st)}\n"
                     f"Thanh khoản   : {tk_str}\n"
-                    f"⏰ {time_str} GMT+7"
+                    f"⏰ {time_str}"
                 )
             else:
                 pnl_str = ""
@@ -803,7 +803,7 @@ def run_session(interval: int = 180, session: str = "full") -> None:
                     f"Hỗ trợ        : {fmt_price(st)}\n"
                     f"Thanh khoản   : {tk_str}"
                     f"{pnl_str}\n"
-                    f"⏰ {time_str} GMT+7"
+                    f"⏰ {time_str}"
                 )
 
             send_message(msg, style=flip["style"])
