@@ -24,7 +24,7 @@ import scanner.utils  # noqa: patch SSL trước
 from scanner.data_fetcher import _set_api_key, _snap_to_tick, load_all_from_db
 from scanner.database import bulk_upsert_today, get_top300_thanh_khoan, get_vn100_watchlist, load_all_ohlcv_bulk, load_ohlcv, upsert_ohlcv
 from scanner.indicators import calc_bias_norm, calc_supertrend, calc_supertrend_next, get_supertrend_state
-from scanner.telegram_bot import send_message
+from scanner.telegram_bot import send_message, send_to_user
 from scanner.utils import fmt_date, fmt_price, logger, tk_label, tv_link
 
 # ─── Config ───────────────────────────────────────────────────────────────────
@@ -807,6 +807,16 @@ def run_session(interval: int = 180, session: str = "full") -> None:
                 )
 
             send_message(msg, style=flip["style"])
+
+            # Gửi DM cá nhân cho user đang theo dõi mã này
+            try:
+                from scanner.database import get_holders_for_ticker
+                holders = get_holders_for_ticker(ticker, flip["style"])
+                for chat_id_holder in holders:
+                    send_to_user(chat_id_holder, msg, style=flip["style"])
+            except Exception as _e:
+                logger.warning(f"  DM holdings failed ({ticker}): {_e}")
+
             logger.info(f"  FLIP {flip['style'].upper()} {flip['direction'].upper()}: {ticker} giá={price:,.2f} ST={st:,.2f}")
 
         total_flips += len(flips)

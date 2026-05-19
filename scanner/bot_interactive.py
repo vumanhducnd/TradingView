@@ -23,7 +23,7 @@ import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 from scanner.config import TELEGRAM_TOKEN
-from scanner.utils import bias_label, fmt_price, logger
+from scanner.utils import bias_label, fmt_date, fmt_price, logger
 
 ADMIN_CHAT_ID = os.getenv("TELEGRAM_ADMIN_CHAT_ID", "")
 
@@ -564,10 +564,28 @@ def _handle_callback(token: str, cq: dict) -> None:
 
     elif data == "dangiu":
         try:
-            _reply(token, chat_id, _cmd_dangiu(style), _KB_BACK_NEW)
+            _reply(token, chat_id, _holdings_text(cid_str, style), _kb_my_holdings(cid_str, style))
         except Exception as e:
             logger.warning(f"dangiu error: {e}")
             _reply(token, chat_id, "❌ Lỗi tải dữ liệu. Vui lòng thử lại.", _KB_BACK_NEW)
+
+    elif data == "add_holding":
+        _user_state[cid_str] = "add_holding"
+        _reply(token, chat_id,
+               "➕ <b>Thêm mã vào danh mục</b>\n\n"
+               "Nhập mã cổ phiếu (VD: <code>VHM</code>)\n"
+               "<i>Tối đa 5 mã mỗi bot.</i>")
+
+    elif data.startswith("rmhold_"):
+        ticker = data[len("rmhold_"):]
+        from scanner.database import remove_user_holding
+        remove_user_holding(cid_str, ticker, style)
+        try:
+            _reply(token, chat_id,
+                   f"✅ Đã xoá <b>{ticker}</b> khỏi danh mục.",
+                   _kb_my_holdings(cid_str, style))
+        except Exception as e:
+            logger.warning(f"rmhold error: {e}")
 
     elif data == "input_alert":
         _user_state[cid_str] = "alert"
@@ -760,6 +778,58 @@ def _pnl_str(pnl) -> str:
         return ""
     pnl = float(pnl)
     return f" {'🟢' if pnl >= 0 else '🔴'} {pnl:+.1f}%"
+
+
+def _holdings_text(chat_id: str, style: str) -> str:
+    from scanner.database import get_user_holdings
+    style_label = "⚡ Ngắn hạn" if style == "short" else "📈 Dài hạn"
+    tickers = get_user_holdings(chat_id, style)
+    if not tickers:
+        return (
+            f"<b>💼 Danh mục đang giữ — {style_label}</b>\n\n"
+            "Chưa có mã nào. Bấm ➕ Thêm mã để theo dõi.\n"
+            "<i>Khi có tín hiệu đảo chiều, bot sẽ nhắn riêng cho bạn.</i>"
+        )
+    p = f"{style}_"
+    df = _scan_df()
+    pnl_col   = f"{p}signal_pnl_pct"   if not df.empty and f"{p}signal_pnl_pct"   in df.columns else "signal_pnl_pct"
+    date_col  = f"{p}last_signal_date"  if not df.empty and f"{p}last_signal_date"  in df.columns else "last_signal_date"
+    price_col = f"{p}last_signal_price" if not df.empty and f"{p}last_signal_price" in df.columns else "last_signal_price"
+    lines = [f"<b>💼 Danh mục đang giữ — {style_label} ({len(tickers)}/5):</b>"]
+    for ticker in tickers:
+        if not df.empty and ticker in df["ticker"].values:
+            row   = df[df["ticker"] == ticker].iloc[0]
+            close = _val(row, "close")
+            buy_p = _val(row, price_col)
+            buy_d = fmt_date(row.get(date_col))
+            pnl   = _val(row, pnl_col)
+            info  = f" | Giá {_fmt(close)}"
+            if buy_p and float(buy_p) > 0:
+                info += f" | từ {buy_d} @ {_fmt(buy_p)}"
+            info += _pnl_str(pnl)
+        else:
+            info = " | (chưa có data)"
+        lines.append(f"  <b>{ticker}</b>{info}")
+    lines.append("\n<i>Khi có tín hiệu đảo chiều, bot sẽ nhắn riêng cho bạn.</i>")
+    return "\n".join(lines)
+
+
+def _kb_my_holdings(chat_id: str, style: str) -> dict:
+    from scanner.database import get_user_holdings
+    tickers = get_user_holdings(chat_id, style)
+    buttons = []
+    if len(tickers) < 5:
+        buttons.append([{"text": "➕ Thêm mã", "callback_data": "add_holding"}])
+    del_row: list = []
+    for ticker in tickers:
+        del_row.append({"text": f"{ticker} 🗑", "callback_data": f"rmhold_{ticker}"})
+        if len(del_row) == 2:
+            buttons.append(del_row)
+            del_row = []
+    if del_row:
+        buttons.append(del_row)
+    buttons.append([{"text": "🔙 Menu chính", "callback_data": "main_menu"}])
+    return {"inline_keyboard": buttons}
 
 
 _BULL_LABELS = {
@@ -1077,6 +1147,17 @@ def _dispatch(token: str, message: dict) -> None:
             else:
                 _user_state[cid_str] = "alert"
                 _reply(token, chat_id, "Nhập đúng định dạng: <code>VHM 25.5</code>")
+        elif state == "add_holding":
+            ticker = text.strip().upper().split()[0]
+            from scanner.database import add_user_holding
+            result = add_user_holding(cid_str, ticker, _trend(cid_str))
+            if result == "ok":
+                msg = f"✅ Đã thêm <b>{ticker}</b> vào danh mục theo dõi."
+            elif result == "limit":
+                msg = "⚠️ Đã đủ 5 mã. Xoá bớt trước khi thêm mới."
+            else:
+                msg = f"<b>{ticker}</b> đã có trong danh mục rồi."
+            _reply(token, chat_id, msg, _kb_my_holdings(cid_str, _trend(cid_str)))
         return
 
     # ── Lệnh slash ────────────────────────────────────────────────────────────

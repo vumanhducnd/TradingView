@@ -145,6 +145,12 @@ def send_message(text: str, style: str = "long", parse_mode: str = "HTML") -> bo
     return any(results)
 
 
+def send_to_user(chat_id: str, text: str, style: str = "short") -> bool:
+    """Gửi tin nhắn trực tiếp đến 1 user (notification cá nhân từ đúng bot)."""
+    token = TELEGRAM_TOKEN_SHORT if style == "short" else TELEGRAM_TOKEN
+    return _send_raw(text, token, chat_id)
+
+
 def send_message_both(text: str, parse_mode: str = "HTML") -> None:
     """Gửi cùng 1 tin đến tất cả channel của cả 2 style."""
     send_message(text, style="long", parse_mode=parse_mode)

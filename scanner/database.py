@@ -1020,6 +1020,80 @@ def delete_price_alert(chat_id: str, alert_id: int) -> bool:
         return cur.rowcount > 0
 
 
+# ─── User Holdings (danh mục cá nhân) ────────────────────────────────────────
+
+_holdings_table_ensured = False
+
+
+def _ensure_user_holdings_table() -> None:
+    global _holdings_table_ensured
+    if _holdings_table_ensured:
+        return
+    with db_cursor() as cur:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS user_holdings (
+                id       SERIAL PRIMARY KEY,
+                chat_id  TEXT NOT NULL,
+                ticker   TEXT NOT NULL,
+                style    TEXT NOT NULL DEFAULT 'short',
+                added_at DATE NOT NULL DEFAULT CURRENT_DATE,
+                UNIQUE (chat_id, ticker, style)
+            )
+        """)
+    _holdings_table_ensured = True
+
+
+def add_user_holding(chat_id: str, ticker: str, style: str = "short") -> str:
+    """Thêm mã vào danh mục cá nhân. Returns: 'ok' | 'limit' | 'exists'."""
+    _ensure_user_holdings_table()
+    with db_cursor(commit=False) as cur:
+        cur.execute(
+            "SELECT COUNT(*) AS cnt FROM user_holdings WHERE chat_id=%s AND style=%s",
+            (chat_id, style),
+        )
+        if cur.fetchone()["cnt"] >= 5:
+            return "limit"
+    with db_cursor() as cur:
+        cur.execute(
+            """INSERT INTO user_holdings (chat_id, ticker, style)
+               VALUES (%s, %s, %s)
+               ON CONFLICT (chat_id, ticker, style) DO NOTHING""",
+            (chat_id, ticker.upper(), style),
+        )
+        return "exists" if cur.rowcount == 0 else "ok"
+
+
+def remove_user_holding(chat_id: str, ticker: str, style: str = "short") -> bool:
+    _ensure_user_holdings_table()
+    with db_cursor() as cur:
+        cur.execute(
+            "DELETE FROM user_holdings WHERE chat_id=%s AND ticker=%s AND style=%s",
+            (chat_id, ticker.upper(), style),
+        )
+        return cur.rowcount > 0
+
+
+def get_user_holdings(chat_id: str, style: str = "short") -> list[str]:
+    _ensure_user_holdings_table()
+    with db_cursor(commit=False) as cur:
+        cur.execute(
+            "SELECT ticker FROM user_holdings WHERE chat_id=%s AND style=%s ORDER BY added_at, ticker",
+            (chat_id, style),
+        )
+        return [r["ticker"] for r in cur.fetchall()]
+
+
+def get_holders_for_ticker(ticker: str, style: str) -> list[str]:
+    """Danh sách chat_id đang theo dõi ticker này (để gửi DM khi flip)."""
+    _ensure_user_holdings_table()
+    with db_cursor(commit=False) as cur:
+        cur.execute(
+            "SELECT chat_id FROM user_holdings WHERE ticker=%s AND style=%s",
+            (ticker.upper(), style),
+        )
+        return [r["chat_id"] for r in cur.fetchall()]
+
+
 # ─── Bot Channels (Multi-tenant) ─────────────────────────────────────────────
 
 _channels_table_ensured = False
