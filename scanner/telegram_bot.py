@@ -243,12 +243,13 @@ def send_daily_report(
         for _, row in top.iterrows():
             st    = _val(row, st_col, "supertrend")
             close = _val(row, "close")
+            low   = _val(row, "low")
             _ticker_link = f"<b>{tv_link(row['ticker'], _exch_map.get(row['ticker'], ''))}</b>"
             if direction == "buy":
                 sl_str = _fmt(float(st) * 0.98) if st and float(st) > 0 else "–"
                 lines.append(
                     f"  {_ticker_link}\n"
-                    f"    Giá mua       : {_fmt(close)}\n"
+                    f"    Giá mua       : {_fmt(low or close)}\n"
                     f"    Giá SL         : {sl_str}\n"
                     f"    Thanh khoản   : {_fmt_tk(row)}"
                 )
