@@ -85,7 +85,7 @@ def _fmt_pre_row(r: dict) -> str:
 
 
 def _build_pre_report(results: list[dict], style_label: str, today_str: str,
-                      ai_text: str = "") -> tuple[str, list[dict], list[dict]]:
+                      ai_text: str = "", global_block: str = "") -> tuple[str, list[dict], list[dict]]:
     """Tạo 1 message duy nhất: header + AI + gần mua + gần bán."""
     bull = [r for r in results if r["trend"] == 1]
     bear = [r for r in results if r["trend"] == -1]
@@ -112,12 +112,11 @@ def _build_pre_report(results: list[dict], style_label: str, today_str: str,
 
     lines = [f"🌅 <b>Báo cáo sáng 7:00 — Đầu tư {style_label} — {today_str}</b>"]
 
-    from scanner.market_calendar import get_market_events, format_events_for_telegram, fetch_global_events
+    from scanner.market_calendar import get_market_events, format_events_for_telegram
     events = get_market_events()
     event_block = format_events_for_telegram(events)
     if event_block:
         lines.append(event_block)
-    global_block = fetch_global_events()
     if global_block:
         lines.append(global_block)
 
@@ -170,6 +169,10 @@ def run_pre_session(force: bool = False) -> None:
 
     today_str = datetime.now(ICT).strftime("%d/%m/%Y")
 
+    # Fetch sự kiện quốc tế 1 lần duy nhất, dùng chung cho cả long và short
+    from scanner.market_calendar import fetch_global_events
+    global_block = fetch_global_events()
+
     for style, style_label, bot_style in [
         ("long",  "Dài hạn",  "long"),
         ("short", "Ngắn hạn", "short"),
@@ -197,7 +200,7 @@ def run_pre_session(force: bool = False) -> None:
         bear_cnt = sum(1 for r in results if r["trend"] == -1)
 
         # Lấy near_buy/near_sell trước để truyền vào AI
-        _, near_buy_tmp, near_sell_tmp = _build_pre_report(results, style_label, today_str)
+        _, near_buy_tmp, near_sell_tmp = _build_pre_report(results, style_label, today_str, global_block=global_block)
 
         # AI nhận định trước phiên
         ai_text = ""
@@ -212,7 +215,7 @@ def run_pre_session(force: bool = False) -> None:
             logger.warning(f"AI pre-session failed: {e}")
 
         # 1 message duy nhất: header + AI + danh sách
-        msg, _, _ = _build_pre_report(results, style_label, today_str, ai_text=ai_text)
+        msg, _, _ = _build_pre_report(results, style_label, today_str, ai_text=ai_text, global_block=global_block)
         send_message(msg, style=bot_style)
         logger.info(f"Pre-session [{style}]: {len(results)} mã, gửi bot {bot_style}")
 
