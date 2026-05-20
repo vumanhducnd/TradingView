@@ -415,6 +415,41 @@ def generate_pre_session_ai(
     return _call(client, prompt, max_tokens=400)
 
 
+# ─── Global events AI ─────────────────────────────────────────────────────────
+
+def summarize_global_events(events_text: str) -> str:
+    """
+    Nhận danh sách sự kiện kinh tế quốc tế (plain text),
+    trả về 2-3 câu ngắn gọn bằng tiếng Việt về tác động đến TTCK Việt Nam.
+    """
+    if not events_text.strip():
+        return ""
+    try:
+        client = _get_client()
+    except Exception as e:
+        logger.warning(f"AI khong kha dung: {e}")
+        return ""
+
+    today = date.today().strftime("%d/%m/%Y")
+    prompt = textwrap.dedent(f"""
+        Bạn là chuyên gia phân tích thị trường chứng khoán Việt Nam.
+        Ngày: {today}
+
+        Dưới đây là các sự kiện kinh tế quốc tế sắp diễn ra:
+        {events_text}
+
+        Hãy viết đúng 2-3 câu ngắn gọn bằng tiếng Việt có dấu, giải thích:
+        - Sự kiện nào quan trọng nhất và tại sao
+        - Khả năng tác động cụ thể đến TTCK Việt Nam hôm nay/ngày mai
+
+        Yêu cầu: thẳng thắn, thực tế, không dùng markdown, không bullet, không mở đầu
+        bằng "Dưới đây là" hay "Theo phân tích". Bắt đầu luôn vào nội dung chính.
+    """).strip()
+
+    logger.info("AI: tom tat su kien quoc te...")
+    return _call(client, prompt, max_tokens=200)
+
+
 # ─── Signal analysis ──────────────────────────────────────────────────────────
 
 def analyze_signals(

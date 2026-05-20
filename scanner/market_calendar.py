@@ -316,6 +316,8 @@ def fetch_global_events(today: date | None = None) -> str:
     today_rows    = [r for r in rows if r["date"] == today]
     tomorrow_rows = [r for r in rows if r["date"] == tomorrow]
 
+    # Build plain-text cho AI trước khi format HTML
+    plain_lines: list[str] = []
     for section_label, section_rows in [
         ("Hôm nay", today_rows),
         ("Ngày mai", tomorrow_rows),
@@ -323,10 +325,21 @@ def fetch_global_events(today: date | None = None) -> str:
         if not section_rows:
             continue
         lines.append(f"\n<u>{section_label}:</u>")
+        plain_lines.append(f"{section_label}:")
         for r in section_rows:
-            flag  = _COUNTRY_FLAG.get(r["country"], r["country"])
-            dot   = "🔴" if r["is_high"] else "🟡"
+            flag = _COUNTRY_FLAG.get(r["country"], r["country"])
+            dot  = "🔴" if r["is_high"] else "🟡"
             lines.append(f"  {dot} {flag} <b>{r['event']}</b> — {r['time']}")
+            plain_lines.append(f"  [{r['country']}] {r['event']} lúc {r['time']}")
+
+    # AI tóm tắt tác động đến TTCK Việt
+    try:
+        from scanner.ai_analyst import summarize_global_events
+        ai_summary = summarize_global_events("\n".join(plain_lines))
+        if ai_summary:
+            lines.append(f"\n💬 <i>{ai_summary}</i>")
+    except Exception:
+        pass
 
     return "\n".join(lines)
 
