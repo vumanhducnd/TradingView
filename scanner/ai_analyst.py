@@ -14,7 +14,7 @@ import pandas as pd
 
 from scanner.utils import logger
 
-_MODEL      = "llama-3.3-70b-versatile"
+_MODEL      = "openai/gpt-oss-120b"
 _BATCH_SIZE = 5      # 5 ma/call de co du token cho phan tich sau
 _RPM_DELAY  = 3.0    # giay giua cac call (30 RPM = 1 call/2s)
 
