@@ -261,6 +261,7 @@ def fetch_global_events(today: date | None = None) -> str:
             params={"from": today.isoformat(), "to": tomorrow.isoformat(),
                     "token": FINNHUB_API_KEY},
             timeout=10,
+            verify=False,
         )
         resp.raise_for_status()
         data = resp.json().get("economicCalendar", [])
@@ -280,15 +281,16 @@ def fetch_global_events(today: date | None = None) -> str:
             continue
 
         event_name = item.get("event") or ""
-        ts = item.get("time")  # Unix timestamp hoặc None
+        time_raw = item.get("time") or ""  # "YYYY-MM-DD HH:MM:SS" UTC
 
-        # Đổi sang ICT
-        if ts:
-            dt_ict = datetime.fromtimestamp(ts, tz=_ICT)
-            time_str = dt_ict.strftime("%H:%M ICT %d/%m")
+        # Parse string UTC → ICT
+        try:
+            dt_utc = datetime.strptime(time_raw, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+            dt_ict = dt_utc.astimezone(_ICT)
+            time_str   = dt_ict.strftime("%H:%M ICT %d/%m")
             event_date = dt_ict.date()
-        else:
-            time_str = "TBD"
+        except Exception:
+            time_str   = "TBD"
             event_date = today
 
         # Chỉ lấy hôm nay và ngày mai
