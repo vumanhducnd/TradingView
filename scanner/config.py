@@ -56,6 +56,10 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 # Groq API key (miễn phí tại console.groq.com → 14,400 req/ngày)
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 
+# OpenAI API key (platform.openai.com → trả phí theo token)
+# Dùng làm fallback khi Groq hết quota (trước Gemini)
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+
 # Finnhub API key (miễn phí tại finnhub.io → 60 req/phút)
 # Dùng để lấy lịch sự kiện kinh tế quốc tế hàng ngày
 FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY", "")

@@ -43,14 +43,36 @@ def _get_client():
         raise ImportError("pip install groq httpx")
 
 
+def _call_openai(prompt: str, max_tokens: int = 2048) -> str:
+    """Fallback sang OpenAI ChatGPT khi Groq hết quota."""
+    try:
+        import openai
+        from scanner.config import OPENAI_API_KEY
+        if not OPENAI_API_KEY:
+            logger.warning("OPENAI_API_KEY chua set — thu Gemini fallback...")
+            return _call_gemini(prompt, max_tokens)
+        client = openai.OpenAI(api_key=OPENAI_API_KEY)
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.35,
+            max_tokens=max_tokens,
+        )
+        logger.info("OpenAI fallback OK [gpt-4o-mini]")
+        return resp.choices[0].message.content.strip()
+    except Exception as e:
+        logger.warning(f"OpenAI fallback loi: {e} — thu Gemini...")
+        return _call_gemini(prompt, max_tokens)
+
+
 def _call_gemini(prompt: str, max_tokens: int = 2048) -> str:
-    """Fallback sang Gemini khi Groq 429. Model: gemini-2.0-flash (free tier)."""
+    """Fallback cuối: Gemini (yêu cầu billing từ Google)."""
     try:
         from google import genai
         from google.genai import types
         from scanner.config import GEMINI_API_KEY
         if not GEMINI_API_KEY:
-            logger.warning("GEMINI_API_KEY chua set — bo qua fallback")
+            logger.warning("GEMINI_API_KEY chua set — het fallback")
             return ""
         client = genai.Client(api_key=GEMINI_API_KEY)
         for model_name in ("gemini-2.0-flash", "gemini-1.5-flash"):
@@ -87,9 +109,8 @@ def _call(client, prompt: str, max_tokens: int = 2048, _retry: int = 0) -> str:
         if "429" in err:
             wait = _parse_retry_wait(err)
             if wait > 300 or _retry >= 2:
-                # Hết quota ngày hoặc đã retry đủ → Gemini fallback ngay
-                logger.warning(f"Groq 429 (wait={wait}s) — chuyen sang Gemini fallback...")
-                return _call_gemini(prompt, max_tokens)
+                logger.warning(f"Groq 429 (wait={wait}s) — chuyen sang OpenAI fallback...")
+                return _call_openai(prompt, max_tokens)
             logger.warning(f"Groq 429 - cho {wait}s ({_retry+1}/2)...")
             time.sleep(wait)
             return _call(client, prompt, max_tokens, _retry + 1)
