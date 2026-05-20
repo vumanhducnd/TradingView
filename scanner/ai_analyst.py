@@ -207,6 +207,7 @@ def generate_end_of_session_ai(
 
     today = date.today().strftime("%d/%m/%Y")
     weekday = date.today().weekday()
+    market_ctx = _fetch_market_context()
 
     personas = {
         0: "Bạn là dân văn phòng vừa tan ca, mở app chứng khoán xem hôm nay lãi lỗ thế nào trước khi tắt máy.",
@@ -242,26 +243,29 @@ def generate_end_of_session_ai(
         {persona}
         Hôm nay {today} — Tổng kết phiên giao dịch | Khung: {style_label}
 
-        KẾT QUẢ NGÀY:
+        TIN TỨC VÀ THỊ TRƯỜNG HÔM NAY:
+        {market_ctx}
+
+        KẾT QUẢ PHIÊN:
         - Mã tăng mạnh nhất: {", ".join(top_gainers[:5]) if top_gainers else "–"}
         - Mã giảm mạnh nhất: {", ".join(top_losers[:5])  if top_losers  else "–"}
         - Bứt phá (tín hiệu mua mới): {top_buy_str}
         - Đảo chiều (tín hiệu bán mới): {top_sell_str}
-        - Xu hướng mạnh: {", ".join(top_strong)}
         - Xu hướng tăng: {n_bull} mã | Xu hướng giảm: {n_bear} mã{reversal_ctx}
 
         Yêu cầu:
         - Tiếng Việt có dấu đầy đủ, không emoji, không bullet, không markdown
         - Đúng nhân cách được giao, tự nhiên như đang tổng kết cuối ngày
-        - Đề cập cụ thể các mã có biến động nổi bật hôm nay
-        - Nếu có mã "bứt phá không giữ được": dùng đúng cụm từ "bứt phá thất bại" hoặc "bứt lên rồi rớt lại", KHÔNG dùng "đảo chiều"
-        - Nếu có mã "rút chân giả": dùng đúng cụm từ "rút chân giả" hoặc "giả vờ giảm rồi hồi lại", KHÔNG dùng "đảo chiều"
-        - Tối đa 4-5 câu
+        - Kết hợp tin tức từ báo với kết quả phiên để giải thích lý do thị trường tăng/giảm
+        - Đề cập cụ thể các mã có biến động nổi bật
+        - Nếu có mã "bứt phá không giữ được": dùng "bứt phá thất bại" hoặc "bứt lên rồi rớt lại", KHÔNG dùng "đảo chiều"
+        - Nếu có mã "rút chân giả": dùng "rút chân giả" hoặc "giả vờ giảm rồi hồi lại", KHÔNG dùng "đảo chiều"
+        - 5-7 câu, viết liền mạch
         - Câu cuối: nhìn về ngày mai — nên làm gì
     """).strip()
 
     logger.info(f"AI: nhận định cuối phiên [{style_label}]...")
-    return _call(client, prompt, max_tokens=1200)
+    return _call(client, prompt, max_tokens=2000)
 
 
 # ─── Pre-session AI overview ─────────────────────────────────────────────────
