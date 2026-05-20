@@ -87,28 +87,57 @@ def _prev_trading_day(d: date) -> date:
 def _check_derivatives_expiry(today: date) -> list[MarketEvent]:
     events = []
     expiry = _nth_weekday(today.year, today.month, 3, 3)  # thứ 5 tuần 3
-    day_before = _prev_trading_day(expiry)
+
+    # Tính T-1, T-2, T-3 (theo ngày giao dịch)
+    t_minus = {}
+    d = expiry
+    for n in range(1, 4):
+        d = _prev_trading_day(d)
+        t_minus[n] = d  # t_minus[1]=T-1, t_minus[2]=T-2, t_minus[3]=T-3
+
+    expiry_str = expiry.strftime("%d/%m")
 
     if today == expiry:
         events.append(MarketEvent(
             icon="🔔",
-            title=f"Đáo hạn hợp đồng tương lai VN30 tháng {today.month}/{today.year}",
+            title=f"HÔM NAY đáo hạn hợp đồng tương lai VN30 tháng {today.month}/{today.year}",
             desc=(
-                "Phiên hôm nay biến động mạnh, đặc biệt gần cuối phiên (14:30–14:45). "
-                "Giá thanh toán = trung bình VN30 theo từng 5 phút trong phiên. "
-                "Khuyến nghị: hạn chế đặt lệnh lớn, chú ý hiện tượng 'bơm xả' cận đáo hạn."
+                "Biến động mạnh nhất trong tuần, đặc biệt 14:30–14:45 cuối phiên. "
+                "Giá thanh toán = trung bình VN30 theo từng 5 phút trong toàn phiên — "
+                "các vị thế lớn có thể 'bơm xả' để kéo giá về phía có lợi. "
+                "Khuyến nghị: hạn chế lệnh lớn cuối phiên, chốt lời sớm nếu đang có lãi."
             ),
             level="high",
         ))
-    elif today == day_before:
+    elif today == t_minus[1]:
         events.append(MarketEvent(
             icon="⏰",
-            title=f"Ngày mai ({expiry.strftime('%d/%m')}) đáo hạn phái sinh tháng {today.month}/{today.year}",
+            title=f"T-1 đáo hạn phái sinh — ngày mai ({expiry_str}) đáo hạn",
             desc=(
-                "Thường có biến động tích lũy từ hôm nay khi các vị thế lớn bắt đầu roll. "
-                "Theo dõi sát dòng tiền vào/ra các bluechip VN30."
+                "Các vị thế lớn đang roll sang tháng mới, basis thu hẹp mạnh. "
+                "Thanh khoản phái sinh tăng, áp lực lên/xuống bluechip VN30 rõ rệt."
             ),
             level="medium",
+        ))
+    elif today == t_minus[2]:
+        events.append(MarketEvent(
+            icon="📅",
+            title=f"T-2 đáo hạn phái sinh — còn 2 phiên đến đáo hạn ({expiry_str})",
+            desc=(
+                "Các tổ chức lớn bắt đầu điều chỉnh vị thế. "
+                "Theo dõi sát OI (open interest) và dòng tiền ngoại vào VN30."
+            ),
+            level="medium",
+        ))
+    elif today == t_minus[3]:
+        events.append(MarketEvent(
+            icon="📅",
+            title=f"T-3 đáo hạn phái sinh — còn 3 phiên đến đáo hạn ({expiry_str})",
+            desc=(
+                "Bắt đầu tuần đáo hạn phái sinh. Biến động thường tăng dần từ hôm nay, "
+                "đặc biệt nếu OI đang ở mức cao hoặc thị trường đang có xu hướng rõ."
+            ),
+            level="low",
         ))
     return events
 
@@ -212,7 +241,7 @@ def format_events_for_telegram(events: list[MarketEvent]) -> str:
     lines = ["\n⚡ <b>Lưu ý phiên hôm nay:</b>"]
     for e in events:
         sep = "━" * 20
-        level_tag = "🔴" if e.level == "high" else "🟡"
+        level_tag = "🔴" if e.level == "high" else ("🟡" if e.level == "medium" else "🔵")
         lines.append(f"\n{level_tag} {e.icon} <b>{e.title}</b>")
         lines.append(f"<i>{e.desc}</i>")
     return "\n".join(lines)
