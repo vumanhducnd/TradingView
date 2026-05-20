@@ -58,11 +58,11 @@ def build_excel_report(
     if is_dual:
         paths["long"]  = _save_workbook(
             _build_workbook(results, signals, "long",  scan_date, super_stocks, company_data),
-            REPORTS_DIR / f"report_long_{scan_date}.xlsx",
+            REPORTS_DIR / f"report_dai_han_{scan_date}.xlsx",
         )
         paths["short"] = _save_workbook(
             _build_workbook(results, signals, "short", scan_date, super_stocks=None, company_data=company_data),
-            REPORTS_DIR / f"report_short_{scan_date}.xlsx",
+            REPORTS_DIR / f"report_ngan_han_{scan_date}.xlsx",
         )
     else:
         wb = Workbook()
@@ -83,7 +83,7 @@ def build_excel_report(
 def _cleanup_old_reports(keep_days: int = 3) -> None:
     """Xóa file Excel cũ, chỉ giữ lại keep_days ngày gần nhất cho mỗi style."""
     import re
-    pattern = re.compile(r"report(?:_(?:long|short))?_(\d{4}-\d{2}-\d{2})\.xlsx$")
+    pattern = re.compile(r"report(?:_(?:dai_han|ngan_han|long|short))?_(\d{4}-\d{2}-\d{2})\.xlsx$")
     files: dict[str, list] = {}
     for f in REPORTS_DIR.glob("report*.xlsx"):
         m = pattern.match(f.name)

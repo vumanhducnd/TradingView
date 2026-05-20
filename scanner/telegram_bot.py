@@ -373,7 +373,7 @@ def send_daily_report(
             if path:
                 send_file(
                     path,
-                    caption=f" Report {'Dài hạn' if file_style == 'long' else 'Ngắn hạn'} {today}",
+                    caption=f" Report Đầu tư {'Dài hạn' if file_style == 'long' else 'Ngắn hạn'} {today}",
                     style=file_style,
                 )
                 time.sleep(0.5)
