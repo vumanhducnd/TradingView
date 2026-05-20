@@ -287,7 +287,7 @@ def fetch_global_events(today: date | None = None) -> str:
         try:
             dt_utc = datetime.strptime(time_raw, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
             dt_ict = dt_utc.astimezone(_ICT)
-            time_str   = dt_ict.strftime("%H:%M ICT %d/%m")
+            time_str   = dt_ict.strftime("%H:%M (giờ VN) %d/%m")
             event_date = dt_ict.date()
         except Exception:
             time_str   = "TBD"
@@ -341,7 +341,7 @@ def fetch_global_events(today: date | None = None) -> str:
         plain_lines.append(f"{section_label}:")
         for r in section_rows:
             flag       = _COUNTRY_FLAG.get(r["country"], r["country"])
-            dot        = "🔴" if r["is_high"] else "🟡"
+            dot        = "‼️" if r["is_high"] else "❕"
             event_html = r["event"].replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             lines.append(f"  {dot} {flag} <b>{event_html}</b> — {r['time']}")
             plain_lines.append(f"  [{r['country']}] {r['event']} lúc {r['time']}")
