@@ -56,6 +56,10 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 # Groq API key (miễn phí tại console.groq.com → 14,400 req/ngày)
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 
+# Finnhub API key (miễn phí tại finnhub.io → 60 req/phút)
+# Dùng để lấy lịch sự kiện kinh tế quốc tế hàng ngày
+FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY", "")
+
 # Telegram — bot dài hạn (long, 10/3.0)
 # Fallback về TELEGRAM_BOT_TOKEN nếu chưa set biến riêng
 TELEGRAM_TOKEN    = os.getenv("TELEGRAM_BOT_TOKEN_LONG") or os.getenv("TELEGRAM_BOT_TOKEN", "")

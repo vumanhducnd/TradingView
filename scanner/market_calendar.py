@@ -6,7 +6,7 @@ Lịch các ngày biến động mạnh thị trường VN.
 from __future__ import annotations
 
 import calendar
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import NamedTuple
 
 
@@ -218,6 +218,117 @@ def _check_manual_events(today: date) -> list[MarketEvent]:
                 level="medium",
             ))
     return events
+
+
+# ─── Fetch sự kiện kinh tế quốc tế từ Finnhub ────────────────────────────────
+
+# Quốc gia quan trọng với thị trường VN (theo thứ tự tác động)
+_WATCH_COUNTRIES = {"US", "CN", "EU", "JP", "GB"}
+
+# Từ khóa high-impact cần nổi bật (so khớp không phân biệt hoa thường)
+_HIGH_IMPACT_KEYWORDS = {
+    "interest rate", "fed funds", "fomc", "cpi", "inflation",
+    "nonfarm", "non-farm", "gdp", "unemployment",
+    "pmi", "retail sales", "pce",
+}
+
+_COUNTRY_FLAG = {
+    "US": "🇺🇸", "CN": "🇨🇳", "EU": "🇪🇺",
+    "JP": "🇯🇵", "GB": "🇬🇧",
+}
+
+_ICT = timezone(timedelta(hours=7))
+
+
+def fetch_global_events(today: date | None = None) -> str:
+    """
+    Fetch lịch sự kiện kinh tế quốc tế từ Finnhub cho ngày `today` và ngày mai.
+    Trả về block HTML sẵn sàng gửi Telegram, hoặc chuỗi rỗng nếu không có / lỗi.
+    """
+    from scanner.config import FINNHUB_API_KEY
+    if not FINNHUB_API_KEY:
+        return ""
+
+    if today is None:
+        today = date.today()
+    tomorrow = today + timedelta(days=1)
+
+    try:
+        import requests
+        url = "https://finnhub.io/api/v1/calendar/economic"
+        resp = requests.get(
+            url,
+            params={"from": today.isoformat(), "to": tomorrow.isoformat(),
+                    "token": FINNHUB_API_KEY},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json().get("economicCalendar", [])
+    except Exception as e:
+        from scanner.utils import logger
+        logger.warning(f"Finnhub calendar fetch failed: {e}")
+        return ""
+
+    # Lọc: chỉ giữ high-impact hoặc medium của các nước watch
+    rows: list[dict] = []
+    for item in data:
+        country = (item.get("country") or "").upper()
+        if country not in _WATCH_COUNTRIES:
+            continue
+        impact = (item.get("impact") or "").lower()
+        if impact not in ("high", "medium"):
+            continue
+
+        event_name = item.get("event") or ""
+        ts = item.get("time")  # Unix timestamp hoặc None
+
+        # Đổi sang ICT
+        if ts:
+            dt_ict = datetime.fromtimestamp(ts, tz=_ICT)
+            time_str = dt_ict.strftime("%H:%M ICT %d/%m")
+            event_date = dt_ict.date()
+        else:
+            time_str = "TBD"
+            event_date = today
+
+        # Chỉ lấy hôm nay và ngày mai
+        if event_date not in (today, tomorrow):
+            continue
+
+        name_lower = event_name.lower()
+        is_high = impact == "high" or any(k in name_lower for k in _HIGH_IMPACT_KEYWORDS)
+
+        rows.append({
+            "country": country,
+            "event":   event_name,
+            "time":    time_str,
+            "is_high": is_high,
+            "date":    event_date,
+        })
+
+    if not rows:
+        return ""
+
+    # Sắp xếp: high trước, sau đó theo thời gian
+    rows.sort(key=lambda r: (not r["is_high"], r["time"]))
+
+    lines = ["\n🌐 <b>Sự kiện kinh tế quốc tế:</b>"]
+    today_rows    = [r for r in rows if r["date"] == today]
+    tomorrow_rows = [r for r in rows if r["date"] == tomorrow]
+
+    for section_label, section_rows in [
+        ("Hôm nay", today_rows),
+        ("Ngày mai", tomorrow_rows),
+    ]:
+        if not section_rows:
+            continue
+        lines.append(f"\n<u>{section_label}:</u>")
+        for r in section_rows:
+            flag  = _COUNTRY_FLAG.get(r["country"], r["country"])
+            dot   = "🔴" if r["is_high"] else "🟡"
+            lines.append(f"  {dot} {flag} <b>{r['event']}</b> — {r['time']}")
+
+    return "\n".join(lines)
 
 
 # ─── Public API ──────────────────────────────────────────────────────────────

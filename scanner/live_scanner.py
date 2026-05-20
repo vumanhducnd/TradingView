@@ -112,11 +112,14 @@ def _build_pre_report(results: list[dict], style_label: str, today_str: str,
 
     lines = [f"🌅 <b>Báo cáo sáng 7:00 — Đầu tư {style_label} — {today_str}</b>"]
 
-    from scanner.market_calendar import get_market_events, format_events_for_telegram
+    from scanner.market_calendar import get_market_events, format_events_for_telegram, fetch_global_events
     events = get_market_events()
     event_block = format_events_for_telegram(events)
     if event_block:
         lines.append(event_block)
+    global_block = fetch_global_events()
+    if global_block:
+        lines.append(global_block)
 
     if ai_text:
         lines.append(f"\n{ai_text}")
