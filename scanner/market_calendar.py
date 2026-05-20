@@ -1,0 +1,218 @@
+"""
+Lịch các ngày biến động mạnh thị trường VN.
+Được gọi từ báo cáo sáng 7:00 để cảnh báo sớm.
+"""
+
+from __future__ import annotations
+
+import calendar
+from datetime import date, timedelta
+from typing import NamedTuple
+
+
+class MarketEvent(NamedTuple):
+    icon: str
+    title: str
+    desc: str
+    level: str  # "high" | "medium"
+
+
+# ─── Lịch cố định ────────────────────────────────────────────────────────────
+
+# MSCI Quarterly Rebalancing — effective ngày cuối tháng 2, 5, 8, 11
+# Semi-annual (tháng 5, 11) thay đổi lớn hơn quarterly (tháng 2, 8)
+_MSCI_MONTHS = {
+    2: "Quarterly",
+    5: "Semi-Annual",
+    8: "Quarterly",
+    11: "Semi-Annual",
+}
+
+# Nghỉ lễ dài VN (tháng, ngày bắt đầu, số ngày nghỉ) — cập nhật hàng năm
+# Format: (year, month, day_start, n_days)
+_VN_HOLIDAYS: list[tuple[int, int, int, int]] = [
+    # 2026
+    (2026, 1,  1,  1),   # Tết Dương lịch
+    (2026, 1, 26,  7),   # Tết Nguyên Đán (ước tính 26/1–1/2)
+    (2026, 4, 30,  2),   # 30/4 – 1/5
+    (2026, 9,  2,  1),   # Quốc khánh
+    # 2027 — thêm khi có lịch chính thức
+]
+
+# Ngày ETF/VN30 rebalancing thêm thủ công khi HoSE công bố
+# Format: (year, month, day, label)
+_MANUAL_EVENTS: list[tuple[int, int, int, str, str]] = [
+    # (year, month, day, title, desc)
+    # VD: (2026, 6, 19, "VN30 Rebalancing", "HoSE điều chỉnh rổ VN30 có hiệu lực"),
+]
+
+
+# ─── Helpers ─────────────────────────────────────────────────────────────────
+
+def _nth_weekday(year: int, month: int, weekday: int, n: int) -> date:
+    """Ngày thứ n (1-indexed) của weekday (0=Mon…6=Sun) trong tháng."""
+    first = date(year, month, 1)
+    delta = (weekday - first.weekday()) % 7
+    return first + timedelta(days=delta + (n - 1) * 7)
+
+
+def _last_weekday(year: int, month: int, weekday: int) -> date:
+    """Ngày cuối cùng của weekday trong tháng."""
+    last = date(year, month, calendar.monthrange(year, month)[1])
+    delta = (last.weekday() - weekday) % 7
+    return last - timedelta(days=delta)
+
+
+def _is_trading_day(d: date) -> bool:
+    """Bỏ qua cuối tuần — chưa check lịch nghỉ lễ."""
+    return d.weekday() < 5
+
+
+def _next_trading_day(d: date) -> date:
+    nxt = d + timedelta(days=1)
+    while not _is_trading_day(nxt):
+        nxt += timedelta(days=1)
+    return nxt
+
+
+def _prev_trading_day(d: date) -> date:
+    prv = d - timedelta(days=1)
+    while not _is_trading_day(prv):
+        prv -= timedelta(days=1)
+    return prv
+
+
+# ─── Kiểm tra từng loại sự kiện ──────────────────────────────────────────────
+
+def _check_derivatives_expiry(today: date) -> list[MarketEvent]:
+    events = []
+    expiry = _nth_weekday(today.year, today.month, 3, 3)  # thứ 5 tuần 3
+    day_before = _prev_trading_day(expiry)
+
+    if today == expiry:
+        events.append(MarketEvent(
+            icon="🔔",
+            title=f"Đáo hạn hợp đồng tương lai VN30 tháng {today.month}/{today.year}",
+            desc=(
+                "Phiên hôm nay biến động mạnh, đặc biệt gần cuối phiên (14:30–14:45). "
+                "Giá thanh toán = trung bình VN30 theo từng 5 phút trong phiên. "
+                "Khuyến nghị: hạn chế đặt lệnh lớn, chú ý hiện tượng 'bơm xả' cận đáo hạn."
+            ),
+            level="high",
+        ))
+    elif today == day_before:
+        events.append(MarketEvent(
+            icon="⏰",
+            title=f"Ngày mai ({expiry.strftime('%d/%m')}) đáo hạn phái sinh tháng {today.month}/{today.year}",
+            desc=(
+                "Thường có biến động tích lũy từ hôm nay khi các vị thế lớn bắt đầu roll. "
+                "Theo dõi sát dòng tiền vào/ra các bluechip VN30."
+            ),
+            level="medium",
+        ))
+    return events
+
+
+def _check_msci_rebalancing(today: date) -> list[MarketEvent]:
+    events = []
+    m = today.month
+    if m not in _MSCI_MONTHS:
+        return events
+
+    # Effective date: ngày cuối tháng (thường thứ 6 cuối tháng)
+    effective = _last_weekday(today.year, m, 4)  # thứ 6 cuối tháng
+    day_before = _prev_trading_day(effective)
+    rebal_type = _MSCI_MONTHS[m]
+
+    if today == effective:
+        events.append(MarketEvent(
+            icon="📊",
+            title=f"MSCI {rebal_type} Rebalancing có hiệu lực hôm nay",
+            desc=(
+                "Các quỹ ETF theo dõi chỉ số MSCI Frontier/Emerging Markets tái cơ cấu danh mục. "
+                "Cổ phiếu VN có thể biến động mạnh vào ATC nếu có thay đổi tỷ trọng."
+            ),
+            level="high" if rebal_type == "Semi-Annual" else "medium",
+        ))
+    elif today == day_before:
+        events.append(MarketEvent(
+            icon="📊",
+            title=f"Ngày mai MSCI {rebal_type} Rebalancing có hiệu lực ({effective.strftime('%d/%m')})",
+            desc="Dòng tiền ngoại có thể tích lũy/xả hôm nay trước khi rebalancing thực hiện.",
+            level="medium",
+        ))
+    return events
+
+
+def _check_holiday_sessions(today: date) -> list[MarketEvent]:
+    events = []
+    for (yr, mo, day_start, n_days) in _VN_HOLIDAYS:
+        if yr != today.year:
+            continue
+        hol_start = date(yr, mo, day_start)
+        hol_end   = hol_start + timedelta(days=n_days - 1)
+
+        last_before = _prev_trading_day(hol_start)
+        first_after = _next_trading_day(hol_end)
+
+        if today == last_before and n_days >= 3:
+            events.append(MarketEvent(
+                icon="🏮",
+                title=f"Phiên cuối trước kỳ nghỉ lễ {n_days} ngày ({hol_start.strftime('%d/%m')}–{hol_end.strftime('%d/%m')})",
+                desc=(
+                    "Nhiều nhà đầu tư chốt lời/giảm margin trước kỳ nghỉ dài. "
+                    "Thanh khoản có thể phân kỳ mạnh vào ATC."
+                ),
+                level="medium",
+            ))
+        elif today == first_after and n_days >= 3:
+            events.append(MarketEvent(
+                icon="🏮",
+                title=f"Phiên đầu tiên sau kỳ nghỉ lễ {n_days} ngày",
+                desc=(
+                    "Tâm lý dồn toa sau nghỉ dài, biến động gap up/down mạnh lúc ATO. "
+                    "Tránh đặt lệnh ATO khối lượng lớn khi chưa rõ xu hướng mở cửa."
+                ),
+                level="medium",
+            ))
+    return events
+
+
+def _check_manual_events(today: date) -> list[MarketEvent]:
+    events = []
+    for (yr, mo, day, title, desc) in _MANUAL_EVENTS:
+        if date(yr, mo, day) == today:
+            events.append(MarketEvent(
+                icon="📌",
+                title=title,
+                desc=desc,
+                level="medium",
+            ))
+    return events
+
+
+# ─── Public API ──────────────────────────────────────────────────────────────
+
+def get_market_events(today: date | None = None) -> list[MarketEvent]:
+    """Trả về tất cả sự kiện thị trường đặc biệt cho ngày `today`."""
+    if today is None:
+        today = date.today()
+    events: list[MarketEvent] = []
+    events += _check_derivatives_expiry(today)
+    events += _check_msci_rebalancing(today)
+    events += _check_holiday_sessions(today)
+    events += _check_manual_events(today)
+    return events
+
+
+def format_events_for_telegram(events: list[MarketEvent]) -> str:
+    """Format danh sách sự kiện thành block HTML cho Telegram."""
+    if not events:
+        return ""
+    lines = ["\n⚡ <b>Lưu ý phiên hôm nay:</b>"]
+    for e in events:
+        sep = "━" * 20
+        level_tag = "🔴" if e.level == "high" else "🟡"
+        lines.append(f"\n{level_tag} {e.icon} <b>{e.title}</b>")
+        lines.append(f"<i>{e.desc}</i>")
+    return "\n".join(lines)
