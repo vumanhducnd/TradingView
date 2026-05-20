@@ -192,7 +192,7 @@ def send_file(file_path: str, caption: str = "", style: str = "long") -> bool:
 def send_daily_report(
     results: pd.DataFrame,
     signals: dict[str, pd.DataFrame],
-    ai_analysis: dict | None = None,
+
     super_stocks: pd.DataFrame | None = None,
     intraday_reversals: dict[str, list[str]] | None = None,
 ) -> None:
@@ -202,8 +202,6 @@ def send_daily_report(
     Single mode: tất cả → bot dài hạn.
     """
     today = date.today().strftime("%d/%m/%Y")
-    is_dual = "long_buy_signal" in results.columns
-
     # Load exchange + avg_turnover_20d để enrich results
     tickers_all = results["ticker"].tolist() if not results.empty else []
     _exch_map = load_exchange_map(tickers_all)
@@ -284,7 +282,7 @@ def send_daily_report(
         """Gửi toàn bộ report (header + positions + tín hiệu) cho 1 style."""
         p = f"{style}_"
         is_long = style == "long"
-        label   = "📈 Dài hạn (10/3.0)" if is_long else "⚡ Ngắn hạn (7/2.0)"
+        label   = "📈 Đầu tư Dài Hạn" if is_long else "⚡ Đầu tư Ngắn Hạn"
 
         buy_df  = results[results[f"{p}buy_signal"].astype(bool)]  if f"{p}buy_signal"  in results.columns else pd.DataFrame()
         sell_df = results[results[f"{p}sell_signal"].astype(bool)] if f"{p}sell_signal" in results.columns else pd.DataFrame()
@@ -369,38 +367,9 @@ def send_daily_report(
             txt = "\n".join(f"  • {tv_link(r['ticker'], _exch_map.get(r['ticker'], ''))}: {r['bias_norm']:.0f}/100" for _, r in top5.iterrows())
             send_message(f"Hôm nay không có tín hiệu mới.\n\n<b>Top 5 mạnh nhất:</b>\n{txt}", style=style)
 
-    if is_dual:
-        _send_for_style("long")
-        time.sleep(1)
-        _send_for_style("short")
-    else:
-        buy_df  = signals.get("buy",  pd.DataFrame())
-        sell_df = signals.get("sell", pd.DataFrame())
-        header = (
-            f"<b>📊 ManhDucCapital Scanner — {today}</b>\n"
-            f"📈 Dài hạn (ATR=10, x3.0)\n\n"
-            f"🟢 MUA: <b>{len(buy_df)}</b> mã\n"
-            f"🔴 BÁN: <b>{len(sell_df)}</b> mã\n"
-            f"⬜ Không tín hiệu: {len(results) - len(buy_df) - len(sell_df)} mã"
-        )
-        send_message(header, style="long")
-        time.sleep(0.8)
-        if ai_analysis and ai_analysis.get("overview"):
-            send_message(f"<b>🤖 Nhận định AI:</b>\n{ai_analysis['overview']}", style="long")
-            time.sleep(0.8)
-        _send_top_vung_xanh(results, style="long")
-        time.sleep(0.8)
-        for lines in [
-            _signal_lines(buy_df,  "💰", "Tín hiệu bứt phá xác nhận", "supertrend", direction="buy"),
-            _signal_lines(sell_df, "💸", "Tín hiệu đảo chiều giảm",   "supertrend", direction="sell"),
-        ]:
-            if lines:
-                send_message("\n".join(lines), style="long")
-                time.sleep(0.5)
-        if buy_df.empty and sell_df.empty:
-            top5 = results.nlargest(5, "bias_norm")[["ticker", "bias_norm"]]
-            txt = "\n".join(f"  • {tv_link(r['ticker'], _exch_map.get(r['ticker'], ''))}: {r['bias_norm']:.0f}/100" for _, r in top5.iterrows())
-            send_message(f"Hôm nay không có tín hiệu mới.\n\n<b>Top 5 mạnh nhất:</b>\n{txt}", style="long")
+    _send_for_style("long")
+    time.sleep(1)
+    _send_for_style("short")
 
     # ── Excel — mỗi file gửi đúng bot ────────────────────────────────────────
     try:

@@ -308,15 +308,8 @@ def run_scan_only() -> None:
     save_signals(results)
 
     logger.info("Buoc 4/4: Gui Telegram + Excel...")
-    ai_analysis = {}
     try:
-        from scanner.ai_analyst import run_full_analysis
-        ai_analysis = run_full_analysis(results)
-    except Exception as e:
-        logger.warning(f"AI analysis failed: {e}")
-
-    try:
-        send_daily_report(results, signals, ai_analysis=ai_analysis, super_stocks=super_stocks,
+        send_daily_report(results, signals, super_stocks=super_stocks,
                           intraday_reversals=intraday_reversals)
     except Exception as e:
         logger.warning(f"Telegram failed: {e}")
