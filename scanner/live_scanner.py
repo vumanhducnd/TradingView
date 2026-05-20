@@ -85,7 +85,7 @@ def _fmt_pre_row(r: dict) -> str:
 
 
 def _build_pre_report(results: list[dict], style_label: str, today_str: str,
-                      ai_text: str = "", global_block: str = "") -> tuple[str, list[dict], list[dict]]:
+                      ai_text: str = "") -> tuple[str, list[dict], list[dict]]:
     """Tạo 1 message duy nhất: header + AI + gần mua + gần bán."""
     bull = [r for r in results if r["trend"] == 1]
     bear = [r for r in results if r["trend"] == -1]
@@ -117,9 +117,6 @@ def _build_pre_report(results: list[dict], style_label: str, today_str: str,
     event_block = format_events_for_telegram(events)
     if event_block:
         lines.append(event_block)
-    if global_block:
-        lines.append(global_block)
-
     if ai_text:
         lines.append(f"\n{ai_text}")
 
@@ -200,7 +197,7 @@ def run_pre_session(force: bool = False) -> None:
         bear_cnt = sum(1 for r in results if r["trend"] == -1)
 
         # Lấy near_buy/near_sell trước để truyền vào AI
-        _, near_buy_tmp, near_sell_tmp = _build_pre_report(results, style_label, today_str, global_block=global_block)
+        _, near_buy_tmp, near_sell_tmp = _build_pre_report(results, style_label, today_str)
 
         # AI nhận định trước phiên
         ai_text = ""
@@ -214,10 +211,14 @@ def run_pre_session(force: bool = False) -> None:
         except Exception as e:
             logger.warning(f"AI pre-session failed: {e}")
 
-        # 1 message duy nhất: header + AI + danh sách
-        msg, _, _ = _build_pre_report(results, style_label, today_str, ai_text=ai_text, global_block=global_block)
+        msg, _, _ = _build_pre_report(results, style_label, today_str, ai_text=ai_text)
         send_message(msg, style=bot_style)
         logger.info(f"Pre-session [{style}]: {len(results)} mã, gửi bot {bot_style}")
+
+    # Gửi sự kiện quốc tế riêng sau cả 2 báo cáo
+    if global_block:
+        for bot_style in ("long", "short"):
+            send_message(global_block, style=bot_style)
 
     logger.info("Pre-session xong")
 
