@@ -342,19 +342,14 @@ def _fetch_market_context() -> str:
         logger.debug(f"fetch_market_context index: {e}")
 
     try:
-        import requests
-        resp = requests.get(
-            "https://cafef.vn/thi-truong-chung-khoan.chn",
-            timeout=5, verify=False,
-            headers={"User-Agent": "Mozilla/5.0"},
-        )
-        import re
-        titles = re.findall(r'<h3[^>]*>.*?<a[^>]*>(.*?)</a>', resp.text[:8000])
-        news = [re.sub(r'<[^>]+>', '', t).strip() for t in titles[:3] if t.strip()]
-        if news:
-            lines.append("Tin tức nổi bật: " + " | ".join(news))
-    except Exception:
-        pass
+        from scanner.news_fetcher import fetch_hot_news
+        news_items = fetch_hot_news(max_items=8)
+        if news_items:
+            lines.append("\nTin tức nổi bật:")
+            for n in news_items:
+                lines.append(f"  - [{n['source']}] {n['title']}")
+    except Exception as e:
+        logger.debug(f"fetch_market_context news: {e}")
 
     return "\n".join(lines) if lines else "Không có dữ liệu bổ sung."
 
@@ -418,23 +413,23 @@ def generate_pre_session_ai(
         {persona}
         Ngày: {today} | Khung: {style_label}
 
-        DỮ LIỆU THỊ TRƯỜNG:
+        TIN TỨC VÀ THỊ TRƯỜNG HÔM QUA:
         {market_ctx}
 
-        BỨC TRANH KỸ THUẬT:
-        - Tổng mã: {n_total} | Tăng: {n_bull} | Giảm: {n_bear} | Cảm nhận: {sentiment}
-        - Mã gần điểm mua: {_fmt_list(near_buy)}
-        - Mã gần điểm bán: {_fmt_list(near_sell)}
+        Dựa vào tin tức trên, hãy viết một đoạn nhận định tự nhiên theo đúng nhân cách được giao.
+        Nội dung cần chạm đủ 3 ý (viết liền mạch, không tách đoạn):
+        - Thị trường hôm qua ra sao: phân tích dựa vào tin tức từ báo, chỉ số, viết 2-3 câu chi tiết, không liệt kê mã cụ thể
+        - Hôm nay nên làm gì (chiến lược cụ thể: giữ/mua/chờ/phòng thủ, lý do rõ ràng)
+        - Lời khuyên hài hước gần gũi theo đúng nhân cách, khiến người đọc vừa cười vừa nhớ
 
         Yêu cầu bắt buộc:
         - Tiếng Việt có dấu đầy đủ, không emoji, không bullet, không markdown
         - Đúng nhân cách được giao, tự nhiên không gượng gạo
-        - Tối đa 4-5 câu
-        - Câu cuối là lời khuyên thực tế theo nhân cách đó
+        - 6-8 câu, viết liền mạch như đang nói chuyện, phần hôm qua cần đủ chi tiết
     """).strip()
 
     logger.info(f"AI: nhận định trước phiên [{style_label}]...")
-    return _call(client, prompt, max_tokens=1200)
+    return _call(client, prompt, max_tokens=2000)
 
 
 # ─── Global events AI ─────────────────────────────────────────────────────────
