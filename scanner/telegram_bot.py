@@ -5,7 +5,7 @@ Uses requests (synchronous) — no asyncio needed for GitHub Actions.
 
 import math
 import time
-import warnings
+
 import requests
 import urllib3
 import pandas as pd
@@ -19,7 +19,7 @@ from scanner.config import (
     TELEGRAM_CHAT_IDS_LONG, TELEGRAM_CHAT_IDS_SHORT,
 )
 from scanner.database import load_exchange_map
-from scanner.utils import bias_label, fmt_date, fmt_price, logger, tk_label, tv_link
+from scanner.utils import fmt_date, fmt_price, logger, tk_label, tv_link
 
 
 def _val(row, *names, default=None):
@@ -54,18 +54,6 @@ def _fmt_tk(row) -> str:
     if vol and vol > 0:
         return f"{vol / 1e6:.1f}M cp"
     return "–"
-
-_CRITERIA_LABELS = {
-    "ema":    "EMA9>21",
-    "vwap":   "Giá>VWAP",
-    "rsi":    "RSI>52",
-    "macd":   "MACD↑",
-    "adx":    "ADX>20",
-    "obv":    "OBV↑",
-    "stoch":  "Stoch↑",
-    "candle": "Nến trên",
-    "vol":    "Vol↑",
-}
 
 
 def _chat_ids(style: str) -> tuple[str, list[str]]:
@@ -393,93 +381,6 @@ def send_daily_report(
         logger.warning(f"Excel report failed: {e}")
 
 
-def _format_signal(row: pd.Series, signal_type: str) -> str:
-    emoji = "🟢" if signal_type == "MUA" else "🔴"
-    bn = row.get("bias_norm", 0)
-    label = bias_label(bn)
-    close_fmt = fmt_price(row.get("close", 0))
-    st_fmt = fmt_price(row.get("supertrend", 0))
-
-    # Bull/bear criteria breakdown
-    criteria = _CRITERIA_LABELS
-    bull_parts = []
-    for key, display in criteria.items():
-        val = row.get(f"bull_{key}", False)
-        bull_parts.append(f"{'✅' if val else '❌'}{display}")
-    criteria_line = "  " + "  ".join(bull_parts[:5]) + "\n  " + "  ".join(bull_parts[5:])
-
-    b_score = int(row.get("b_score", 0))
-
-    # Hỗ trợ / Kháng cự
-    support    = row.get("support", 0)
-    resistance = row.get("resistance", 0)
-    dist_ht    = row.get("dist_support_pct")
-    dist_kc    = row.get("dist_resistance_pct")
-    ht_str = f"{fmt_price(support)} ({dist_ht:+.1f}%)" if dist_ht is not None else fmt_price(support)
-    kc_str = f"{fmt_price(resistance)} ({dist_kc:+.1f}%)" if dist_kc is not None else fmt_price(resistance)
-
-    # Vị thế đang mở
-    buy_date  = fmt_date(row.get("buy_date", ""))
-    buy_price = row.get("buy_price")
-    pnl       = row.get("pnl_pct")
-    position_line = ""
-    if buy_price and pnl is not None:
-        pnl_emoji = "🟢" if pnl >= 0 else "🔴"
-        position_line = f"\nVị thế: mua {buy_date} @ {fmt_price(buy_price)} | {pnl_emoji} {pnl:+.2f}%"
-
-    lines = [
-        f"{emoji} <b>{signal_type} - {row['ticker']}</b>",
-        f"BiasNorm: <b>{bn:.0f}/100</b> ({label})",
-        f"Giá đóng cửa: <b>{close_fmt}</b>",
-        f"SuperTrend: {st_fmt}",
-        f"Hỗ trợ  (HT): {ht_str}",
-        f"Kháng cự (KC): {kc_str}",
-        position_line,
-        f"",
-        f"Bull criteria ({b_score}/9):",
-        criteria_line,
-        f"",
-        f"<i>Tín hiệu: hôm nay (đảo chiều {('lên' if signal_type == 'MUA' else 'xuống')})</i>",
-    ]
-    return "\n".join(l for l in lines if l != "" or l == "")
-
-
-def _send_super_stocks(df: pd.DataFrame, style: str = "long") -> None:
-    """Gửi danh sách siêu cổ phiếu vùng mua."""
-    lines = ["<b>⭐ SIÊU CỔ PHIẾU VÙNG MUA:</b>"]
-    exch_map = load_exchange_map(df["ticker"].tolist() if not df.empty else [])
-
-    for _, row in df.iterrows():
-        ticker   = row["ticker"]
-        score    = row.get("super_score", 0)
-        bias     = row.get("bias_norm", 0)
-        close    = row.get("close", 0)
-        sup      = row.get("long_support") or row.get("long_supertrend") or 0
-        res      = row.get("long_resistance") or 0
-        dist_s   = row.get("dist_support_pct", 0)
-        dist_r   = row.get("dist_resistance_pct", 0)
-        b_score  = row.get("b_score", 0)
-        both     = row.get("both_buy", False)
-        lbuy     = row.get("long_buy_signal", False)
-        sbuy     = row.get("short_buy_signal", False)
-
-        signal_tag = ""
-        if both:
-            signal_tag = " 🔥"
-        elif lbuy and sbuy:
-            signal_tag = " 🟢🟢"
-        elif lbuy:
-            signal_tag = " 🟢DH"
-        elif sbuy:
-            signal_tag = " 🟢NH"
-
-        lines.append(
-            f"\n<b>{tv_link(ticker, exch_map.get(ticker, ''))}</b>{signal_tag} | Score: {score:.0f}"
-            f"\n  Giá: {fmt_price(close)} | Bias: {bias:.0f}/100 | Bull: {b_score}/9"
-            f"\n  HT: {fmt_price(sup)} ({dist_s:+.1f}%) → KC: {fmt_price(res)} ({dist_r:+.1f}%)"
-        )
-
-    send_message("\n".join(lines), style=style)
 
 
 def _send_top_vung_xanh(results: pd.DataFrame, style: str = "long", top_n: int = 5) -> None:
