@@ -311,7 +311,7 @@ def generate_end_of_session_ai(
     """).strip()
 
     logger.info(f"AI: nhận định cuối phiên [{style_label}]...")
-    return _call(client, prompt, max_tokens=400)
+    return _call(client, prompt, max_tokens=1200)
 
 
 # ─── Pre-session AI overview ─────────────────────────────────────────────────
@@ -434,7 +434,7 @@ def generate_pre_session_ai(
     """).strip()
 
     logger.info(f"AI: nhận định trước phiên [{style_label}]...")
-    return _call(client, prompt, max_tokens=400)
+    return _call(client, prompt, max_tokens=1200)
 
 
 # ─── Global events AI ─────────────────────────────────────────────────────────
@@ -469,7 +469,7 @@ def summarize_global_events(events_text: str) -> str:
     """).strip()
 
     logger.info("AI: tom tat su kien quoc te...")
-    return _call(client, prompt, max_tokens=200)
+    return _call(client, prompt, max_tokens=800)
 
 
 # ─── Signal analysis ──────────────────────────────────────────────────────────

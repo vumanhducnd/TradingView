@@ -349,11 +349,15 @@ def fetch_global_events(today: date | None = None) -> str:
     # AI tóm tắt tác động đến TTCK Việt
     try:
         from scanner.ai_analyst import summarize_global_events
+        from scanner.utils import logger
         ai_summary = summarize_global_events("\n".join(plain_lines))
         if ai_summary:
             lines.append(f"\n💬 <i>{ai_summary}</i>")
-    except Exception:
-        pass
+        else:
+            logger.warning("AI global events: trả về rỗng (Groq/OpenAI/Gemini đều lỗi?)")
+    except Exception as e:
+        from scanner.utils import logger
+        logger.warning(f"AI global events thất bại: {e}")
 
     return "\n".join(lines)
 
