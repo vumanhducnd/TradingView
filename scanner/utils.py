@@ -146,12 +146,14 @@ def tv_link(ticker: str, exchange: str = "") -> str:
 
 
 def tk_label(tk_ty: float, short: bool = False) -> str:
-    """Nhãn mức thanh khoản theo tỷ VND (TB20).
-    short=True: RT/T/TB/C  |  short=False: Rất thấp/Thấp/Trung bình/Cao
+    """Nhãn mức thanh khoản theo tỷ VND (TB20). Ngưỡng tối thiểu lọc: 10 tỷ.
+    short=True: RC/C/K/TB/T  |  short=False: Rất cao/Cao/Khá/Trung bình/Thấp
     """
-    if tk_ty >= 100: return "💎C"  if short else "💎 Cao"
+    if tk_ty >= 200: return "💎RC" if short else "💎 Rất cao"
+    if tk_ty >= 100: return "🔥C"  if short else "🔥 Cao"
+    if tk_ty >= 50:  return "K"   if short else "Khá"
     if tk_ty >= 20:  return "TB"  if short else "Trung bình"
-    if tk_ty >= 5:   return "T"   if short else "Thấp"
+    if tk_ty >= 10:  return "T"   if short else "Thấp"
     return "RT" if short else "Rất thấp"
 
 

@@ -69,7 +69,7 @@ def _wait_until_ict(hour: int, minute: int, abort_after_hour: int | None = None,
 
 _NEAR_THRESHOLD_PCT = 1.5   # % cách ST để coi là "gần điểm mua/bán"
 _TOP_N_PRE          = 10    # số mã hiển thị mỗi nhóm
-_TK_MIN_TY          = 5.0   # TK TB20 tối thiểu (tỷ VND) — lọc đồng bộ đầu/trong/cuối phiên
+_TK_MIN_TY          = 10.0  # TK TB20 tối thiểu (tỷ VND) — lọc đồng bộ đầu/trong/cuối phiên
 
 
 def _fmt_pre_row(r: dict) -> str:
