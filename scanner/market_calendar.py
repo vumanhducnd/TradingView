@@ -340,9 +340,10 @@ def fetch_global_events(today: date | None = None) -> str:
         lines.append(f"\n<u>{section_label}:</u>")
         plain_lines.append(f"{section_label}:")
         for r in section_rows:
-            flag = _COUNTRY_FLAG.get(r["country"], r["country"])
-            dot  = "🔴" if r["is_high"] else "🟡"
-            lines.append(f"  {dot} {flag} <b>{r['event']}</b> — {r['time']}")
+            flag       = _COUNTRY_FLAG.get(r["country"], r["country"])
+            dot        = "🔴" if r["is_high"] else "🟡"
+            event_html = r["event"].replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            lines.append(f"  {dot} {flag} <b>{event_html}</b> — {r['time']}")
             plain_lines.append(f"  [{r['country']}] {r['event']} lúc {r['time']}")
 
     # AI tóm tắt tác động đến TTCK Việt
