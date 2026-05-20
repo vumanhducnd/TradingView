@@ -51,7 +51,8 @@ def _call_openai(prompt: str, max_tokens: int = 2048) -> str:
         if not OPENAI_API_KEY:
             logger.warning("OPENAI_API_KEY chua set — thu Gemini fallback...")
             return _call_gemini(prompt, max_tokens)
-        client = openai.OpenAI(api_key=OPENAI_API_KEY)
+        import httpx
+        client = openai.OpenAI(api_key=OPENAI_API_KEY, http_client=httpx.Client(verify=False))
         resp = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
