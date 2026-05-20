@@ -366,16 +366,17 @@ def generate_pre_session_ai(
         TIN TỨC VÀ THỊ TRƯỜNG HÔM QUA:
         {market_ctx}
 
-        Dựa vào tin tức trên, hãy viết một đoạn nhận định tự nhiên theo đúng nhân cách được giao.
-        Nội dung cần chạm đủ 3 ý (viết liền mạch, không tách đoạn):
-        - Thị trường hôm qua ra sao: phân tích dựa vào tin tức từ báo, chỉ số, viết 2-3 câu chi tiết, không liệt kê mã cụ thể
-        - Hôm nay nên làm gì (chiến lược cụ thể: giữ/mua/chờ/phòng thủ, lý do rõ ràng)
-        - Lời khuyên hài hước gần gũi theo đúng nhân cách, khiến người đọc vừa cười vừa nhớ
+        Dựa vào tin tức trên, hãy viết nhận định theo đúng nhân cách được giao, gồm 3 đoạn tách biệt:
+
+        Đoạn 1 — Thị trường hôm qua: phân tích dựa vào tin tức từ báo và chỉ số, 2-3 câu chi tiết, không liệt kê mã cụ thể.
+        Đoạn 2 — Hôm nay nên làm gì: chiến lược cụ thể (giữ/mua/chờ/phòng thủ), lý do rõ ràng, 2 câu.
+        Đoạn 3 — Lời khuyên: hài hước gần gũi theo đúng nhân cách, khiến người đọc vừa cười vừa nhớ, 1-2 câu.
 
         Yêu cầu bắt buộc:
         - Tiếng Việt có dấu đầy đủ, không emoji, không bullet, không markdown
         - Đúng nhân cách được giao, tự nhiên không gượng gạo
-        - 6-8 câu, viết liền mạch như đang nói chuyện, phần hôm qua cần đủ chi tiết
+        - Xuống dòng trống giữa mỗi đoạn để dễ đọc
+        - Không ghi tiêu đề đoạn, viết thẳng vào nội dung
     """).strip()
 
     logger.info(f"AI: nhận định trước phiên [{style_label}]...")
