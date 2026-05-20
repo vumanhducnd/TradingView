@@ -683,50 +683,50 @@ def run_session(interval: int = 180, session: str = "full") -> None:
 
         flips: list[dict] = []
 
-        # ── Tính ST incremental cho cả LONG và SHORT ──
+        # ── So sánh giá hiện tại với SuperTrend daily (không dùng incremental) ──
+        # SuperTrend là chỉ báo daily — state giữ nguyên từ hôm qua, không update intraday.
+        # Nếu feed nhiều bar intraday vào calc_supertrend_next, ATR Wilder bị decay
+        # (nhân 6/7 mỗi cycle) khiến dn/up trôi xa khỏi giá trị thực → tín hiệu sai.
         for style_key, st_states in [("long", st_states_long), ("short", st_states_short)]:
             for ticker, state in st_states.items():
                 bar = today_bars.get(ticker)
                 if not bar:
                     continue
-                try:
-                    new_state = calc_supertrend_next(
-                        state,
-                        high=bar["high"], low=bar["low"], close=bar["close"],
-                    )
-                except Exception:
+
+                price = bar["close"]
+                alert_key = f"{ticker}_{style_key}"
+                if alert_key in alerted_today:
                     continue
 
-                alert_key = f"{ticker}_{style_key}"
-                if alert_key not in alerted_today:
-                    if new_state["buy_signal"]:
-                        _st = state["dn"]
-                        flips.append({
-                            "ticker": ticker, "direction": "buy",
-                            "price": bar["close"], "st": _st, "style": style_key,
-                            "exchange": exchange_map.get(ticker, ""),
-                        })
-                        alerted_today.add(alert_key)
-                        _save_signal_to_db(ticker, "MUA", style_key, price=bar["close"], st=_st)
-                        alerted_signals[alert_key] = {
-                            "direction": "buy", "price": bar["close"],
-                            "time": now.strftime("%H:%M"), "style": style_key,
-                        }
-                    elif new_state["sell_signal"]:
-                        _st = state["up"]
-                        flips.append({
-                            "ticker": ticker, "direction": "sell",
-                            "price": bar["close"], "st": _st, "style": style_key,
-                            "exchange": exchange_map.get(ticker, ""),
-                        })
-                        alerted_today.add(alert_key)
-                        _save_signal_to_db(ticker, "BÁN", style_key, price=bar["close"], st=_st)
-                        alerted_signals[alert_key] = {
-                            "direction": "sell", "price": bar["close"],
-                            "time": now.strftime("%H:%M"), "style": style_key,
-                        }
+                buy_signal  = (state["trend"] == -1) and (price > state["dn"])
+                sell_signal = (state["trend"] == 1)  and (price < state["up"])
 
-                st_states[ticker] = {**new_state, "close": bar["close"]}
+                if buy_signal:
+                    _st = state["dn"]
+                    flips.append({
+                        "ticker": ticker, "direction": "buy",
+                        "price": price, "st": _st, "style": style_key,
+                        "exchange": exchange_map.get(ticker, ""),
+                    })
+                    alerted_today.add(alert_key)
+                    _save_signal_to_db(ticker, "MUA", style_key, price=price, st=_st)
+                    alerted_signals[alert_key] = {
+                        "direction": "buy", "price": price,
+                        "time": now.strftime("%H:%M"), "style": style_key,
+                    }
+                elif sell_signal:
+                    _st = state["up"]
+                    flips.append({
+                        "ticker": ticker, "direction": "sell",
+                        "price": price, "st": _st, "style": style_key,
+                        "exchange": exchange_map.get(ticker, ""),
+                    })
+                    alerted_today.add(alert_key)
+                    _save_signal_to_db(ticker, "BÁN", style_key, price=price, st=_st)
+                    alerted_signals[alert_key] = {
+                        "direction": "sell", "price": price,
+                        "time": now.strftime("%H:%M"), "style": style_key,
+                    }
 
         # ── Load TK và thông tin vị thế từ scan_results (dùng cho P&L bán) ──
         if flips:
