@@ -287,6 +287,20 @@ def send_daily_report(
 
         buy_df  = results[results[f"{p}buy_signal"].astype(bool)]  if f"{p}buy_signal"  in results.columns else pd.DataFrame()
         sell_df = results[results[f"{p}sell_signal"].astype(bool)] if f"{p}sell_signal" in results.columns else pd.DataFrame()
+
+        # Lọc TK TB20 < 5 tỷ — đồng bộ với filter trong phiên
+        _tk_col = "avg_turnover_20d"
+        if _tk_col in buy_df.columns:
+            _tk_mask = buy_df[_tk_col].fillna(0) / 1e6 >= 5.0
+            if (~_tk_mask).any():
+                logger.info(f"  [{style}] Bo qua {(~_tk_mask).sum()} MUA vi TK TB20 < 5 ty")
+            buy_df = buy_df[_tk_mask]
+        if _tk_col in sell_df.columns:
+            _tk_mask = sell_df[_tk_col].fillna(0) / 1e6 >= 5.0
+            if (~_tk_mask).any():
+                logger.info(f"  [{style}] Bo qua {(~_tk_mask).sum()} BAN vi TK TB20 < 5 ty")
+            sell_df = sell_df[_tk_mask]
+
         no_sig  = len(results) - len(buy_df) - len(sell_df)
 
         style_name = "Đầu tư Dài Hạn" if is_long else "Đầu tư Ngắn Hạn"

@@ -69,6 +69,7 @@ def _wait_until_ict(hour: int, minute: int, abort_after_hour: int | None = None,
 
 _NEAR_THRESHOLD_PCT = 1.5   # % cách ST để coi là "gần điểm mua/bán"
 _TOP_N_PRE          = 10    # số mã hiển thị mỗi nhóm
+_TK_MIN_TY          = 5.0   # TK TB20 tối thiểu (tỷ VND) — lọc đồng bộ đầu/trong/cuối phiên
 
 
 def _fmt_pre_row(r: dict) -> str:
@@ -98,6 +99,7 @@ def _build_pre_report(results: list[dict], style_label: str, today_str: str,
         dist = (st - r["close"]) / st * 100
         if 0 <= dist <= _NEAR_THRESHOLD_PCT:
             near_buy.append({**r, "dist_pct": -dist})
+    near_buy = [r for r in near_buy if r.get("turnover", 0) / 1e9 >= _TK_MIN_TY]
     near_buy.sort(key=lambda x: -x.get("turnover", 0))
 
     near_sell = []
@@ -108,6 +110,7 @@ def _build_pre_report(results: list[dict], style_label: str, today_str: str,
         dist = (r["close"] - st) / r["close"] * 100
         if 0 <= dist <= _NEAR_THRESHOLD_PCT:
             near_sell.append({**r, "dist_pct": dist})
+    near_sell = [r for r in near_sell if r.get("turnover", 0) / 1e9 >= _TK_MIN_TY]
     near_sell.sort(key=lambda x: -x.get("turnover", 0))
 
     lines = [f"🌅 <b>Báo cáo sáng 7:00 — Đầu tư {style_label} — {today_str}</b>"]
@@ -762,11 +765,11 @@ def run_session(interval: int = 180, session: str = "full") -> None:
             except Exception:
                 tk_map, pos_map = {}, {}
 
-            # Loại mã TK TB20 < 5 tỷ (mức "Rất thấp")
-            flips = [f for f in flips if tk_map.get(f["ticker"], 0) / 1e6 >= 5.0]
+            # Loại mã TK TB20 < _TK_MIN_TY tỷ
+            flips = [f for f in flips if tk_map.get(f["ticker"], 0) / 1e6 >= _TK_MIN_TY]
             if len(flips) < len(flip_tickers):
                 dropped = len(flip_tickers) - len(flips)
-                logger.info(f"  Bo qua {dropped} flip vi TK TB20 < 5 ty")
+                logger.info(f"  Bo qua {dropped} flip vi TK TB20 < {_TK_MIN_TY:.0f} ty")
 
         # ── Gửi Telegram cho từng flip ──
         for flip in flips:
