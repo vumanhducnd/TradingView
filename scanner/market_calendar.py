@@ -300,19 +300,30 @@ def fetch_global_events(today: date | None = None) -> str:
         name_lower = event_name.lower()
         is_high = impact == "high" or any(k in name_lower for k in _HIGH_IMPACT_KEYWORDS)
 
+        # Bỏ qua sự kiện đã có kết quả thực tế (actual != None)
+        if item.get("actual") is not None:
+            continue
+
         rows.append({
             "country": country,
             "event":   event_name,
             "time":    time_str,
             "is_high": is_high,
             "date":    event_date,
+            "core_country": country in ("US", "CN"),  # ưu tiên US/CN
         })
 
     if not rows:
         return ""
 
-    # Sắp xếp: high trước, sau đó theo thời gian
-    rows.sort(key=lambda r: (not r["is_high"], r["time"]))
+    # Ưu tiên: high-impact US/CN → high-impact khác → medium US/CN → còn lại
+    rows.sort(key=lambda r: (
+        not (r["is_high"] and r["core_country"]),  # high US/CN lên đầu
+        not r["is_high"],                           # high khác tiếp theo
+        not r["core_country"],                      # medium US/CN
+        r["date"], r["time"],
+    ))
+    rows = rows[:5]  # chỉ giữ 5 sự kiện quan trọng nhất
 
     lines = ["\n🌐 <b>Sự kiện kinh tế quốc tế:</b>"]
     today_rows    = [r for r in rows if r["date"] == today]
