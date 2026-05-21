@@ -1422,8 +1422,7 @@ def get_dividend_adjustments(tickers: list[str]) -> dict[str, list[dict]]:
                 SELECT ticker, exright_date, value_per_share
                 FROM dividend_events
                 WHERE ticker = ANY(%s)
-                  AND payout_date IS NOT NULL
-                  AND payout_date < %s
+                  AND exright_date <= %s
                   AND value_per_share > 0
                 ORDER BY ticker, exright_date
                 """,
