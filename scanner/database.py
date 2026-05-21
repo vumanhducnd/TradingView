@@ -356,6 +356,17 @@ def load_all_ohlcv_bulk(
             result[t] = raw[t]
 
     logger.info(f"Bulk load OHLCV: {len(result)} tickers, {len(df):,} rows")
+
+    # Cộng cổ tức vào bars lịch sử (nếu đã trả), rồi snap toàn bộ về bước giá sàn
+    try:
+        adjustments = get_dividend_adjustments(list(result.keys()))
+        if adjustments:
+            _apply_dividend_adjustment(result, adjustments)
+            logger.info(f"Dividend adjustment: applied to {len(adjustments)} tickers")
+    except Exception as e:
+        logger.warning(f"Dividend adjustment failed: {e}")
+    _snap_ohlcv(result)
+
     return result
 
 
@@ -381,7 +392,16 @@ def load_ohlcv(ticker: str, days: int = 400) -> pd.DataFrame:
     for col in ["open", "high", "low", "close"]:
         df[col] = df[col].astype(float)
     df["volume"] = df["volume"].astype(int)
-    return df
+
+    raw = {ticker: df}
+    try:
+        adj = get_dividend_adjustments([ticker])
+        if adj:
+            _apply_dividend_adjustment(raw, adj)
+    except Exception:
+        pass
+    _snap_ohlcv(raw, [ticker])
+    return raw[ticker]
 
 
 def get_last_date(ticker: str) -> date | None:
@@ -1280,5 +1300,183 @@ def get_user_by_phone(phone: str) -> dict | None:
         )
         r = cur.fetchone()
         return dict(r) if r else None
+
+
+# ─── Dividend Events ──────────────────────────────────────────────────────────
+
+def _ensure_dividend_events_table() -> None:
+    with db_cursor() as cur:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS dividend_events (
+                ticker          TEXT NOT NULL,
+                exright_date    DATE NOT NULL,
+                record_date     DATE,
+                payout_date     DATE,
+                value_per_share NUMERIC(12,2),
+                event_title     TEXT,
+                fetched_at      TIMESTAMP DEFAULT NOW(),
+                PRIMARY KEY (ticker, exright_date)
+            )
+        """)
+
+
+def upsert_dividend_events() -> int:
+    """
+    Fetch toàn bộ sự kiện cổ tức từ VCI API, upsert vào bảng dividend_events.
+    Lấy khoảng: 60 ngày trước → 6 tháng sau.
+    Trả về số records upserted.
+    """
+    import requests
+    import urllib3
+    urllib3.disable_warnings()
+
+    _ensure_dividend_events_table()
+
+    today = date.today()
+    from scanner.config import LOOKBACK_DAYS
+    from_date = (today - timedelta(days=LOOKBACK_DAYS)).strftime("%Y-%m-%d")
+    to_date   = (today + timedelta(days=180)).strftime("%Y-%m-%d")
+
+    base = "https://iq.vietcap.com.vn/api/iq-insight-service"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "Accept": "application/json",
+        "Referer": "https://iq.vietcap.com.vn",
+    }
+
+    all_items: list[dict] = []
+    page = 0
+    while True:
+        url = f"{base}/v1/events?fromDate={from_date}&toDate={to_date}&eventCode=DIV&page={page}&size=500"
+        try:
+            r = requests.get(url, verify=False, timeout=20, headers=headers)
+            if r.status_code != 200:
+                logger.warning(f"upsert_dividend_events: HTTP {r.status_code} page={page}")
+                break
+            content = r.json().get("data", {}).get("content", [])
+            all_items.extend(content)
+            if len(content) < 500:
+                break
+            page += 1
+        except Exception as e:
+            logger.warning(f"upsert_dividend_events page={page}: {e}")
+            break
+
+    if not all_items:
+        logger.warning("upsert_dividend_events: khong lay duoc du lieu tu VCI")
+        return 0
+
+    def _d(s: str | None) -> str | None:
+        return s[:10] if s else None
+
+    seen: set[tuple] = set()
+    rows = []
+    for item in all_items:
+        ticker = item.get("ticker")
+        exright = _d(item.get("exrightDate"))
+        if not ticker or not exright:
+            continue
+        key = (ticker, exright)
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.append((
+            ticker,
+            exright,
+            _d(item.get("recordDate")),
+            _d(item.get("payoutDate")),
+            item.get("valuePerShare"),
+            item.get("eventTitleVi") or item.get("eventTitleEn"),
+        ))
+
+    sql = """
+        INSERT INTO dividend_events
+            (ticker, exright_date, record_date, payout_date, value_per_share, event_title)
+        VALUES %s
+        ON CONFLICT (ticker, exright_date) DO UPDATE SET
+            record_date     = EXCLUDED.record_date,
+            payout_date     = EXCLUDED.payout_date,
+            value_per_share = EXCLUDED.value_per_share,
+            event_title     = EXCLUDED.event_title,
+            fetched_at      = NOW()
+    """
+    with db_cursor() as cur:
+        psycopg2.extras.execute_values(cur, sql, rows)
+
+    logger.info(f"upsert_dividend_events: upserted {len(rows)} records ({from_date} -> {to_date})")
+    return len(rows)
+
+
+def get_dividend_adjustments(tickers: list[str]) -> dict[str, list[dict]]:
+    """
+    Trả về {ticker: [{exright_date, value_per_share}]} cho cổ tức đã được trả
+    (payout_date < today). Dùng để điều chỉnh giá lịch sử khi load OHLCV.
+    """
+    if not tickers:
+        return {}
+    today = date.today()
+    try:
+        with db_cursor(commit=False) as cur:
+            cur.execute(
+                """
+                SELECT ticker, exright_date, value_per_share
+                FROM dividend_events
+                WHERE ticker = ANY(%s)
+                  AND payout_date IS NOT NULL
+                  AND payout_date < %s
+                  AND value_per_share > 0
+                ORDER BY ticker, exright_date
+                """,
+                (tickers, today),
+            )
+            rows = cur.fetchall()
+    except Exception:
+        return {}
+
+    result: dict[str, list] = {}
+    for r in rows:
+        result.setdefault(r["ticker"], []).append({
+            "exright_date":    r["exright_date"],
+            "value_per_share": float(r["value_per_share"]),
+        })
+    return result
+
+
+def _snap_ohlcv(
+    raw: dict[str, pd.DataFrame],
+    tickers: list[str] | None = None,
+) -> None:
+    """In-place: snap OHLC về bội số 0.05 (bước giá sàn VN, đơn vị nghìn VND)."""
+    targets = tickers if tickers is not None else list(raw.keys())
+    for ticker in targets:
+        if ticker not in raw:
+            continue
+        df = raw[ticker]
+        cols = [c for c in ["open", "high", "low", "close"] if c in df.columns]
+        for col in cols:
+            df[col] = (df[col] / 0.05).round() * 0.05
+            df[col] = df[col].round(2)
+
+
+def _apply_dividend_adjustment(
+    raw: dict[str, pd.DataFrame],
+    adjustments: dict[str, list[dict]],
+) -> None:
+    """
+    In-place: cộng value_per_share vào OHLC cho mọi bar trước exright_date.
+    OHLCV lưu đơn vị nghìn VND (15.9 = 15,900 VND).
+    value_per_share đơn vị VND nguyên (900 VND) → chia 1000 trước khi cộng.
+    """
+    for ticker, divs in adjustments.items():
+        if ticker not in raw:
+            continue
+        df = raw[ticker]
+        for div in divs:
+            exright = pd.Timestamp(div["exright_date"])
+            val = div["value_per_share"] / 1000  # VND → nghìn VND
+            mask = df.index < exright
+            if mask.any():
+                cols = [c for c in ["open", "high", "low", "close"] if c in df.columns]
+                df.loc[mask, cols] += val
 
 

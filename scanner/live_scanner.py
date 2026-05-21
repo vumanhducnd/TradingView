@@ -385,12 +385,12 @@ def _fetch_via_price_board(tickers: list[str]) -> dict[str, dict]:
                     continue
                 if high == low == close:
                     no_hl += 1          # chưa có H/L thực (ATO hoặc 1 lệnh đầu)
-                # price_board trả về VND thực (41500), DB lưu VND/1000 (41.5)
+                # price_board trả về VND thực (41500), DB lưu VND/1000 (41.5) — raw, không snap
                 result[ticker] = {
-                    "open":   _snap_to_tick((float(row["open"] or 0) or close) / 1000),
-                    "high":   _snap_to_tick(high   / 1000),
-                    "low":    _snap_to_tick(low    / 1000),
-                    "close":  _snap_to_tick(close  / 1000),
+                    "open":   (float(row["open"] or 0) or close) / 1000,
+                    "high":   high  / 1000,
+                    "low":    low   / 1000,
+                    "close":  close / 1000,
                     "volume": float(row["volume"] or 0),
                 }
             except (TypeError, ValueError):
@@ -697,6 +697,12 @@ def run_session(interval: int = 180, session: str = "full") -> None:
         n_upsert = bulk_upsert_today(today_bars, date.today())
         logger.info(f"  Upsert DB: {n_upsert} rows (1 query)")
 
+        # Snap giá hiện tại để đồng bộ với ST state (tính từ giá đã snap)
+        for bar in today_bars.values():
+            for k in ("open", "high", "low", "close"):
+                if k in bar:
+                    bar[k] = _snap_to_tick(bar[k])
+
         flips: list[dict] = []
 
         # ── So sánh giá hiện tại với SuperTrend daily (không dùng incremental) ──
@@ -926,6 +932,11 @@ def _run_session_once() -> None:
 
     n_upsert = bulk_upsert_today(today_bars, date.today())
     logger.info(f"[4/5] Upsert DB: {n_upsert} rows bulk (1 query) ({_time.time()-t4b:.1f}s)")
+
+    for bar in today_bars.values():
+        for k in ("open", "high", "low", "close"):
+            if k in bar:
+                bar[k] = _snap_to_tick(bar[k])
 
     # ── Bước 5: Tính ST + detect flip ─────────────────────
     t5 = _time.time()

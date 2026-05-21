@@ -322,6 +322,15 @@ def run_scan_only() -> None:
     except Exception as e:
         logger.warning(f"update_liquidity_stats failed: {e}")
 
+    # Fetch cổ tức vào thứ 6 (weekday=4) sau khi scan xong
+    if date.today().weekday() == 4:
+        try:
+            from scanner.database import upsert_dividend_events
+            n_div = upsert_dividend_events()
+            logger.info(f"Dividend events (thu 6): {n_div} records upserted")
+        except Exception as e:
+            logger.warning(f"upsert_dividend_events failed: {e}")
+
     logger.info(f"=== Scan-only xong: {buy_n} MUA, {sell_n} BAN, {both_n} DONG THUAN ===")
 
 

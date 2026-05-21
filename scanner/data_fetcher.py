@@ -233,10 +233,6 @@ def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
 
     df = df[required].dropna()
 
-    # Snap giá về bước giá sàn — loại bỏ floating-point imprecision từ vnstock API
-    for col in ("open", "high", "low", "close"):
-        df[col] = df[col].apply(_snap_to_tick)
-
     return df
 
 
