@@ -384,11 +384,14 @@ def _sheet_signals(
 
     is_dual = any("long_buy_signal" in df.columns for df in signals.values() if not df.empty)
 
+    # st_col = cột dùng làm "Giá Break":
+    #   Bứt phá (MUA): kháng cự vừa bị phá = resistance (st_dn, ratchet giữ nguyên = mức cũ)
+    #   Đảo chiều giảm (BÁN): hỗ trợ vừa bị thủng = support (st_up, ratchet giữ nguyên = mức cũ)
     all_combos = [
-        ("Bứt phá xác nhận", "long_buy_signal",   "long_sell_signal",  "Dài hạn",  "long",  "long_supertrend"),
-        ("Đảo chiều giảm",   "long_sell_signal",  "long_buy_signal",   "Dài hạn",  "long",  "long_supertrend"),
-        ("Bứt phá xác nhận", "short_buy_signal",  "short_sell_signal", "Ngắn hạn", "short", "short_supertrend"),
-        ("Đảo chiều giảm",   "short_sell_signal", "short_buy_signal",  "Ngắn hạn", "short", "short_supertrend"),
+        ("Bứt phá xác nhận", "long_buy_signal",   "long_sell_signal",  "Dài hạn",  "long",  "long_resistance"),
+        ("Đảo chiều giảm",   "long_sell_signal",  "long_buy_signal",   "Dài hạn",  "long",  "long_support"),
+        ("Bứt phá xác nhận", "short_buy_signal",  "short_sell_signal", "Ngắn hạn", "short", "short_resistance"),
+        ("Đảo chiều giảm",   "short_sell_signal", "short_buy_signal",  "Ngắn hạn", "short", "short_support"),
     ]
     combos = [c for c in all_combos if style_filter is None or c[4] == style_filter]
 
@@ -415,8 +418,8 @@ def _sheet_signals(
                 _collect(row, signal_label, khung, st_col, fill)
     else:
         for df, label, fill, st_col in [
-            (signals.get("buy",  pd.DataFrame()), "Bứt phá xác nhận", GREEN_FILL, "supertrend"),
-            (signals.get("sell", pd.DataFrame()), "Đảo chiều giảm",   RED_FILL,   "supertrend"),
+            (signals.get("buy",  pd.DataFrame()), "Bứt phá xác nhận", GREEN_FILL, "resistance"),
+            (signals.get("sell", pd.DataFrame()), "Đảo chiều giảm",   RED_FILL,   "support"),
         ]:
             for _, row in df.iterrows():
                 _collect(row, label, "Dài hạn", st_col, fill)
@@ -425,7 +428,8 @@ def _sheet_signals(
 
     row_idx = 2
     for stt, (tk, _, row, signal_label, khung, st_col, fill) in enumerate(collected, start=1):
-        st     = row.get(st_col) or row.get("supertrend") or ""
+        fallback = st_col.replace("_resistance", "_supertrend").replace("_support", "_supertrend")
+        st     = row.get(st_col) or row.get(fallback) or row.get("supertrend") or ""
         close  = row.get("close") or ""
         ticker = row.get("ticker", "")
         ov     = (overviews or {}).get(ticker, {})
