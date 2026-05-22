@@ -55,14 +55,8 @@ def build_excel_report(
 
     if "exchange" not in results.columns:
         try:
-            from scanner.database import db_cursor
-            tickers = results["ticker"].tolist()
-            with db_cursor(commit=False) as cur:
-                cur.execute(
-                    "SELECT ticker, exchange FROM watchlist WHERE ticker = ANY(%s)",
-                    (tickers,),
-                )
-                exch_map = {r["ticker"]: r["exchange"] for r in cur.fetchall()}
+            from scanner.database import load_exchange_map
+            exch_map = load_exchange_map(results["ticker"].tolist())
             results = results.copy()
             results["exchange"] = results["ticker"].map(exch_map).fillna("")
         except Exception:
