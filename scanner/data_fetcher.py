@@ -202,7 +202,7 @@ def _snap_to_tick(price: float) -> float:
     Số thứ 2 sau thập phân luôn là 0 hoặc 5 — khớp với định dạng TradingView.
     Ví dụ: 10.16 → 10.15 | 10.51 → 10.50 | 10.53 → 10.55
     """
-    if price <= 0:
+    if not price or price != price or price <= 0:  # falsy / NaN / non-positive
         return price
     return round(round(price / 0.05) * 0.05, 2)
 
