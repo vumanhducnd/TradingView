@@ -1235,6 +1235,22 @@
       </div>
 
     </div>
+
+    <!-- Trust badges -->
+    <div class="fade-in" style="display:flex;flex-wrap:wrap;justify-content:center;gap:20px;margin-top:28px;">
+      <div style="display:flex;align-items:center;gap:8px;font-size:.82rem;color:var(--muted);">
+        <span style="font-size:1.1rem;">✅</span> Không phát sinh chi phí mua data
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;font-size:.82rem;color:var(--muted);">
+        <span style="font-size:1.1rem;">✅</span> Không cần API key hay tài khoản trả phí nào khác
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;font-size:.82rem;color:var(--muted);">
+        <span style="font-size:1.1rem;">✅</span> Chỉ trả đúng 1 lần — dùng suốt thời hạn gói
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;font-size:.82rem;color:var(--muted);">
+        <span style="font-size:1.1rem;">✅</span> Không ràng buộc hợp đồng, huỷ bất cứ lúc nào
+      </div>
+    </div>
   </div>
 </section>
 
@@ -1296,7 +1312,7 @@
           Tôi cần cài đặt gì không?
           <span class="faq-icon">+</span>
         </button>
-        <div class="faq-a"><p>Không cần cài đặt gì cả. Bạn chỉ cần có Telegram là dùng được. Hệ thống chạy hoàn toàn trên server — bạn chỉ nhận alert.</p></div>
+        <div class="faq-a"><p>Với <b>Bot Tín hiệu</b>: không cần cài đặt gì — chỉ cần có Telegram (app máy tính, điện thoại hoặc web), kết nối internet là nhận được alert. Với <b>Chỉ báo TradingView</b>: sau khi thanh toán, chúng tôi sẽ hỗ trợ cài đặt chỉ báo lên chart TradingView cho bạn trong vòng 5 phút — bạn không cần tự làm gì cả.</p></div>
       </div>
       <div class="faq-item fade-in">
         <button class="faq-q">
@@ -1318,6 +1334,13 @@
           <span class="faq-icon">+</span>
         </button>
         <div class="faq-a"><p>Liên hệ qua Telegram hoặc Zalo. Sau khi xác nhận thanh toán qua chuyển khoản ngân hàng, bạn sẽ được thêm vào group trong vòng 15 phút.</p></div>
+      </div>
+      <div class="faq-item fade-in">
+        <button class="faq-q">
+          Có phát sinh chi phí nào khác không?
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-a"><p>Hoàn toàn không. Bạn chỉ trả đúng một lần theo gói đã chọn — không có phí mua data, không cần API key trả phí, không tài khoản môi giới đặc biệt, không ẩn phí nào khác. Mọi chi phí vận hành server và dữ liệu đều do chúng tôi chi trả.</p></div>
       </div>
     </div>
   </div>
@@ -1507,10 +1530,10 @@
   (function () {
     const SIGS = [
       { type:'buy',  ticker:'VCB', price:'88.50', pnl:'+7.93%', days:'37', liq:'2,450 tỷ 💎', ts:'14:32' },
-      { type:'buy',  ticker:'HPG', price:'26.80', pnl:'+4.52%', days:'21', liq:'890 tỷ 🔥',   ts:'14:15' },
-      { type:'sell', ticker:'DXG', price:'14.45', pnl:'-4.30%', days:'42', liq:'314 tỷ 🔥',   ts:'13:58' },
-      { type:'buy',  ticker:'VHM', price:'42.30', pnl:'+2.81%', days:'15', liq:'1,120 tỷ 💎', ts:'13:40' },
-      { type:'sell', ticker:'NVL', price:'11.20', pnl:'-6.10%', days:'28', liq:'520 tỷ 🔥',   ts:'13:22' },
+      { type:'sell', ticker:'DXG', price:'14.45', pnl:'-4.30%', days:'42', liq:'314 tỷ 🔥',   ts:'14:15' },
+      { type:'buy',  ticker:'HPG', price:'26.80', pnl:'+4.52%', days:'21', liq:'890 tỷ 🔥',   ts:'13:58' },
+      { type:'sell', ticker:'NVL', price:'11.20', pnl:'-6.10%', days:'28', liq:'520 tỷ 🔥',   ts:'13:40' },
+      { type:'buy',  ticker:'VHM', price:'42.30', pnl:'+2.81%', days:'15', liq:'1,120 tỷ 💎', ts:'13:22' },
     ];
 
     const stream      = document.getElementById('notifStream');
