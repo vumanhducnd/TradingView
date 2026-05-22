@@ -710,17 +710,7 @@
       100% { opacity: 0; transform: scale(.4) rotate(35deg) translate(var(--tx,0), calc(var(--ty,0) - 10px)); }
     }
 
-    /* ─── Demo cursor ─── */
-    #demoCursor {
-      position: fixed; pointer-events: none; z-index: 9999;
-      opacity: 0; top: 0; left: 0;
-      transition: left .95s cubic-bezier(.25,.46,.45,.94),
-                  top  .95s cubic-bezier(.25,.46,.45,.94),
-                  opacity .4s ease;
-      filter: drop-shadow(0 2px 6px rgba(0,0,0,.5));
-    }
-    #demoCursor.clicking { animation: dc-press .22s ease; }
-    @keyframes dc-press { 50% { transform: scale(.78); } }
+    /* ─── Demo ripple ─── */
     @keyframes dc-ripple {
       0%   { transform: translate(-50%,-50%) scale(.2); opacity: .7; }
       100% { transform: translate(-50%,-50%) scale(3.2); opacity: 0;  }
@@ -771,8 +761,6 @@
       .price-card.popular { transform: none; }
       .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 24px; }
 
-      /* Cursor ẩn trên tablet/mobile */
-      #demoCursor { display: none; }
     }
 
     /* Mobile: ≤600px */
@@ -2001,28 +1989,11 @@
     });
   }
 </script>
-<!-- Demo cursor -->
-<div id="demoCursor">
-  <svg width="24" height="30" viewBox="0 0 24 30" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path d="M1 1L1 22L6.5 16.5L10 25L13.5 23.5L10 15H17L1 1Z"
-      fill="white" stroke="#1a1a2e" stroke-width="1.5" stroke-linejoin="round"/>
-  </svg>
-</div>
 
 <script>
-// ─── Auto demo ────────────────────────────────────────────────────────────
+// ─── Auto demo (pulse effect cho mọi thiết bị) ───────────────────────────
 (function () {
-  const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-  const cursor  = document.getElementById('demoCursor');
-
   const sleep = ms => new Promise(r => setTimeout(r, ms));
-
-  function setPos(x, y, ms) {
-    cursor.style.transitionDuration = ms + 'ms,' + ms + 'ms,.4s';
-    cursor.style.left = x + 'px';
-    cursor.style.top  = y + 'px';
-    return sleep(ms);
-  }
 
   function rippleAt(x, y) {
     const el = document.createElement('div');
@@ -2033,20 +2004,6 @@
     setTimeout(() => el.remove(), 600);
   }
 
-  async function clickEl(el) {
-    const r  = el.getBoundingClientRect();
-    const cx = r.left + r.width  * .4;
-    const cy = r.top  + r.height * .5;
-    await setPos(cx, cy, 850);
-    await sleep(220);
-    cursor.classList.add('clicking');
-    rippleAt(cx, cy);
-    await sleep(240);
-    cursor.classList.remove('clicking');
-    el.click();
-  }
-
-  // Tìm card HPG hoặc card buy gần nhất
   function findTarget() {
     const all = document.querySelectorAll('#notifStream .notif-card.visible');
     return Array.from(all).find(c => c.dataset.ticker === 'HPG')
@@ -2054,39 +2011,7 @@
         || all[all.length - 1];
   }
 
-  // ── Desktop: cursor animation ──
-  async function runCursorDemo() {
-    if (!cursor) return;
-    let attempts = 0;
-    while (attempts++ < 30 && document.querySelectorAll('#notifStream .notif-card.visible').length < 2)
-      await sleep(300);
-
-    const panel = document.getElementById('notifPanel');
-    if (!panel) return;
-    const pr = panel.getBoundingClientRect();
-    cursor.style.transitionDuration = '0ms,0ms,.4s';
-    cursor.style.left = (pr.right - 80) + 'px';
-    cursor.style.top  = (pr.top + 30) + 'px';
-    cursor.style.opacity = '1';
-    await sleep(600);
-
-    const target = findTarget();
-    if (!target) return;
-    await clickEl(target);
-    await sleep(5000);
-
-    const btnBack = document.getElementById('btnBack');
-    if (btnBack && !document.getElementById('chartPanel').classList.contains('hidden')) {
-      await sleep(400);
-      await clickEl(btnBack);
-    }
-    await sleep(600);
-    cursor.style.opacity = '0';
-    setTimeout(runCursorDemo, 7000);
-  }
-
-  // ── Mobile/Touch: pulse tap animation rồi tự mở chart ──
-  async function runTouchDemo() {
+  async function runDemo() {
     let attempts = 0;
     while (attempts++ < 40 && document.querySelectorAll('#notifStream .notif-card.visible').length < 2)
       await sleep(300);
@@ -2094,35 +2019,35 @@
     const target = findTarget();
     if (!target) return;
 
-    // Hiệu ứng pulse trên card
-    target.style.transition = 'box-shadow .3s';
-    target.style.boxShadow  = '0 0 0 3px rgba(245,197,66,.6)';
-    await sleep(350);
-    target.style.boxShadow = '0 0 0 6px rgba(245,197,66,.0)';
+    // Viền vàng nổi lên
+    target.style.transition = 'box-shadow .25s';
+    target.style.boxShadow  = '0 0 0 3px rgba(245,197,66,.7), 0 0 20px rgba(245,197,66,.3)';
+    await sleep(400);
+    target.style.boxShadow  = '0 0 0 6px rgba(245,197,66,0)';
 
-    // Ripple tại tâm card
+    // Ripple + mở chart
     const r = target.getBoundingClientRect();
-    rippleAt(r.left + r.width * .4, r.top + r.height * .5);
-    await sleep(300);
+    rippleAt(r.left + r.width * .45, r.top + r.height * .5);
+    await sleep(250);
     target.style.boxShadow = '';
     target.style.transition = '';
-
     target.click();
+
     await sleep(5500);
 
-    const btnBack = document.getElementById('btnBack');
+    // Quay về stream
+    const btnBack    = document.getElementById('btnBack');
     const chartPanel = document.getElementById('chartPanel');
     if (btnBack && chartPanel && !chartPanel.classList.contains('hidden')) {
       const br = btnBack.getBoundingClientRect();
       rippleAt(br.left + br.width / 2, br.top + br.height / 2);
-      await sleep(300);
+      await sleep(250);
       btnBack.click();
     }
-    setTimeout(runTouchDemo, 7000);
+    setTimeout(runDemo, 7000);
   }
 
-  // Khởi chạy demo phù hợp thiết bị
-  setTimeout(isTouch ? runTouchDemo : runCursorDemo, 4800);
+  setTimeout(runDemo, 4800);
 })();
 </script>
 </body>
