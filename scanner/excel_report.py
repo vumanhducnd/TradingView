@@ -20,6 +20,21 @@ HEADER_FILL = PatternFill("solid", fgColor="4472C4")
 HEADER_FONT = Font(bold=True, color="FFFFFF")
 BOLD = Font(bold=True)
 
+_TV_EXCH = {"HOSE": "HSX", "HNX": "HNX", "UPCOM": "UPCOM"}
+
+
+def _tv_url(ticker: str, exchange: str = "") -> str:
+    tv_exch = _TV_EXCH.get((exchange or "").upper(), "UPCOM")
+    return f"https://www.tradingview.com/chart/?symbol={tv_exch}:{ticker}"
+
+
+def _set_ticker_link(ws, row: int, col: int, ticker: str, exchange: str = "") -> None:
+    if not ticker:
+        return
+    cell = ws.cell(row=row, column=col)
+    cell.hyperlink = _tv_url(ticker, exchange)
+    cell.font = Font(color="0563C1", underline="single")
+
 
 def build_excel_report(
     results: pd.DataFrame,
@@ -168,6 +183,7 @@ def _sheet_all(wb: Workbook, df: pd.DataFrame) -> None:
             "BiasNorm", "Nhận xét", "bScore", "rScore",
         ] + crit_labels
     _write_header(ws, headers)
+    exch_map = df.set_index("ticker")["exchange"].to_dict() if "exchange" in df.columns else {}
 
     for i, (_, row) in enumerate(df.iterrows(), start=2):
         trend_str = "↑ TĂNG" if row.get("trend", 0) == 1 else "↓ GIẢM"
@@ -241,6 +257,9 @@ def _sheet_all(wb: Workbook, df: pd.DataFrame) -> None:
             for j in range(1, len(headers) + 1):
                 ws.cell(row=i, column=j).fill = fill
 
+        ticker = row.get("ticker", "")
+        _set_ticker_link(ws, i, 2, ticker, exch_map.get(ticker, ""))
+
     _auto_width(ws)
     ws.freeze_panes = "B2"
     ws.auto_filter.ref = ws.dimensions
@@ -263,6 +282,7 @@ def _sheet_super_stocks(wb: Workbook, df: pd.DataFrame, scan_date: str) -> None:
 
     headers = ["STT", "Mã", "Giá", "Score", "Thanh khoản TB 20p (tỷ)"] + _SS_LABELS
     _write_header(ws, headers)
+    exch_map = df.set_index("ticker")["exchange"].to_dict() if "exchange" in df.columns else {}
 
     try:
         from scanner.database import load_avg_turnover
@@ -308,6 +328,8 @@ def _sheet_super_stocks(wb: Workbook, df: pd.DataFrame, scan_date: str) -> None:
 
         for j, c in enumerate(_SS_COLS, start=6):  # cột 1=STT, shift +1
             ws.cell(row=i, column=j).fill = GREEN_FILL if row.get(c) else RED_FILL
+
+        _set_ticker_link(ws, i, 2, row.get("ticker", ""), exch_map.get(row.get("ticker", ""), ""))
 
     note_row = len(rows_data) + 3
     ws.cell(row=note_row, column=1, value="Tiêu chí: score>=5/7 và Thanh khoản TB 20 phiên >=50 tỷ VND").font = BOLD
@@ -395,6 +417,8 @@ def _sheet_signals(
     ]
     combos = [c for c in all_combos if style_filter is None or c[4] == style_filter]
 
+    exch_map = results.set_index("ticker")["exchange"].to_dict() if results is not None and "exchange" in results.columns else {}
+
     collected: list[tuple] = []
     seen: set[str] = set()
 
@@ -447,6 +471,7 @@ def _sheet_signals(
         ]
         for j, v in enumerate(vals, start=1):
             ws.cell(row=row_idx, column=j, value=v).fill = fill
+        _set_ticker_link(ws, row_idx, 2, ticker, exch_map.get(ticker, ""))
         row_idx += 1
 
     for r in range(2, row_idx):
@@ -541,6 +566,7 @@ def _sheet_signals(
                         ]
                         for j, v in enumerate(vals, start=1):
                             ws.cell(row=rut_row, column=j, value=v).fill = fill
+                        _set_ticker_link(ws, rut_row, 2, rec["ticker"], exch_map.get(rec["ticker"], ""))
                         rut_row += 1
 
                     ws.cell(
@@ -624,6 +650,7 @@ def _sheet_nam_giu(wb: Workbook, results: pd.DataFrame, style: str = "long") -> 
     ws = wb.create_sheet("Vùng xanh (Nắm giữ)")
     headers = ["STT", "Mã", "Ngày Mua", "Giữ lệnh (ngày)", "Giá Mua", "Giá Hiện Tại", "Lời/Lỗ %", "Thanh khoản (tỷ)"]
     _write_header(ws, headers)
+    exch_map = results.set_index("ticker")["exchange"].to_dict() if "exchange" in results.columns else {}
 
     p         = f"{style}_"
     trend_col = f"{p}trend" if f"{p}trend" in results.columns else "trend"
@@ -655,6 +682,7 @@ def _sheet_nam_giu(wb: Workbook, results: pd.DataFrame, style: str = "long") -> 
         fill = GREEN_FILL if (pnl is None or pnl >= 0) else YELLOW_FILL
         for j in range(1, len(headers) + 1):
             ws.cell(row=i, column=j).fill = fill
+        _set_ticker_link(ws, i, 2, ticker, exch_map.get(ticker, ""))
 
     _auto_width(ws)
     ws.freeze_panes = "B2"
@@ -670,6 +698,7 @@ def _sheet_dung_ngoai(wb: Workbook, results: pd.DataFrame, style: str = "long") 
     ws = wb.create_sheet("Vùng đỏ (Đứng ngoài)")
     headers = ["STT", "Mã", "Ngày Bán", "Đứng ngoài (ngày)", "Giá Bán", "Giá Hiện Tại", "Tránh lỗ", "Thanh khoản (tỷ)"]
     _write_header(ws, headers)
+    exch_map = results.set_index("ticker")["exchange"].to_dict() if "exchange" in results.columns else {}
 
     p         = f"{style}_"
     trend_col = f"{p}trend" if f"{p}trend" in results.columns else "trend"
@@ -707,6 +736,8 @@ def _sheet_dung_ngoai(wb: Workbook, results: pd.DataFrame, style: str = "long") 
         if pnl is not None:
             ws.cell(row=i, column=pnl_col_idx).fill = _LIGHT_GREEN if pnl <= 0 else _LIGHT_RED
 
+        _set_ticker_link(ws, i, 2, ticker, exch_map.get(ticker, ""))
+
     _auto_width(ws)
     ws.freeze_panes = "B2"
     ws.auto_filter.ref = ws.dimensions
@@ -736,6 +767,8 @@ def _sheet_stats(wb: Workbook, df: pd.DataFrame, scan_date: str, style: str | No
         both_count = 0
     avg_bias = round(df["bias_norm"].mean(), 1) if "bias_norm" in df.columns else 0
 
+    exch_map = df.set_index("ticker")["exchange"].to_dict() if "exchange" in df.columns else {}
+
     write_kv(1, "Ngày quét", scan_date)
     write_kv(2, "Tổng mã quét", len(df))
     write_kv(3, "Tín hiệu MUA", buy_count)
@@ -756,6 +789,7 @@ def _sheet_stats(wb: Workbook, df: pd.DataFrame, scan_date: str, style: str | No
     for r, (_, tr) in enumerate(top5.iterrows(), start=15):
         ws.cell(row=r, column=1, value=tr["ticker"])
         ws.cell(row=r, column=2, value=round(tr["bias_norm"], 1))
+        _set_ticker_link(ws, r, 1, tr["ticker"], exch_map.get(tr["ticker"], ""))
 
     ws.cell(row=21, column=1, value="Top 10 Mạnh + Thanh khoản cao").font = BOLD
     top10_headers = ["STT", "Mã", "BiasNorm", "Thanh khoản (tỷ)", "Xu hướng DH", "Xu hướng NH"]
@@ -784,6 +818,7 @@ def _sheet_stats(wb: Workbook, df: pd.DataFrame, scan_date: str, style: str | No
             fill = GREEN_FILL if tr.get("long_trend", 0) == 1 else RED_FILL
             for j in range(1, 7):
                 ws.cell(row=r, column=j).fill = fill
+            _set_ticker_link(ws, r, 2, tr["ticker"], exch_map.get(tr["ticker"], ""))
 
     # ── Thống kê thị trường (tổng tài khoản NĐT) ─────────────────────────────
     MARKET_HDR_FILL = PatternFill("solid", fgColor="2E75B6")
@@ -836,6 +871,7 @@ def _sheet_history(wb: Workbook, results: pd.DataFrame, style: str = "long", ove
     tickers   = results["ticker"].tolist() if "ticker" in results.columns else []
     tk_map    = results.set_index("ticker")["turnover"].to_dict() if "turnover" in results.columns else {}
     close_map = results.set_index("ticker")["close"].to_dict()   if "close"    in results.columns else {}
+    exch_map  = results.set_index("ticker")["exchange"].to_dict() if "exchange" in results.columns else {}
 
     trade_df = pd.DataFrame()
     try:
@@ -899,6 +935,8 @@ def _sheet_history(wb: Workbook, results: pd.DataFrame, style: str = "long", ove
             for j in range(1, len(headers) + 1):
                 ws.cell(row=i, column=j).fill = CLOSED_FILL
             ws.cell(row=i, column=7).fill = GREEN_FILL if (pnl is not None and pnl >= 0) else RED_FILL
+
+        _set_ticker_link(ws, i, 2, ticker, exch_map.get(ticker, ""))
 
     _auto_width(ws)
     ws.freeze_panes = "B2"
