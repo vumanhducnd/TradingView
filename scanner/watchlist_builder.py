@@ -64,13 +64,10 @@ def build_watchlist(
 
 def _get_all_tickers() -> list[tuple[str, str]]:
     """
-    Lấy toàn bộ mã VN. HOSE/HNX/UPCOM gán đúng sàn, còn lại UNKNOWN.
+    Lấy toàn bộ mã từ HOSE/HNX/UPCOM, gán đúng sàn.
     Returns list of (ticker, exchange).
     """
-    import re
-    stock_pattern = re.compile(r'^[A-Z]{2,4}$')
-
-    # Bước 1: Exchange map từ 3 sàn chính
+    # Exchange map từ 3 sàn chính
     exchange_map: dict[str, str] = {}
     for exchange in ["HOSE", "HNX", "UPCOM"]:
         batch = _fetch_exchange_tickers_with_info(exchange)
@@ -78,36 +75,9 @@ def _get_all_tickers() -> list[tuple[str, str]]:
             exchange_map[t] = exchange
         logger.info(f"  {exchange}: {len(batch)} mã")
 
-    # Bước 2: Full list từ all_symbols
-    all_tickers: list[str] = []
-    try:
-        from vnstock.api.listing import Listing
-        df = Listing(source="KBS").all_symbols()
-        if df is not None and not df.empty:
-            col = _find_ticker_col(df)
-            raw = df[col].str.upper().str.strip().tolist()
-            all_tickers = [t for t in raw if stock_pattern.match(t)]
-    except Exception as e:
-        logger.debug(f"all_symbols failed: {e}")
-
-    # Fallback nếu all_symbols trống
-    if not all_tickers:
-        all_tickers = list(exchange_map.keys())
-
-    # Bước 3: Gán exchange, UNKNOWN nếu không map được
-    seen: set[str] = set()
-    result: list[tuple[str, str]] = []
-    unknown = 0
-    for t in all_tickers:
-        if t in seen:
-            continue
-        seen.add(t)
-        exch = exchange_map.get(t, "UNKNOWN")
-        if exch == "UNKNOWN":
-            unknown += 1
-        result.append((t, exch))
-
-    logger.info(f"Tổng: {len(result)} mã | {len(result)-unknown} có sàn | {unknown} UNKNOWN")
+    # Chỉ dùng mã đã xác định được sàn — bỏ all_symbols() để tránh UNKNOWN
+    result = list(exchange_map.items())
+    logger.info(f"Tổng: {len(result)} mã có sàn (HOSE+HNX+UPCOM)")
     return result
 
 
