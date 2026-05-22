@@ -710,6 +710,43 @@
       100% { opacity: 0; transform: scale(.4) rotate(35deg) translate(var(--tx,0), calc(var(--ty,0) - 10px)); }
     }
 
+    /* ─── Floating CTA ─── */
+    .float-cta {
+      position: fixed; right: 16px; top: 50%; transform: translateY(-50%);
+      z-index: 90;
+      display: flex; flex-direction: column; align-items: center; gap: 8px;
+    }
+    .float-btn {
+      background: linear-gradient(135deg, var(--gold2), var(--gold));
+      color: #0b0f1a; font-weight: 800; font-size: .82rem;
+      border: none; cursor: pointer; font-family: inherit;
+      box-shadow: 0 4px 20px rgba(245,197,66,.4);
+      transition: transform .2s, box-shadow .2s;
+      text-decoration: none; display: flex; align-items: center; justify-content: center;
+      /* Desktop: pill dọc */
+      writing-mode: vertical-rl; text-orientation: mixed;
+      padding: 18px 10px; border-radius: 100px;
+      letter-spacing: 1px;
+    }
+    .float-btn:hover { transform: translateY(-3px) scale(1.05); box-shadow: 0 8px 28px rgba(245,197,66,.5); }
+    .float-pulse {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--green); animation: fpulse 1.8s ease-in-out infinite;
+    }
+    @keyframes fpulse { 0%,100%{transform:scale(1);opacity:1} 50%{transform:scale(1.6);opacity:.5} }
+
+    /* Mobile: bubble góc phải dưới */
+    @media (max-width: 600px) {
+      .float-cta { top: auto; bottom: 24px; right: 16px; transform: none; flex-direction: row; }
+      .float-btn {
+        writing-mode: horizontal-tb;
+        width: 58px; height: 58px; padding: 0;
+        border-radius: 50%; font-size: .65rem; letter-spacing: 0;
+        text-align: center; line-height: 1.2;
+      }
+      .float-pulse { display: none; }
+    }
+
     /* ─── Demo ripple ─── */
     @keyframes dc-ripple {
       0%   { transform: translate(-50%,-50%) scale(.2); opacity: .7; }
@@ -811,15 +848,22 @@
 <body>
 
 <!-- ─── Navbar ─── -->
+<!-- Floating CTA -->
+<div class="float-cta">
+  <div class="float-pulse"></div>
+  <a href="#contact" class="float-btn">Dùng thử ngay</a>
+</div>
+
 <nav id="navbar">
   <div class="nav-inner">
-    <div class="logo">MD Alpha3</div>
+    <a href="#" class="logo" style="-webkit-text-fill-color:transparent;">MD Alpha3</a>
     <ul class="nav-links">
       <li><a href="#features">Bot Tín hiệu</a></li>
       <li><a href="#indicator">Chỉ báo TV</a></li>
       <li><a href="#how">Cách hoạt động</a></li>
       <li><a href="#pricing">Bảng giá</a></li>
       <li><a href="#faq">FAQ</a></li>
+      <li><a href="#contact" style="color:var(--gold);font-weight:700;">Dùng ngay →</a></li>
     </ul>
     <a href="#contact" class="btn-nav">Đăng ký ngay</a>
     <button class="nav-toggle" id="toggle" aria-label="Menu">
