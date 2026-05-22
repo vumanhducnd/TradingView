@@ -20,12 +20,14 @@ HEADER_FILL = PatternFill("solid", fgColor="4472C4")
 HEADER_FONT = Font(bold=True, color="FFFFFF")
 BOLD = Font(bold=True)
 
-_TV_EXCH = {"HOSE": "HSX", "HNX": "HNX", "UPCOM": "UPCOM"}
+# DB lưu: "HOSE" / "HNX" / "UPCOM" — TradingView dùng prefix: HSX / HNX / UPCOM
+_TV_EXCH = {"HOSE": "HSX", "HSX": "HSX", "HNX": "HNX", "UPCOM": "UPCOM"}
 
 
 def _tv_url(ticker: str, exchange: str = "") -> str:
-    tv_exch = _TV_EXCH.get((exchange or "").upper(), "UPCOM")
-    return f"https://www.tradingview.com/chart/?symbol={tv_exch}:{ticker}"
+    tv_exch = _TV_EXCH.get((exchange or "").upper())
+    symbol = f"{tv_exch}:{ticker}" if tv_exch else ticker
+    return f"https://www.tradingview.com/chart/?symbol={symbol}"
 
 
 def _set_ticker_link(ws, row: int, col: int, ticker: str, exchange: str = "") -> None:
@@ -766,7 +768,6 @@ def _sheet_stats(wb: Workbook, df: pd.DataFrame, scan_date: str, style: str | No
         sell_count = int(df["sell_signal"].sum()) if "sell_signal" in df.columns else 0
         both_count = 0
     avg_bias = round(df["bias_norm"].mean(), 1) if "bias_norm" in df.columns else 0
-
     exch_map = df.set_index("ticker")["exchange"].to_dict() if "exchange" in df.columns else {}
 
     write_kv(1, "Ngày quét", scan_date)
@@ -872,6 +873,7 @@ def _sheet_history(wb: Workbook, results: pd.DataFrame, style: str = "long", ove
     tk_map    = results.set_index("ticker")["turnover"].to_dict() if "turnover" in results.columns else {}
     close_map = results.set_index("ticker")["close"].to_dict()   if "close"    in results.columns else {}
     exch_map  = results.set_index("ticker")["exchange"].to_dict() if "exchange" in results.columns else {}
+
 
     trade_df = pd.DataFrame()
     try:
