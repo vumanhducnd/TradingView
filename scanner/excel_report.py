@@ -20,14 +20,9 @@ HEADER_FILL = PatternFill("solid", fgColor="4472C4")
 HEADER_FONT = Font(bold=True, color="FFFFFF")
 BOLD = Font(bold=True)
 
-# DB lưu: "HOSE" / "HNX" / "UPCOM" — TradingView dùng prefix: HSX / HNX / UPCOM
-_TV_EXCH = {"HOSE": "HSX", "HSX": "HSX", "HNX": "HNX", "UPCOM": "UPCOM"}
-
-
 def _tv_url(ticker: str, exchange: str = "") -> str:
-    tv_exch = _TV_EXCH.get((exchange or "").upper())
-    symbol = f"{tv_exch}:{ticker}" if tv_exch else ticker
-    return f"https://www.tradingview.com/chart/?symbol={symbol}"
+    exch = (exchange or "HOSE").upper()
+    return f"https://www.tradingview.com/chart/?symbol={exch}:{ticker}"
 
 
 def _set_ticker_link(ws, row: int, col: int, ticker: str, exchange: str = "") -> None:
