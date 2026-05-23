@@ -84,13 +84,13 @@ def _build_prompt(
         Mỗi phần BẮT ĐẦU BẰNG ĐÚNG tiêu đề sau trên 1 dòng riêng (viết hoa, không thêm ký tự khác),
         rồi xuống dòng trống, rồi viết nội dung. Giữa các phần xuống 2 dòng trống.
 
-        🌐 TỔNG QUAN VĨ MÔ TUẦN QUA
+        ── TỔNG QUAN VĨ MÔ TUẦN QUA
         (5-6 câu) Phân tích diễn biến VNINDEX trong tuần, các yếu tố vĩ mô quốc tế (Fed, USD, hàng hóa, địa chính trị) và trong nước (chính sách, tín dụng, đầu tư công) tác động như thế nào. Nêu rõ nhóm ngành nào dẫn dắt, nhóm nào bị bán ra và lý do cụ thể.
 
-        ⚡ ĐIỂM NHẤN & RỦI RO
+        ── ĐIỂM NHẤN & RỦI RO
         (4-5 câu) Chọn 2-3 sự kiện hoặc diễn biến quan trọng nhất tuần qua (dựa vào tin tức đã cung cấp), phân tích tác động thực tế và tiềm năng đến TTCK Việt Nam. Nêu rõ rủi ro nào đang âm ỉ cần theo dõi.
 
-        📌 CHIẾN LƯỢC TUẦN TỚI
+        ── CHIẾN LƯỢC TUẦN TỚI
         (5-6 câu) Nhận định xu hướng ngắn hạn của VNINDEX (tích lũy/phục hồi/phân phối); nên giữ nguyên, tăng hay giảm tỷ trọng; nhóm ngành/cổ phiếu nên quan tâm và lý do; các sự kiện lịch kinh tế tuần tới cần theo dõi; ngưỡng hỗ trợ/kháng cự quan trọng của VNINDEX.
     """).strip()
 
@@ -135,17 +135,16 @@ def run(force: bool = False) -> None:
     prompt  = _build_prompt(week_str, vnindex_line, news)
     ai_text = _call_ai(prompt)
 
-    # Wrap tiêu đề section trong <b> cho Telegram
     formatted_ai = ai_text
-    for header in ("🌐 TỔNG QUAN VĨ MÔ TUẦN QUA", "⚡ ĐIỂM NHẤN & RỦI RO", "📌 CHIẾN LƯỢC TUẦN TỚI"):
+    for header in ("── TỔNG QUAN VĨ MÔ TUẦN QUA", "── ĐIỂM NHẤN & RỦI RO", "── CHIẾN LƯỢC TUẦN TỚI"):
         formatted_ai = formatted_ai.replace(header, f"<b>{header}</b>")
 
     lines = [
-        f"<b>📊 Phân tích vĩ mô tuần — {week_str}</b>",
+        f"<b>BÁO CÁO TUẦN — {week_str}</b>",
         "",
     ]
     if vnindex_line:
-        lines.append(f"📈 {vnindex_line}")
+        lines.append(f"▪ {vnindex_line}")
         lines.append("")
 
     lines += [
@@ -154,7 +153,7 @@ def run(force: bool = False) -> None:
     ]
 
     if news:
-        lines.append("<b>📋 Tin hot tuần qua:</b>")
+        lines.append("<b>── Tin hot tuần qua</b>")
         for n in news[:5]:
             title = n["title"]
             link  = n.get("link", "")
