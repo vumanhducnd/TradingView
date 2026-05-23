@@ -1,4 +1,4 @@
-name: Weekly Report (Sun 8:00 GMT+7)
+name: Weekly Report (Sun 12:00 GMT+7)
 
 on:
   workflow_dispatch:
