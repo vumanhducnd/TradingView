@@ -1,8 +1,6 @@
 name: Weekly Report (Sun 8:00 GMT+7)
 
 on:
-  schedule:
-    - cron: '0 1 * * 0'  # 01:00 UTC = 08:00 ICT (UTC+7), Chủ nhật
   workflow_dispatch:
     inputs:
       force:
