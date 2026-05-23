@@ -1,0 +1,52 @@
+name: Weekly Report (Sun 8:00 GMT+7)
+
+on:
+  schedule:
+    - cron: '0 1 * * 0'  # 01:00 UTC = 08:00 ICT (UTC+7), Chủ nhật
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Bỏ qua kiểm tra ngày Chủ nhật (để test)'
+        required: false
+        default: 'true'
+        type: choice
+        options: ['true', 'false']
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  weekly-report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run weekly report
+        env:
+          TELEGRAM_BOT_TOKEN_LONG:  ${{ secrets.TELEGRAM_BOT_TOKEN_LONG }}
+          TELEGRAM_CHAT_ID_LONG:    ${{ secrets.TELEGRAM_CHAT_ID_LONG }}
+          TELEGRAM_BOT_TOKEN_SHORT: ${{ secrets.TELEGRAM_BOT_TOKEN_SHORT }}
+          TELEGRAM_CHAT_ID_SHORT:   ${{ secrets.TELEGRAM_CHAT_ID_SHORT }}
+          DATABASE_URL:             ${{ secrets.DATABASE_URL }}
+          VNSTOCK_API_KEY:          ${{ secrets.VNSTOCK_API_KEY }}
+          GROQ_API_KEY:             ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY:           ${{ secrets.GEMINI_API_KEY }}
+          OPENAI_API_KEY:           ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.force }}" = "true" ]; then
+            python -m scanner.weekly_report --force
+          else
+            python -m scanner.weekly_report
+          fi

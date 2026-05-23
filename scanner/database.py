@@ -678,10 +678,10 @@ def save_signals(df: pd.DataFrame, scan_date: date | None = None) -> None:
                     total += 1
 
     logger.info(f"signals: {total} bản ghi cho {scan_date} (dual={is_dual})")
-    _purge_old_signals(keep_days=3)
+    _purge_old_signals(keep_days=10)
 
 
-def _purge_old_signals(keep_days: int = 3) -> None:
+def _purge_old_signals(keep_days: int = 10) -> None:
     """Xóa signals cũ hơn keep_days ngày, chỉ giữ lại dữ liệu gần nhất."""
     try:
         with db_cursor() as cur:
