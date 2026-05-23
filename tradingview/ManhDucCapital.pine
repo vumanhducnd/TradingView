@@ -15,7 +15,7 @@ indicator("ManhDucCapital-0973124824", overlay=true, format=format.price, precis
 showTable    = input.bool(true,   "Hiển thị bảng tín hiệu?",         group="Cài đặt chung")
 tableSize    = input.string("normal", "Cỡ chữ bảng",                 group="Cài đặt chung", options=["tiny","small","normal","large","huge"])
 themeMode    = input.string("Light",  "Giao diện (Theme)",            group="Cài đặt chung", options=["Dark","Light"])
-showsignals  = input.bool(true,   "Hiển thị tín hiệu Mua/Bán?",      group="Cài đặt chung")
+showsignals  = input.bool(true,   "Hiển thị tín hiệu vào/hết trend?", group="Cài đặt chung")
 showSR       = input.bool(false,  "Hiển thị đường Hỗ trợ/Kháng cự?", group="Cài đặt chung")
 showVolLabel      = input.bool(true,   "Hiển thị Phân tích trực tiếp?",    group="Cài đặt chung")
 showSuperStock    = input.bool(false,   "Hiển thị nền & ký hiệu Siêu cổ phiếu?", group="Cài đặt chung")
@@ -42,9 +42,9 @@ Periods           = input.int(10,    "Chu kỳ ATR (chỉ dùng khi Tùy chỉnh
 src               = input.source(hl2,"Nguồn giá",                              group="Tín hiệu")
 Multiplier        = input.float(3.0, "Hệ số nhân ATR (chỉ dùng khi Tùy chỉnh)", step=0.1, group="Tín hiệu")
 changeATR         = input.bool(true, "Thay đổi phương pháp tính ATR?",         group="Tín hiệu")
-useStrengthFilter = input.bool(false,"Lọc sức mạnh khi đảo chiều?",   group="Tín hiệu")
-weakThr           = input.int(40,    "Ngưỡng YẾU (<=) cho Bán",       group="Tín hiệu", minval=0, maxval=100)
-strongThr         = input.int(60,    "Ngưỡng MẠNH (>=) cho Mua",      group="Tín hiệu", minval=0, maxval=100)
+useStrengthFilter = input.bool(false,"Lọc sức mạnh khi đảo chiều?",      group="Tín hiệu")
+weakThr           = input.int(40,    "Ngưỡng YẾU (<=) cho hết trend",   group="Tín hiệu", minval=0, maxval=100)
+strongThr         = input.int(60,    "Ngưỡng MẠNH (>=) cho vào trend",  group="Tín hiệu", minval=0, maxval=100)
 
 // =========================================================
 // BOLLINGER BAND OPTION
@@ -76,9 +76,9 @@ compoundMode   = input.bool(true,   "Tính lãi kép (vốn xoay vòng)?",     g
 maxHistoryRows = input.int(12,      "Số lệnh hiển thị",                  group="Test lịch sử", minval=5, maxval=20)
 tablePosition  = input.string("bottom_right", "Vị trí bảng lịch sử",     group="Test lịch sử",
      options=["bottom_left","bottom_center","bottom_right"])
-entryMode      = input.string("Lý tưởng nhất", "Kiểu điểm Mua/Bán",      group="Test lịch sử",
+entryMode      = input.string("Lý tưởng nhất", "Kiểu điểm vào/thoát trend", group="Test lịch sử",
      options=["Lý tưởng nhất","Lý tưởng","Thực tế"],
-     tooltip="Lý tưởng nhất: Mua đáy (Low), Bán đỉnh (High) cây nến tín hiệu\nLý tưởng: Mua/Bán trung bình đỉnh-đáy (HL2) cây nến tín hiệu\nThực tế: Mua đỉnh (High), Bán đáy (Low) cây nến tín hiệu")
+     tooltip="Lý tưởng nhất: Vào đáy (Low), Thoát đỉnh (High) cây nến tín hiệu\nLý tưởng: Vào/Thoát trung bình đỉnh-đáy (HL2) cây nến tín hiệu\nThực tế: Vào đỉnh (High), Thoát đáy (Low) cây nến tín hiệu")
 
 // =========================================================
 // XEM LẠI TÍN HIỆU THEO THỜI GIAN Vũ Mạnh Đức 0973124824
@@ -91,7 +91,7 @@ cursorTime     = input.time(timestamp("2025-06-01"), "Thời điểm muốn xem"
 // CÀI ĐẶT TP / SL Vũ Mạnh Đức 0973124824
 // =========================================================
 showTPSL  = input.bool(false,  "Hiển thị đường TP/SL?",          group="TP / SL",
-     tooltip="Vẽ đường ngang thể hiện điểm vào lệnh, cắt lỗ và các mục tiêu chốt lời\nChỉ hiển thị khi đang có lệnh MUA (trend tăng)\nTự động xóa khi xuất hiện tín hiệu Bán")
+     tooltip="Vẽ đường ngang thể hiện điểm vào trend, cắt lỗ và các mục tiêu chốt lời\nChỉ hiển thị khi đang trong trend tăng\nTự động xóa khi xuất hiện tín hiệu hết trend")
 slAtrMult = input.float(1.5,  "SL Buffer (×ATR)",               group="TP / SL", minval=0.3, maxval=5.0,  step=0.1,
      tooltip="SL đặt dưới Pivot Low một khoảng = slMult × ATR\nGiá trị lớn hơn = SL rộng hơn, ít bị quét hơn\nVí dụ: 1.5 × ATR dưới pivot low gần nhất")
 pivotLen  = input.int(10,     "Độ dài Pivot (bars)",             group="TP / SL", minval=3, maxval=50,
@@ -274,10 +274,10 @@ plotshape(buySignal  ? up : na, "Tín hiệu Mua", shape.triangleup,   location.
 plotshape(sellSignal ? dn : na, "Tín hiệu Bán", shape.triangledown, location.abovebar, color.red,   size=size.tiny)
 
 if buySignal and showsignals
-    label.new(bar_index, up, "Mua\n" + f_price(f_buyPrice(entryMode)),
+    label.new(bar_index, up, "Vào trend\n" + f_price(f_buyPrice(entryMode)),
          style=label.style_label_up, color=color.green, textcolor=color.white, size=size.normal)
 if sellSignal and showsignals
-    label.new(bar_index, dn, "Bán\n" + f_price(f_sellPrice(entryMode)),
+    label.new(bar_index, dn, "Hết trend\n" + f_price(f_sellPrice(entryMode)),
          style=label.style_label_down, color=color.red, textcolor=color.white, size=size.normal)
 
 // =========================================================
@@ -296,26 +296,26 @@ fill(bbUpperPlot, bbLowerPlot, title="BB Fill", color = trend == 1 ? color.new(c
 var float  signalPrice = na
 var int    signalBar   = 0
 var int    signalCount = 0
-var string signalType  = "MUA"
+var string signalType  = "VÀO TREND"
 var string signalDate  = ""
 
 if buySignal or sellSignal
     signalPrice := buySignal ? f_buyPrice(entryMode)  : f_sellPrice(entryMode)
     signalBar   := bar_index
     signalCount := 0
-    signalType  := buySignal ? "MUA" : "BÁN"
+    signalType  := buySignal ? "VÀO TREND" : "HẾT TREND"
     signalDate  := f_today()
 
 if not na(signalPrice)
     signalCount := bar_index - signalBar
 
-pnl = na(signalPrice) or signalPrice == 0 ? 0.0 : signalType == "MUA" ? (close - signalPrice) / signalPrice * 100 :(signalPrice - close) / signalPrice * 100
+pnl = na(signalPrice) or signalPrice == 0 ? 0.0 : signalType == "VÀO TREND" ? (close - signalPrice) / signalPrice * 100 :(signalPrice - close) / signalPrice * 100
 
 // =========================================================
 // THEO DÕI TÍN HIỆU TẠI CON TRỎ THỜI GIAN Vũ Mạnh Đức 0973124824
 // =========================================================
 var float  tc_entryPrice = na
-var string tc_type       = "MUA"
+var string tc_type       = "VÀO TREND"
 var string tc_date       = ""
 var int    tc_entryBar   = 0
 var int    tc_cursorBar  = na
@@ -326,7 +326,7 @@ if showTimeCursor
     if time <= cursorTime
         if buySignal or sellSignal
             tc_entryPrice := buySignal ? f_buyPrice(entryMode) : f_sellPrice(entryMode)
-            tc_type       := buySignal ? "MUA" : "BÁN"
+            tc_type       := buySignal ? "VÀO TREND" : "HẾT TREND"
             tc_date       := f_today()
             tc_entryBar   := bar_index
         if not na(tc_entryPrice)
@@ -473,7 +473,7 @@ var float saved_tp1 = na
 var float saved_tp2 = na
 var float saved_tp3 = na
 
-_tpslOn = showTPSL and signalType == "MUA" and not na(signalPrice) and trend == 1
+_tpslOn = showTPSL and signalType == "VÀO TREND" and not na(signalPrice) and trend == 1
 
 if sellSignal
     line.delete(lnEntry),  line.delete(lnSL),  line.delete(lnTP1),  line.delete(lnTP2),  line.delete(lnTP3)
@@ -700,10 +700,10 @@ if barstate.islast and showHistory and array.size(hist_buyDate) > 0
 
     // ── HEADER CỘT ───────────────────────────────────────────
     table.cell(htbl, 0, r, "#",           text_color=T_WHT, text_size=tSize_d, text_halign=text.align_center, bgcolor=T_HDR)
-    table.cell(htbl, 1, r, "NGÀY MUA",    text_color=T_WHT, text_size=tSize_d, text_halign=text.align_center, bgcolor=T_HDR)
-    table.cell(htbl, 2, r, "GIÁ MUA",     text_color=T_WHT, text_size=tSize_d, text_halign=text.align_center, bgcolor=T_HDR)
-    table.cell(htbl, 3, r, "NGÀY BÁN",    text_color=T_WHT, text_size=tSize_d, text_halign=text.align_center, bgcolor=T_HDR)
-    table.cell(htbl, 4, r, "GIÁ BÁN",     text_color=T_WHT, text_size=tSize_d, text_halign=text.align_center, bgcolor=T_HDR)
+    table.cell(htbl, 1, r, "NGÀY VÀO",    text_color=T_WHT, text_size=tSize_d, text_halign=text.align_center, bgcolor=T_HDR)
+    table.cell(htbl, 2, r, "GIÁ VÀO",     text_color=T_WHT, text_size=tSize_d, text_halign=text.align_center, bgcolor=T_HDR)
+    table.cell(htbl, 3, r, "NGÀY THOÁT",  text_color=T_WHT, text_size=tSize_d, text_halign=text.align_center, bgcolor=T_HDR)
+    table.cell(htbl, 4, r, "GIÁ THOÁT",   text_color=T_WHT, text_size=tSize_d, text_halign=text.align_center, bgcolor=T_HDR)
     table.cell(htbl, 5, r, "PHIÊN GIỮ",   text_color=T_WHT, text_size=tSize_d, text_halign=text.align_center, bgcolor=T_HDR)
     table.cell(htbl, 6, r, "TIỀN LÃI/LỖ", text_color=T_WHT, text_size=tSize_d, text_halign=text.align_center, bgcolor=T_HDR)
     table.cell(htbl, 7, r, "KẾT QUẢ %",   text_color=T_WHT, text_size=tSize_d, text_halign=text.align_center, bgcolor=T_HDR)
@@ -786,9 +786,9 @@ if showTable
     srClr  = trend == 1 ? T_GRN : T_RED
     pnlR   = math.round(pnl * 100) / 100
     pnlAbs = str.tostring(math.abs(pnlR)) + "%"
-    pnlTxt = signalType == "BÁN" ? (pnlR >= 0 ? "-" + pnlAbs : "+" + pnlAbs) : (pnlR >= 0 ? "+" + pnlAbs : "-" + pnlAbs)
-    pnlLbl = signalType == "MUA" ? (pnlR >= 0 ? "ĐANG LÃI" : "ĐANG LỖ") : "TRÁNH LỖ"
-    pnlClr = signalType == "BÁN" ? (pnlR >= 0 ? T_RED : T_GRN) : (pnlR >= 0 ? T_GRN : T_RED)
+    pnlTxt = signalType == "HẾT TREND" ? (pnlR >= 0 ? "-" + pnlAbs : "+" + pnlAbs) : (pnlR >= 0 ? "+" + pnlAbs : "-" + pnlAbs)
+    pnlLbl = signalType == "VÀO TREND" ? (pnlR >= 0 ? "ĐANG LÃI" : "ĐANG LỖ") : "TRÁNH LỖ"
+    pnlClr = signalType == "HẾT TREND" ? (pnlR >= 0 ? T_RED : T_GRN) : (pnlR >= 0 ? T_GRN : T_RED)
 
     _ssHdrBg = isSuperStock ? color.new(#B8860B, 0) : T_HDR
     _ssHdrTc = isSuperStock ? color.new(#FFFFFF, 0) : T_WHT
@@ -797,7 +797,7 @@ if showTable
     table.cell(stbl, 1, 0, "", bgcolor=_ssHdrBg)
     table.merge_cells(stbl, 0, 0, 1, 0)
 
-    table.cell(stbl, 0, 1, trend == 1 ? "▲ MUA VÀ NẮM GIỮ" : "▼ BÁN VÀ CHỜ ĐỢI",
+    table.cell(stbl, 0, 1, trend == 1 ? "▲ ĐANG TRONG TREND TĂNG" : "▼ NGOÀI TREND — CHỜ ĐỢI",
          text_color=trend == 1 ? T_GRN : T_RED, text_size=tSize, text_halign=text.align_center, bgcolor=T_BG_LGT)
     table.cell(stbl, 1, 1, "", bgcolor=T_BG_LGT)
     table.merge_cells(stbl, 0, 1, 1, 1)
@@ -850,9 +850,9 @@ if barstate.islast and showTimeCursor
              (tc_entryPrice - tc_closeRef) / tc_entryPrice * 100
         _tc_pnlR   = math.round(_tc_pnl * 100) / 100
         _tc_pnlAbs = str.tostring(math.abs(_tc_pnlR)) + "%"
-        _tc_pnlTxt = tc_type == "BÁN" ? (_tc_pnlR >= 0 ? "-" + _tc_pnlAbs : "+" + _tc_pnlAbs) :
+        _tc_pnlTxt = tc_type == "HẾT TREND" ? (_tc_pnlR >= 0 ? "-" + _tc_pnlAbs : "+" + _tc_pnlAbs) :
              (_tc_pnlR >= 0 ? "+" + _tc_pnlAbs : "-" + _tc_pnlAbs)
-        _tc_pnlLbl = tc_type == "MUA" ? (_tc_pnlR >= 0 ? "✅ ĐANG LÃI" : "❌ ĐANG LỖ") : "📊 TRÁNH LỖ"
+        _tc_pnlLbl = tc_type == "VÀO TREND" ? (_tc_pnlR >= 0 ? "✅ ĐANG LÃI" : "❌ ĐANG LỖ") : "📊 TRÁNH LỖ"
         _tc_bgClr  = _tc_pnlR >= 0 ? color.new(#4CAF50, 15) : color.new(#F44336, 15)
 
         lnTC := line.new(tc_cursorBar, low * 0.96, tc_cursorBar, high * 1.04,
@@ -879,8 +879,8 @@ if barstate.islast and showTimeCursor
 
         // Ghi đè bảng tín hiệu góc phải với dữ liệu tại thời điểm con trỏ
         if showTable
-            _tc_pnlClr = tc_type == "BÁN" ? (_tc_pnlR >= 0 ? T_RED : T_GRN) : (_tc_pnlR >= 0 ? T_GRN : T_RED)
-            _tc_pnlLblShort = tc_type == "MUA" ? (_tc_pnlR >= 0 ? "ĐANG LÃI" : "ĐANG LỖ") : "TRÁNH LỖ"
+            _tc_pnlClr = tc_type == "HẾT TREND" ? (_tc_pnlR >= 0 ? T_RED : T_GRN) : (_tc_pnlR >= 0 ? T_GRN : T_RED)
+            _tc_pnlLblShort = tc_type == "VÀO TREND" ? (_tc_pnlR >= 0 ? "ĐANG LÃI" : "ĐANG LỖ") : "TRÁNH LỖ"
             table.cell(stbl, 0, 0, "📅 " + syminfo.ticker,
                  text_color=T_WHT, text_size=size.huge, text_halign=text.align_center, bgcolor=color.new(#FFC107, 0))
             table.cell(stbl, 1, 0, "", bgcolor=color.new(#FFC107, 0))
@@ -959,7 +959,7 @@ if barstate.islast and showVolLabel
     price20 = signalPrice * 1.20
     price40 = signalPrice * 1.40
     price80 = signalPrice * 1.80
-    if signalType == "MUA" and not na(signalPrice) and trend == 1
+    if signalType == "VÀO TREND" and not na(signalPrice) and trend == 1
         price20 := signalPrice * 1.20
         price40 := signalPrice * 1.40
         price80 := signalPrice * 1.80
@@ -975,8 +975,8 @@ if barstate.islast and showVolLabel
         else
             profitTxt := "🎯 T1 nhắm đến: " + f_price(price20) + " — Có thể chốt 1/3 vị thế"              
     
-    recTxt = buySignal  ? "🚀 Tín hiệu bứt phá xác nhận \n    └  Thời điểm mở vị thế tốt" :
-         sellSignal  ? "⚠️ Xu hướng đảo chiều \n    └  Nên thoát hàng, bảo toàn vốn" :
+    recTxt = buySignal  ? "🚀 Tín hiệu bứt phá xác nhận \n    └  Thời điểm vào trend tốt" :
+         sellSignal  ? "⚠️ Xu hướng đảo chiều \n    └  Nên thoát trend, bảo toàn vốn" :
          trend == 1  and biasNorm >= 55 and delta_vol_pct >  0 ? "📈 Dòng tiền vào tốt, xu hướng ủng hộ \n    └  Tiếp tục nắm giữ" :
          trend == 1  and biasNorm >= 55 and delta_vol_pct <= 0 ? "👀 Momentum đang chậm lại \n    └  Giữ nhưng quan sát kỹ" :
          trend == 1  and biasNorm <  55                        ? "⚠️ Tín hiệu chưa đồng thuận \n    └  Chưa nên tăng tỷ trọng" :
@@ -1084,8 +1084,8 @@ if barstate.islast and showVolLabel
              "🤖 "  + " PHÂN TÍCH & KHUYẾN NGHỊ " + spinner+ " " + syminfo.ticker + "\n" +
              "━━━━━━━━━━━━━━━━━━━━━━"                                                               + "\n" +
              rsiTxt + "  " + macdTxt + "  " + adxTxt + "  " + obvTxt + "\n" +  emaTxt + "  " + vwapTxt    + "\n" +
-             "Mua: " + str.tostring(trend_buy_vol, format.volume) +
-             " | Bán: " + str.tostring(trend_sell_vol, format.volume) +
+             "Dòng vào: " + str.tostring(trend_buy_vol, format.volume) +
+             " | Dòng ra: " + str.tostring(trend_sell_vol, format.volume) +
              " | Delta: " + deltaTxt + "\n" +
              "Vol/TB20 : " + volTxt                                                                         + "\n" +
              "Thanh khoản: " + str.tostring(_ss_avgValue / 1000000000, "#.##") + " tỷ/ngày" + "\n" +
@@ -1125,6 +1125,6 @@ if barstate.islast
 // =========================================================
 // CẢNH BÁO Vũ Mạnh Đức 0973124824
 // =========================================================
-alertcondition(buySignal,         "Cảnh báo điểm Mua",       "Cảnh báo điểm Mua!")
-alertcondition(sellSignal,        "Cảnh báo điểm Bán",       "Cảnh báo điểm Bán!")
+alertcondition(buySignal,         "Cảnh báo vào trend",       "Cảnh báo vào trend!")
+alertcondition(sellSignal,        "Cảnh báo hết trend",       "Cảnh báo hết trend!")
 alertcondition(trend != trend[1], "Cảnh báo điểm Đảo chiều", "Cảnh báo điểm Đảo chiều!")
