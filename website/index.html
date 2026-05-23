@@ -386,12 +386,12 @@
     /* ─── How it works ─── */
     .how { background: var(--bg2); }
     .steps {
-      display: grid; grid-template-columns: repeat(3, 1fr);
-      gap: 40px; margin-top: 56px; position: relative;
+      display: grid; grid-template-columns: repeat(4, 1fr);
+      gap: 32px; margin-top: 56px; position: relative;
     }
     .steps::before {
       content: '';
-      position: absolute; top: 28px; left: calc(16.66% + 20px); right: calc(16.66% + 20px);
+      position: absolute; top: 28px; left: calc(12.5% + 20px); right: calc(12.5% + 20px);
       height: 1px; background: linear-gradient(90deg, var(--gold2), transparent, var(--gold2));
     }
     .step { text-align: center; }
@@ -729,6 +729,18 @@
       letter-spacing: 1px;
     }
     .float-btn:hover { transform: translateY(-3px) scale(1.05); box-shadow: 0 8px 28px rgba(245,197,66,.5); }
+    .float-btn-alt {
+      background: rgba(255,255,255,.07);
+      border: 1px solid rgba(255,255,255,.14);
+      color: var(--muted);
+      box-shadow: 0 4px 16px rgba(0,0,0,.25);
+    }
+    .float-btn-alt:hover {
+      background: rgba(245,197,66,.12);
+      border-color: rgba(245,197,66,.35);
+      color: var(--gold);
+      box-shadow: 0 8px 24px rgba(245,197,66,.2);
+    }
     .float-pulse {
       width: 8px; height: 8px; border-radius: 50%;
       background: var(--green); animation: fpulse 1.8s ease-in-out infinite;
@@ -791,13 +803,13 @@
 
       /* Các grid: 1 cột */
       .features-grid { grid-template-columns: repeat(2, 1fr); }
-      .steps, .pricing-grid, .testi-grid { grid-template-columns: 1fr; }
+      .steps { grid-template-columns: repeat(2, 1fr); gap: 28px; }
+      .steps::before { display: none; }
+      .pricing-grid, .testi-grid { grid-template-columns: 1fr; }
       .indicator-inner { grid-template-columns: 1fr; gap: 32px; margin-top: 40px; }
       .ind-features { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-      .steps::before { display: none; }
       .price-card.popular { transform: none; }
       .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 24px; }
-
     }
 
     /* Mobile: ≤600px */
@@ -852,6 +864,7 @@
 <div class="float-cta">
   <div class="float-pulse"></div>
   <a href="#contact" class="float-btn">Dùng thử ngay</a>
+  <a href="#pricing" class="float-btn float-btn-alt">Bảng giá</a>
 </div>
 
 <nav id="navbar">
@@ -1188,14 +1201,14 @@
   <div class="container">
     <div class="text-center fade-in">
       <div class="section-tag">Cách hoạt động</div>
-      <h2 class="section-title">3 bước đơn giản</h2>
+      <h2 class="section-title">4 bước đơn giản</h2>
       <p class="section-sub">Thiết lập một lần, hệ thống chạy mãi mãi.</p>
     </div>
     <div class="steps">
       <div class="step fade-in">
         <div class="step-num">1</div>
-        <h3>Đăng ký &amp; kết nối Telegram</h3>
-        <p>Liên hệ để nhận link tham gia group bot riêng theo gói đã chọn.</p>
+        <h3>Đăng ký, kết nối &amp; cài chỉ báo</h3>
+        <p>Liên hệ để nhận link group Telegram theo gói đã chọn. Chỉ báo TradingView được hỗ trợ cài sẵn lên chart trong vòng 5 phút.</p>
       </div>
       <div class="step fade-in" style="transition-delay:.1s">
         <div class="step-num">2</div>
@@ -1204,8 +1217,13 @@
       </div>
       <div class="step fade-in" style="transition-delay:.2s">
         <div class="step-num">3</div>
-        <h3>Nhận tín hiệu &amp; ra quyết định</h3>
-        <p>Alert hiện ngay trên điện thoại kèm phân tích đầy đủ. Bạn quyết định trong vài giây.</p>
+        <h3>Nhận tín hiệu &amp; kiểm tra biểu đồ</h3>
+        <p>Alert hiện ngay trên điện thoại. Mở TradingView, xem xu hướng tăng hay giảm trực tiếp trên biểu đồ cùng đầy đủ chỉ báo kỹ thuật.</p>
+      </div>
+      <div class="step fade-in" style="transition-delay:.3s">
+        <div class="step-num">4</div>
+        <h3>Phân tích &amp; ra quyết định</h3>
+        <p>Đọc vị xu hướng qua BiasNorm, TP/SL tự động, mẫu nến — tất cả hiển thị sẵn. Bạn chỉ cần quyết định trong vài giây.</p>
       </div>
     </div>
   </div>
@@ -2058,7 +2076,7 @@
       await sleep(300);
 
     const target = findTarget();
-    if (!target) return;
+    if (!target) { setTimeout(runDemo, 3000); return; }
 
     // Viền vàng nổi lên
     target.style.transition = 'box-shadow .25s';
