@@ -81,13 +81,17 @@ def _build_prompt(
 
         Viết báo cáo phân tích tuần theo 3 phần sau, tiếng Việt có dấu, KHÔNG dùng markdown hay bullet.
         Mỗi phần viết đủ ý, chi tiết, có chiều sâu — không viết chung chung.
-        Xuống dòng trống giữa các phần. Không ghi tiêu đề đoạn, viết thẳng vào nội dung.
+        Mỗi phần BẮT ĐẦU BẰNG ĐÚNG tiêu đề sau trên 1 dòng riêng (viết hoa, không thêm ký tự khác),
+        rồi xuống dòng trống, rồi viết nội dung. Giữa các phần xuống 2 dòng trống.
 
-        Phần 1 — TỔNG QUAN VĨ MÔ TUẦN QUA: 5-6 câu. Phân tích diễn biến VNINDEX trong tuần, các yếu tố vĩ mô quốc tế (Fed, USD, hàng hóa, địa chính trị) và trong nước (chính sách, tín dụng, đầu tư công) tác động như thế nào. Nêu rõ nhóm ngành nào dẫn dắt, nhóm nào bị bán ra và lý do cụ thể.
+        🌐 TỔNG QUAN VĨ MÔ TUẦN QUA
+        (5-6 câu) Phân tích diễn biến VNINDEX trong tuần, các yếu tố vĩ mô quốc tế (Fed, USD, hàng hóa, địa chính trị) và trong nước (chính sách, tín dụng, đầu tư công) tác động như thế nào. Nêu rõ nhóm ngành nào dẫn dắt, nhóm nào bị bán ra và lý do cụ thể.
 
-        Phần 2 — ĐIỂM NHẤN & RỦI RO: 4-5 câu. Chọn 2-3 sự kiện hoặc diễn biến quan trọng nhất tuần qua (dựa vào tin tức đã cung cấp), phân tích tác động thực tế và tiềm năng đến TTCK Việt Nam. Nêu rõ rủi ro nào đang âm ỉ cần theo dõi.
+        ⚡ ĐIỂM NHẤN & RỦI RO
+        (4-5 câu) Chọn 2-3 sự kiện hoặc diễn biến quan trọng nhất tuần qua (dựa vào tin tức đã cung cấp), phân tích tác động thực tế và tiềm năng đến TTCK Việt Nam. Nêu rõ rủi ro nào đang âm ỉ cần theo dõi.
 
-        Phần 3 — CHIẾN LƯỢC TUẦN TỚI: 5-6 câu cụ thể. Nhận định xu hướng ngắn hạn của VNINDEX (tích lũy/phục hồi/phân phối); nên giữ nguyên, tăng hay giảm tỷ trọng; nhóm ngành/cổ phiếu nên quan tâm và lý do; các sự kiện lịch kinh tế tuần tới cần theo dõi; ngưỡng hỗ trợ/kháng cự quan trọng của VNINDEX.
+        📌 CHIẾN LƯỢC TUẦN TỚI
+        (5-6 câu) Nhận định xu hướng ngắn hạn của VNINDEX (tích lũy/phục hồi/phân phối); nên giữ nguyên, tăng hay giảm tỷ trọng; nhóm ngành/cổ phiếu nên quan tâm và lý do; các sự kiện lịch kinh tế tuần tới cần theo dõi; ngưỡng hỗ trợ/kháng cự quan trọng của VNINDEX.
     """).strip()
 
 
@@ -131,6 +135,11 @@ def run(force: bool = False) -> None:
     prompt  = _build_prompt(week_str, vnindex_line, news)
     ai_text = _call_ai(prompt)
 
+    # Wrap tiêu đề section trong <b> cho Telegram
+    formatted_ai = ai_text
+    for header in ("🌐 TỔNG QUAN VĨ MÔ TUẦN QUA", "⚡ ĐIỂM NHẤN & RỦI RO", "📌 CHIẾN LƯỢC TUẦN TỚI"):
+        formatted_ai = formatted_ai.replace(header, f"<b>{header}</b>")
+
     lines = [
         f"<b>📊 Phân tích vĩ mô tuần — {week_str}</b>",
         "",
@@ -138,6 +147,11 @@ def run(force: bool = False) -> None:
     if vnindex_line:
         lines.append(f"📈 {vnindex_line}")
         lines.append("")
+
+    lines += [
+        formatted_ai,
+        "",
+    ]
 
     if news:
         lines.append("<b>📋 Tin hot tuần qua:</b>")
@@ -149,11 +163,7 @@ def run(force: bool = False) -> None:
             lines.append(f"  • {label} <i>({src})</i>")
         lines.append("")
 
-    lines += [
-        ai_text,
-        "",
-        "<i>📌 Phân tích AI để tham khảo — bạn vẫn là người ra quyết định nhé!</i>",
-    ]
+    lines.append("<i>Phân tích AI để tham khảo — bạn vẫn là người ra quyết định nhé!</i>")
     message = "\n".join(lines)
 
     from scanner.telegram_bot import send_message_both
