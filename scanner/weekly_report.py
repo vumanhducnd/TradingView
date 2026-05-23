@@ -109,9 +109,9 @@ def _call_ai(prompt: str) -> str:
 
 def run(force: bool = False) -> None:
     today = date.today()
-    if not force and today.weekday() != 6:  # 6 = Chủ nhật
+    if not force and today.weekday() != 5:  # 5 = Thứ Bảy
         logger.info(
-            f"Hôm nay không phải Chủ nhật (weekday={today.weekday()}) "
+            f"Hôm nay không phải Thứ Bảy (weekday={today.weekday()}) "
             "— bỏ qua weekly report."
         )
         return
