@@ -15,6 +15,7 @@ Commands:
 import math
 import os
 import time
+from datetime import datetime, timezone, timedelta
 
 import pandas as pd
 import requests
@@ -24,6 +25,8 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 from scanner.config import TELEGRAM_TOKEN
 from scanner.utils import bias_label, fmt_date, fmt_price, logger
+
+_ICT = timezone(timedelta(hours=7))
 
 ADMIN_CHAT_ID = os.getenv("TELEGRAM_ADMIN_CHAT_ID", "")
 
@@ -211,27 +214,45 @@ def _is_admin(chat_id: str) -> bool:
     return bool(ADMIN_CHAT_ID) and str(chat_id) == str(ADMIN_CHAT_ID)
 
 
+# Cache status người dùng — tránh query DB mỗi lần nhắn tin
+_access_cache: dict[str, tuple[str | None, float]] = {}
+_ACCESS_TTL = 300  # 5 phút
+
+
+def _invalidate_access_cache(chat_id: str) -> None:
+    _access_cache.pop(str(chat_id), None)
+
+
 def _check_access(chat_id: str) -> str | None:
     """Trả về status: 'active' | 'trial' | 'pending' | 'blocked' | 'expired' | None."""
     if not ADMIN_CHAT_ID:
         return "active"
     if _is_admin(chat_id):
         return "active"
+
+    now = time.time()
+    cached = _access_cache.get(chat_id)
+    if cached and now - cached[1] < _ACCESS_TTL:
+        return cached[0]
+
     from scanner.database import get_bot_user, set_user_status
     user = get_bot_user(chat_id)
     if not user:
+        _access_cache[chat_id] = (None, now)
         return None
     if user["status"] in ("trial", "active"):
         expires = user.get("trial_expires_at")
         if expires:
-            from datetime import timezone, datetime as _dt
-            now = _dt.now(timezone.utc)
+            now_utc = datetime.now(timezone.utc)
             if expires.tzinfo is None:
                 expires = expires.replace(tzinfo=timezone.utc)
-            if now > expires:
+            if now_utc > expires:
                 set_user_status(chat_id, "blocked")
+                _access_cache[chat_id] = ("expired", now)
                 return "expired"
-    return user["status"]
+    status = user["status"]
+    _access_cache[chat_id] = (status, now)
+    return status
 
 
 def _send_registration_prompt(token: str, chat_id: int | str) -> None:
@@ -290,6 +311,7 @@ def _auto_trial(chat_id: str, from_user: dict) -> None:
         from scanner.database import upsert_bot_user, set_user_status
         upsert_bot_user(chat_id, "", full_name, username)
         set_user_status(chat_id, "trial", trial_days=3)
+        _invalidate_access_cache(chat_id)
     except Exception as e:
         logger.warning(f"auto_trial error (chat={chat_id}): {e}")
 
@@ -345,6 +367,7 @@ def _handle_contact(token: str, message: dict) -> None:
         from scanner.database import upsert_bot_user, set_user_status
         upsert_bot_user(chat_id, phone, full_name, username)
         set_user_status(chat_id, "pending")
+        _invalidate_access_cache(chat_id)
     except Exception as e:
         logger.warning(f"upsert_bot_user failed: {e}")
 
@@ -648,6 +671,7 @@ def _handle_callback(token: str, cq: dict) -> None:
         from scanner.database import set_user_status, get_bot_user
         ok = set_user_status(target_id, "active", trial_days=days)
         if ok:
+            _invalidate_access_cache(target_id)
             u = get_bot_user(target_id) or {}
             name = u.get("full_name") or target_id
             dur = "vĩnh viễn" if days == 0 else f"{days} ngày"
@@ -709,6 +733,7 @@ def _handle_callback(token: str, cq: dict) -> None:
         from scanner.database import set_user_status, get_bot_user
         ok = set_user_status(target_id, "trial", trial_days=3)
         if ok:
+            _invalidate_access_cache(target_id)
             u = get_bot_user(target_id) or {}
             name = u.get("full_name") or target_id
             _reply(token, chat_id, f"⏱ Đã cấp dùng thử 3 ngày: <b>{name}</b>")
@@ -727,6 +752,7 @@ def _handle_callback(token: str, cq: dict) -> None:
         from scanner.database import set_user_status, get_bot_user
         ok = set_user_status(target_id, "active" if action == "approve" else "blocked")
         if ok:
+            _invalidate_access_cache(target_id)
             u = get_bot_user(target_id) or {}
             name = u.get("full_name") or target_id
             if action == "approve":
@@ -1215,6 +1241,7 @@ def _dispatch(token: str, message: dict) -> None:
         target = parts[1]
         ok = set_user_status(target, "active")
         if ok:
+            _invalidate_access_cache(target)
             u = get_bot_user(target) or {}
             _reply(token, chat_id, f"✅ Đã kích hoạt: <b>{u.get('full_name', target)}</b>")
             _reply(token, target, "🎉 Tài khoản đã được kích hoạt! Gõ /start để bắt đầu.")
@@ -1226,6 +1253,7 @@ def _dispatch(token: str, message: dict) -> None:
         target = parts[1]
         ok = set_user_status(target, "blocked")
         if ok:
+            _invalidate_access_cache(target)
             u = get_bot_user(target) or {}
             _reply(token, chat_id, f"🚫 Đã chặn: <b>{u.get('full_name', target)}</b>")
         else:
@@ -1390,7 +1418,11 @@ def run(token: str | None = None) -> None:
 
             now = time.time()
             if now - last_alert_check >= 60:
-                _check_alerts(token)
+                # Chỉ check alerts trong giờ giao dịch để Neon compute được sleep ngoài giờ
+                _now_ict = datetime.now(_ICT)
+                _t = (_now_ict.hour, _now_ict.minute)
+                if _now_ict.weekday() < 5 and (9, 0) <= _t <= (15, 15):
+                    _check_alerts(token)
                 last_alert_check = now
 
         except KeyboardInterrupt:
