@@ -152,7 +152,7 @@ def run_pre_session(force: bool = False) -> None:
         return
 
     logger.info(f"Load OHLCV {len(tickers)} mã từ DB...")
-    ticker_data = load_all_ohlcv_bulk(tickers=tickers, days=300)
+    ticker_data = load_all_ohlcv_bulk(tickers=tickers, days=200)
 
     # Load exchange info từ watchlist
     try:
@@ -602,8 +602,9 @@ def run_session(interval: int = 180, session: str = "full") -> None:
 
     from scanner.database import get_watchlist, _ensure_signals_schema
     _ensure_signals_schema()   # đảm bảo các cột mới (signal_price, signal_st, is_fakeout) tồn tại
-    all_tickers  = get_watchlist()                  # toàn bộ để upsert DB
-    top300       = get_top300_thanh_khoan(n=300)    # top 300 để tính ST + alert
+    all_tickers  = get_watchlist()                  # toàn bộ để fetch price_board (1 API call)
+    top300       = get_top300_thanh_khoan(n=300)    # top 300 để tính ST + alert + upsert DB
+    top300_set   = set(top300)
     if not top300:
         logger.error("Watchlist trống")
         return
@@ -619,7 +620,7 @@ def run_session(interval: int = 180, session: str = "full") -> None:
 
     # ── Load lịch sử OHLCV cho top 300 (dùng để tính ST) ──
     logger.info(f"Load lịch sử OHLCV top 300 từ DB ({len(top300)} mã)...")
-    ticker_data = load_all_ohlcv_bulk(tickers=top300, days=300)
+    ticker_data = load_all_ohlcv_bulk(tickers=top300, days=200)
     today_ts = pd.Timestamp(date.today())
 
     hist_cache: dict[str, pd.DataFrame] = {
@@ -693,9 +694,10 @@ def run_session(interval: int = 180, session: str = "full") -> None:
         today_bars = _fetch_via_price_board(all_tickers)
         logger.info(f"  price_board: {len(today_bars)}/{len(all_tickers)} bars")
 
-        # ── Bulk upsert 1 lần cho tất cả mã ──
-        n_upsert = bulk_upsert_today(today_bars, date.today())
-        logger.info(f"  Upsert DB: {n_upsert} rows (1 query)")
+        # ── Bulk upsert chỉ top 300 (cuối phiên run_scan_only upsert toàn bộ) ──
+        bars_to_upsert = {t: v for t, v in today_bars.items() if t in top300_set}
+        n_upsert = bulk_upsert_today(bars_to_upsert, date.today())
+        logger.info(f"  Upsert DB: {n_upsert}/{len(top300_set)} top300 rows (1 query)")
 
         # Snap giá hiện tại để đồng bộ với ST state (tính từ giá đã snap)
         for bar in today_bars.values():
@@ -900,8 +902,8 @@ def _run_session_once() -> None:
 
     # ── Bước 2: Load lịch sử OHLCV ────────────────────────
     t2 = _time.time()
-    logger.info(f"[2/5] Load OHLCV 90 ngay cho {len(top300)} ma tu DB...")
-    ticker_data = load_all_ohlcv_bulk(tickers=top300, days=300)
+    logger.info(f"[2/5] Load OHLCV 200 ngay cho {len(top300)} ma tu DB...")
+    ticker_data = load_all_ohlcv_bulk(tickers=top300, days=200)
     hist_cache  = {
         t: df[df.index.normalize() < today_ts]
         for t, df in ticker_data.items()

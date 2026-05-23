@@ -552,8 +552,14 @@ def save_scan_results(df: pd.DataFrame, scan_date: date | None = None) -> None:
     logger.info(f"scan_results: upserted {len(rows)} tickers (updated_at={today})")
 
 
+_scan_results_columns_ensured = False
+
+
 def ensure_scan_results_columns() -> None:
     """Thêm các cột mới vào scan_results nếu chưa có."""
+    global _scan_results_columns_ensured
+    if _scan_results_columns_ensured:
+        return
     migrations = [
         "ALTER TABLE scan_results ADD COLUMN IF NOT EXISTS short_last_signal_date  DATE",
         "ALTER TABLE scan_results ADD COLUMN IF NOT EXISTS short_last_signal_price NUMERIC(12,4)",
@@ -576,10 +582,17 @@ def ensure_scan_results_columns() -> None:
                 cur.execute(sql)
             except Exception:
                 pass
+    _scan_results_columns_ensured = True
+
+
+_signals_schema_ensured = False
 
 
 def _ensure_signals_schema() -> None:
     """Migration: đơn giản hoá bảng signals — chỉ giữ 4 cột thiết yếu."""
+    global _signals_schema_ensured
+    if _signals_schema_ensured:
+        return
     drop_cols = ["price", "supertrend", "bias_norm", "b_score",
                  "closed", "sell_date", "sell_price", "pnl_pct"]
     with db_cursor() as cur:
@@ -617,6 +630,7 @@ def _ensure_signals_schema() -> None:
                 END IF;
             END$$;
         """)
+    _signals_schema_ensured = True
 
 
 def save_signals(df: pd.DataFrame, scan_date: date | None = None) -> None:
