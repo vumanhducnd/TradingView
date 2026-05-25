@@ -80,7 +80,7 @@ def _fmt_pre_row(r: dict, super_set: set[str] = frozenset()) -> str:
     tk_str = f"{tk_ty:.1f} tỷ ({tk_label(tk_ty)})" if tk_ty > 0 else "–"
     crown  = "👑" if r["ticker"] in super_set else ""
     return (
-        f"  <b>{crown}{prefix}{tv_link(r['ticker'], exch)}</b> | "
+        f"  <b>{prefix}{tv_link(r['ticker'], exch)}{crown}</b> | "
         f"Giá {fmt_price(r['close'])} | "
         f"TK {tk_str}"
     )

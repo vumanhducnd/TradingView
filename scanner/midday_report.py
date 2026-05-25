@@ -267,7 +267,7 @@ def run(force: bool = False) -> None:
             return "–"
         sign = "+" if float(lst[0]["pct_chg"]) > 0 else ""
         top  = "  ".join(
-            f"{'👑' if m['ticker'] in super_set else ''}{tv_link(m['ticker'], exch_map.get(m['ticker'], ''))}({sign}{float(m['pct_chg']):.1f}%·{tk_label(float(m.get('turnover') or 0)/1e9, short=True)})"
+            f"{tv_link(m['ticker'], exch_map.get(m['ticker'], ''))}{'👑' if m['ticker'] in super_set else ''}({sign}{float(m['pct_chg']):.1f}%·{tk_label(float(m.get('turnover') or 0)/1e9, short=True)})"
             for m in lst[:show]
         )
         rest = len(lst) - show

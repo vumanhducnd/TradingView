@@ -226,12 +226,13 @@ def send_daily_report(
         else:
             _pfx = ""
 
-        for _, row in top.iterrows():
+        rows_list = list(top.iterrows())
+        for i, (_, row) in enumerate(rows_list):
             st    = _val(row, st_col, "supertrend")
             close = _val(row, "close")
             low   = _val(row, "low")
             crown = "👑" if row.get("is_super_stock") else ""
-            _ticker_link = f"<b>{crown}{tv_link(row['ticker'], _exch_map.get(row['ticker'], ''))}</b>"
+            _ticker_link = f"<b>{tv_link(row['ticker'], _exch_map.get(row['ticker'], ''))}{crown}</b>"
             if direction == "buy":
                 sl_str = _fmt(float(st) * 0.98) if st and float(st) > 0 else "–"
                 lines.append(
@@ -241,7 +242,6 @@ def send_daily_report(
                     f"    Thanh khoản   : {_fmt_tk(row)}"
                 )
             else:
-                # Lấy lần MUA trước đó + giá BÁN = high của nến bán hôm nay
                 buy_date   = fmt_date(_val(row, f"{_pfx}prev_buy_date", "prev_buy_date"))
                 buy_price  = _val(row, f"{_pfx}prev_buy_price",  "prev_buy_price")
                 sell_price = _val(row, f"{_pfx}last_signal_price", "last_signal_price", default=close)
@@ -258,13 +258,21 @@ def send_daily_report(
                 block = f"  {_ticker_link}\n"
                 if has_buy:
                     if date_str:
-                        block += f"    Ngày mua      : {date_str}\n"
+                        try:
+                            from datetime import date as _d, datetime as _dt
+                            _days = (_d.today() - _dt.strptime(date_str, "%d/%m/%Y").date()).days
+                            _days_str = f" ({_days} ngày)"
+                        except Exception:
+                            _days_str = ""
+                        block += f"    Ngày mua      : {date_str}{_days_str}\n"
                     block += f"    Giá mua       : {_fmt(buy_price)}\n"
                 block += f"    Giá bán       : {_fmt(sell_price)}\n"
                 if pnl_str:
                     block += f"    Lời/Lỗ        : {pnl_str}\n"
                 block += f"    Thanh khoản   : {_fmt_tk(row)}"
                 lines.append(block)
+            if i < len(rows_list) - 1:
+                lines.append("")  # dòng trống phân cách giữa các mã
         return lines
 
     def _send_for_style(style: str) -> None:
@@ -413,7 +421,14 @@ def _send_top_vung_xanh(results: pd.DataFrame, style: str = "long", top_n: int =
               if close and buy_p and float(buy_p) > 0 else None
         pnl_str = f" | {pnl:+.1f}%" if pnl is not None else ""
 
-        lines.append(f"  <b>{crown}{tv_link(ticker, exch_map.get(ticker, ''))}</b> | Giá {_fmt(close)} | TK {tk_str}{pnl_str} | Từ {bd}")
+        try:
+            from datetime import date as _d, datetime as _dt
+            _days = (_d.today() - _dt.strptime(bd, "%d/%m/%Y").date()).days if bd else None
+            days_str = f" ({_days} ngày)" if _days is not None else ""
+        except Exception:
+            days_str = ""
+
+        lines.append(f"  <b>{tv_link(ticker, exch_map.get(ticker, ''))}{crown}</b> | Giá {_fmt(close)} | TK {tk_str}{pnl_str} | Từ {bd}{days_str}")
 
     send_message("\n".join(lines), style=style)
 
