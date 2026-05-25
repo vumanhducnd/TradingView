@@ -867,6 +867,12 @@ _BULL_LABELS = {
 GUIDE = (
     "<b>📖 Hướng dẫn giao dịch theo hệ thống MDAlpha3 </b>\n"
     "\n"
+    "<b>💧 Chọn mã thanh khoản nào?</b>\n"
+    "• Ưu tiên mã có <b>thanh khoản TB20 ≥ 50 tỷ/ngày</b> — dễ vào/ra lệnh, ít bị làm giá\n"
+    "• Tránh mã TB20 &lt; 10 tỷ — thanh khoản mỏng, spread rộng, khó thoát lệnh khi cần\n"
+    "• Mã TB20 10–50 tỷ: có thể xem xét nhưng cần vào lệnh từng phần, không đặt cả lot lớn\n"
+    "• Hệ thống đã tự lọc bỏ mã TB20 &lt; 10 tỷ khỏi tín hiệu — bạn nên ưu tiên mã 🔥 (Cao)\n"
+    "\n"
     "<b>🟢 Khi nào MUA?</b>\n"
     "• Xu hướng chuyển sang <b>tăng</b> (vào vùng xanh)\n"
     "• Giá đang gần hoặc vừa bật lên từ <b>vùng hỗ trợ</b>\n"
