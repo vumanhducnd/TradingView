@@ -259,12 +259,15 @@ def run(force: bool = False) -> None:
 
     exch_map = load_exchange_map([m["ticker"] for m in movers])
 
+    from scanner.database import load_super_stock_tickers
+    super_set = load_super_stock_tickers()
+
     def _ticker_list(lst: list[dict], show: int = 8) -> str:
         if not lst:
             return "–"
         sign = "+" if float(lst[0]["pct_chg"]) > 0 else ""
         top  = "  ".join(
-            f"{tv_link(m['ticker'], exch_map.get(m['ticker'], ''))}({sign}{float(m['pct_chg']):.1f}%·{tk_label(float(m.get('turnover') or 0)/1e9, short=True)})"
+            f"{'👑' if m['ticker'] in super_set else ''}{tv_link(m['ticker'], exch_map.get(m['ticker'], ''))}({sign}{float(m['pct_chg']):.1f}%·{tk_label(float(m.get('turnover') or 0)/1e9, short=True)})"
             for m in lst[:show]
         )
         rest = len(lst) - show

@@ -1054,6 +1054,16 @@ def delete_price_alert(chat_id: str, alert_id: int) -> bool:
         return cur.rowcount > 0
 
 
+def load_super_stock_tickers() -> set[str]:
+    """Tải danh sách ticker là siêu cổ phiếu (is_super_stock=TRUE) từ scan_results."""
+    try:
+        with db_cursor(commit=False) as cur:
+            cur.execute("SELECT ticker FROM scan_results WHERE is_super_stock = TRUE")
+            return {r["ticker"] for r in cur.fetchall()}
+    except Exception:
+        return set()
+
+
 # ─── User Holdings (danh mục cá nhân) ────────────────────────────────────────
 
 _holdings_table_ensured = False

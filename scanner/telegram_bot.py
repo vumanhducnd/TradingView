@@ -230,7 +230,8 @@ def send_daily_report(
             st    = _val(row, st_col, "supertrend")
             close = _val(row, "close")
             low   = _val(row, "low")
-            _ticker_link = f"<b>{tv_link(row['ticker'], _exch_map.get(row['ticker'], ''))}</b>"
+            crown = "👑" if row.get("is_super_stock") else ""
+            _ticker_link = f"<b>{crown}{tv_link(row['ticker'], _exch_map.get(row['ticker'], ''))}</b>"
             if direction == "buy":
                 sl_str = _fmt(float(st) * 0.98) if st and float(st) > 0 else "–"
                 lines.append(
@@ -401,6 +402,7 @@ def _send_top_vung_xanh(results: pd.DataFrame, style: str = "long", top_n: int =
     lines = [f"<b>💼 Top {top_n} vùng xanh (Thanh khoản cao nhất):</b>"]
     for _, row in df.iterrows():
         ticker = row.get("ticker", "")
+        crown  = "👑" if row.get("is_super_stock") else ""
         close  = _val(row, "close")
         bd     = fmt_date(row.get(date_col))
         buy_p  = _val(row, price_col)
@@ -411,7 +413,7 @@ def _send_top_vung_xanh(results: pd.DataFrame, style: str = "long", top_n: int =
               if close and buy_p and float(buy_p) > 0 else None
         pnl_str = f" | {pnl:+.1f}%" if pnl is not None else ""
 
-        lines.append(f"  <b>{tv_link(ticker, exch_map.get(ticker, ''))}</b> | Giá {_fmt(close)} | TK {tk_str}{pnl_str} | Từ {bd}")
+        lines.append(f"  <b>{crown}{tv_link(ticker, exch_map.get(ticker, ''))}</b> | Giá {_fmt(close)} | TK {tk_str}{pnl_str} | Từ {bd}")
 
     send_message("\n".join(lines), style=style)
 

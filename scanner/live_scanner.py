@@ -72,14 +72,15 @@ _TOP_N_PRE          = 10    # số mã hiển thị mỗi nhóm
 _TK_MIN_TY          = 10.0  # TK TB20 tối thiểu (tỷ VND) — lọc đồng bộ đầu/trong/cuối phiên
 
 
-def _fmt_pre_row(r: dict) -> str:
+def _fmt_pre_row(r: dict, super_set: set[str] = frozenset()) -> str:
     """Format 1 dòng mã: SÀNG:MÃ | Giá | TK"""
     exch   = r.get("exchange", "")
     prefix = f"{exch}:" if exch else ""
     tk_ty  = r["turnover"] / 1e9 if r.get("turnover") else 0.0
     tk_str = f"{tk_ty:.1f} tỷ ({tk_label(tk_ty)})" if tk_ty > 0 else "–"
+    crown  = "👑" if r["ticker"] in super_set else ""
     return (
-        f"  <b>{prefix}{tv_link(r['ticker'], exch)}</b> | "
+        f"  <b>{crown}{prefix}{tv_link(r['ticker'], exch)}</b> | "
         f"Giá {fmt_price(r['close'])} | "
         f"TK {tk_str}"
     )
@@ -88,6 +89,9 @@ def _fmt_pre_row(r: dict) -> str:
 def _build_pre_report(results: list[dict], style_label: str, today_str: str,
                       ai_text: str = "") -> tuple[str, list[dict], list[dict]]:
     """Tạo 1 message duy nhất: header + AI + gần mua + gần bán."""
+    from scanner.database import load_super_stock_tickers
+    super_set = load_super_stock_tickers()
+
     bull = [r for r in results if r["trend"] == 1]
     bear = [r for r in results if r["trend"] == -1]
 
@@ -126,12 +130,12 @@ def _build_pre_report(results: list[dict], style_label: str, today_str: str,
     if near_buy:
         lines.append(f"\n🚀 <b>Gần điểm MUA:</b>")
         for r in near_buy[:_TOP_N_PRE]:
-            lines.append(_fmt_pre_row(r))
+            lines.append(_fmt_pre_row(r, super_set))
 
     if near_sell:
         lines.append(f"\n🔻 <b>Gần điểm BÁN:</b>")
         for r in near_sell[:_TOP_N_PRE]:
-            lines.append(_fmt_pre_row(r))
+            lines.append(_fmt_pre_row(r, super_set))
 
     if not near_buy and not near_sell:
         lines.append("\n✅ Không có mã nào gần ngưỡng lật trong phiên hôm nay.")
