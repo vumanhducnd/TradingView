@@ -811,8 +811,8 @@ def run_session(interval: int = 180, session: str = "full") -> None:
                 if buy_p > 0:
                     pnl = round((price - buy_p) / buy_p * 100, 2)
                     try:
-                        from datetime import date as _date
-                        hold = (_date.today() - pd.Timestamp(buy_dt, dayfirst=True).date()).days if buy_dt else 0
+                        from datetime import date as _date, datetime as _dt
+                        hold = (_date.today() - _dt.strptime(buy_dt, "%d/%m/%Y").date()).days if buy_dt else 0
                         hold_str = f"{hold} ngày"
                     except Exception:
                         hold_str = "–"
