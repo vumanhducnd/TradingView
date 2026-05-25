@@ -794,7 +794,7 @@ def run_session(interval: int = 180, session: str = "full") -> None:
             ticker_link = tv_link(ticker, exch)
             if flip["direction"] == "buy":
                 msg = (
-                    f"🌟 <b>{ticker_link}</b> — <b>Xu hướng tăng</b>\n"
+                    f"🟢 <b>{ticker_link}</b> — <b>Xu hướng tăng 🌟</b>\n"
                     f"Giá vừa bứt phá ngưỡng kháng cự lên trên\n"
                     f"Giá hiện tại  : <b>{fmt_price(price)}</b>\n"
                     f"Kháng cự      : {fmt_price(st)}\n"
@@ -821,7 +821,7 @@ def run_session(interval: int = 180, session: str = "full") -> None:
                         f"\nGiá mua       : {fmt_price(buy_p)} → {pnl:+.2f}%"
                     )
                 msg = (
-                    f"🌊 <b>{ticker_link}</b> — <b>Xu hướng giảm</b>\n"
+                    f"🔴 <b>{ticker_link}</b> — <b>Xu hướng giảm 🌊</b>\n"
                     f"Giá vừa thủng ngưỡng hỗ trợ\n"
                     f"Giá hiện tại  : <b>{fmt_price(price)}</b>\n"
                     f"Hỗ trợ        : {fmt_price(st)}\n"
