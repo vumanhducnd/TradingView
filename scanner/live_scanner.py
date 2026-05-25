@@ -821,7 +821,7 @@ def run_session(interval: int = 180, session: str = "full") -> None:
                     except Exception:
                         hold_str = "–"
                     pnl_str = (
-                        f"\nVị thế        : mua {buy_dt} | {hold_str}"
+                        f"\nNgày mua      : {buy_dt} ({hold_str})"
                         f"\nGiá mua       : {fmt_price(buy_p)} → {pnl:+.2f}%"
                     )
                 msg = (
