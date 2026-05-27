@@ -12,7 +12,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 import scanner.config  # noqa: F401 — bắt buộc để load_dotenv() chạy trước DB
-from scanner.database import load_exchange_map
+from scanner.database import load_exchange_map, load_industry_map
 from scanner.utils import fmt_price, is_trading_day, logger, tk_label, tv_link
 
 
@@ -150,12 +150,23 @@ _SECTORS: dict[str, str] = {
 }
 
 
+_sector_cache: dict[str, str] = {}
+
+
+def _get_sector(ticker: str, fallback: str = "") -> str:
+    global _sector_cache
+    if not _sector_cache:
+        # DB là nguồn chính, _SECTORS là fallback cho mã chưa có trong DB
+        _sector_cache = {**_SECTORS, **load_industry_map()}
+    return _sector_cache.get(ticker, fallback)
+
+
 def _group_by_sector(movers: list[dict]) -> str:
     """Gom mã biến động vào nhóm ngành, trả về text mô tả."""
     from collections import defaultdict
     groups: dict[str, list[str]] = defaultdict(list)
     for m in movers:
-        sector = _SECTORS.get(m["ticker"], "Khác")
+        sector = _get_sector(m["ticker"], "Khác")
         pct = float(m["pct_chg"])
         arrow = "▲" if pct > 0 else "▼"
         groups[sector].append(f"{m['ticker']}{arrow}{abs(pct):.1f}%")
@@ -172,7 +183,7 @@ def _build_prompt(movers: list[dict], news_ticker: list[dict], news_hot: list[di
         pct = float(m["pct_chg"])
         arrow = "▲" if pct > 0 else "▼"
         tk = float(m["turnover"] or 0) / 1e9
-        sector = _SECTORS.get(m["ticker"], "")
+        sector = _get_sector(m["ticker"])
         sector_tag = f" [{sector}]" if sector else ""
         mover_lines.append(
             f"- {m['ticker']}{sector_tag}: {arrow}{abs(pct):.1f}% | giá {fmt_price(float(m['close']))} | TK {tk:.1f} tỷ"

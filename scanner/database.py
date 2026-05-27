@@ -73,31 +73,52 @@ def test_connection() -> bool:
 def upsert_watchlist(
     tickers: list[str] | list[tuple[str, str]],
     exchange: str = "HOSE",
+    industry_map: dict[str, str] | None = None,
 ) -> None:
     """
     tickers: list[str] → lưu vn100_rank theo vị trí trong list (index+1)
              list[tuple(ticker, exchange)] → exchange riêng, rank theo vị trí
+    industry_map: {ticker: industry_name} — nếu None thì không update cột industry
     """
     # Đảm bảo cột tồn tại (migration safe cho DB cũ)
     with db_cursor() as cur:
-        cur.execute("ALTER TABLE watchlist ADD COLUMN IF NOT EXISTS vn100_rank INT")
+        cur.execute("""
+            ALTER TABLE watchlist ADD COLUMN IF NOT EXISTS vn100_rank INT;
+            ALTER TABLE watchlist ADD COLUMN IF NOT EXISTS industry TEXT;
+        """)
 
     sql = """
-        INSERT INTO watchlist (ticker, exchange, vn100_rank, updated_at)
-        VALUES (%s, %s, %s, NOW())
+        INSERT INTO watchlist (ticker, exchange, vn100_rank, industry, updated_at)
+        VALUES (%s, %s, %s, %s, NOW())
         ON CONFLICT (ticker) DO UPDATE SET
             exchange   = EXCLUDED.exchange,
             vn100_rank = EXCLUDED.vn100_rank,
+            industry   = COALESCE(EXCLUDED.industry, watchlist.industry),
             updated_at = NOW()
     """
+    imap = industry_map or {}
     if tickers and isinstance(tickers[0], tuple):
-        rows = [(t, ex, i + 1) for i, (t, ex) in enumerate(tickers)]
+        rows = [(t, ex, i + 1, imap.get(t)) for i, (t, ex) in enumerate(tickers)]
     else:
-        rows = [(t, exchange, i + 1) for i, t in enumerate(tickers)]
+        rows = [(t, exchange, i + 1, imap.get(t)) for i, t in enumerate(tickers)]
 
     with db_cursor() as cur:
         cur.executemany(sql, rows)
-    logger.info(f"Watchlist: upserted {len(rows)} tickers (rank 1–{len(rows)})")
+    industry_count = sum(1 for r in rows if r[3])
+    logger.info(f"Watchlist: upserted {len(rows)} tickers (rank 1–{len(rows)}, industry: {industry_count})")
+
+
+def load_industry_map(tickers: list[str] | None = None) -> dict[str, str]:
+    """Trả về {ticker: industry} từ watchlist. tickers=None → tất cả."""
+    with db_cursor(commit=False) as cur:
+        if tickers:
+            cur.execute(
+                "SELECT ticker, industry FROM watchlist WHERE ticker = ANY(%s) AND industry IS NOT NULL",
+                (tickers,),
+            )
+        else:
+            cur.execute("SELECT ticker, industry FROM watchlist WHERE industry IS NOT NULL")
+        return {r["ticker"]: r["industry"] for r in cur.fetchall()}
 
 
 def get_watchlist() -> list[str]:

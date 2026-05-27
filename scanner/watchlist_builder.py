@@ -17,7 +17,7 @@ from datetime import date, timedelta
 import pandas as pd
 
 import scanner.utils  # noqa: F401 — phải import trước để patch SSL
-from scanner.database import get_connection, upsert_watchlist
+from scanner.database import get_connection, upsert_watchlist, load_industry_map
 from scanner.utils import logger
 
 # Ngưỡng lọc — DB lưu giá đơn vị VND/1000 (vd: 48,500 VND → 48.5)
@@ -41,12 +41,17 @@ def build_watchlist(
         sys.exit(1)
     logger.info(f"Tổng mã HOSE+HNX+UPCOM: {len(all_tickers)}")
 
+    # Bước 2: Fetch industry map từ vnstock (best-effort)
+    ticker_list_all = [t for t, _ in all_tickers]
+    industry_map = _fetch_industry_map(ticker_list_all)
+    logger.info(f"Industry data: {len(industry_map)}/{len(ticker_list_all)} mã")
+
     if not filter_liquidity:
-        upsert_watchlist(all_tickers)
+        upsert_watchlist(all_tickers, industry_map=industry_map)
         logger.info(f"Watchlist: {len(all_tickers)} mã (không lọc)")
         return [t for t, _ in all_tickers]
 
-    # Bước 2: Tính thanh khoản từ DB (không crawl)
+    # Bước 3: Tính thanh khoản từ DB (không crawl)
     ticker_list = [t for t, _ in all_tickers]
     limit = top_n if top_n > 0 else len(ticker_list)
     ranked = _rank_by_liquidity(ticker_list, top_n=limit)
@@ -57,7 +62,7 @@ def build_watchlist(
     # Giữ lại exchange info cho các mã được chọn
     exchange_map = {t: ex for t, ex in all_tickers}
     ranked_with_exchange = [(t, exchange_map.get(t, "UNKNOWN")) for t in ranked]
-    upsert_watchlist(ranked_with_exchange)
+    upsert_watchlist(ranked_with_exchange, industry_map=industry_map)
     logger.info(f"Watchlist cập nhật: {len(ranked)} mã (lọc từ DB, không crawl)")
     return ranked
 
@@ -112,6 +117,39 @@ def _fetch_exchange_tickers_with_info(exchange: str) -> list[str]:
         logger.debug(f"{exchange} KBS symbols_by_group failed: {e}")
 
     return []
+
+
+def _fetch_industry_map(tickers: list[str]) -> dict[str, str]:
+    """
+    Fetch ngành ICB cho tất cả tickers từ vnstock Listing.
+    Gọi 1 lần khi build watchlist hàng tuần.
+    Returns {ticker: industry_name}.
+    """
+    try:
+        from vnstock.api.listing import Listing
+        import pandas as pd
+        listing = Listing(source="KBS")
+        df = listing.symbols_by_industries()
+        if df is None or df.empty:
+            raise ValueError("empty response")
+
+        # vnstock trả về DataFrame với cột 'symbol'/'ticker' và 'icb_name'/'industry'
+        col_ticker   = _find_ticker_col(df)
+        col_industry = next(
+            (c for c in df.columns if c.lower() in ("icb_name", "industry", "industryname", "industry_name", "sector")),
+            None,
+        )
+        if col_industry is None:
+            logger.warning(f"Không tìm thấy cột industry trong: {df.columns.tolist()}")
+            return {}
+
+        df[col_ticker] = df[col_ticker].str.upper().str.strip()
+        result = dict(zip(df[col_ticker], df[col_industry].str.strip()))
+        result = {t: v for t, v in result.items() if t in set(tickers) and v}
+        return result
+    except Exception as e:
+        logger.warning(f"_fetch_industry_map failed: {e} — industry sẽ không được cập nhật")
+        return {}
 
 
 def _rank_by_liquidity(tickers: list[str], top_n: int) -> list[str]:
