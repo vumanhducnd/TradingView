@@ -58,25 +58,31 @@ def build_excel_report(
             results = results.copy()
             results["exchange"] = ""
 
+    try:
+        from scanner.database import load_industry_map
+        industry_map: dict[str, str] = load_industry_map()
+    except Exception:
+        industry_map = {}
+
     is_dual = "long_buy_signal" in results.columns
     paths: dict[str, str] = {}
 
     if is_dual:
         paths["long"]  = _save_workbook(
-            _build_workbook(results, signals, "long",  scan_date, super_stocks, company_data),
+            _build_workbook(results, signals, "long",  scan_date, super_stocks, company_data, industry_map),
             REPORTS_DIR / f"report_dau_tu_dai_han_{scan_date}.xlsx",
         )
         paths["short"] = _save_workbook(
-            _build_workbook(results, signals, "short", scan_date, super_stocks=None, company_data=company_data),
+            _build_workbook(results, signals, "short", scan_date, super_stocks=None, company_data=company_data, industry_map=industry_map),
             REPORTS_DIR / f"report_dau_tu_ngan_han_{scan_date}.xlsx",
         )
     else:
         wb = Workbook()
         _sheet_signals(wb, signals, overviews=(company_data or {}).get("overviews"),
-                       results=results, scan_date=scan_date)
+                       results=results, scan_date=scan_date, industry_map=industry_map)
         if super_stocks is not None and not super_stocks.empty:
-            _sheet_super_stocks(wb, super_stocks, scan_date)
-        _sheet_all(wb, results)
+            _sheet_super_stocks(wb, super_stocks, scan_date, industry_map=industry_map)
+        _sheet_all(wb, results, industry_map=industry_map)
         _sheet_stats(wb, results, scan_date, style=None, company_data=company_data)
         if "Sheet" in wb.sheetnames:
             del wb["Sheet"]
@@ -116,19 +122,21 @@ def _build_workbook(
     scan_date: str,
     super_stocks: pd.DataFrame | None = None,
     company_data: dict | None = None,
+    industry_map: dict[str, str] | None = None,
 ) -> "Workbook":
     """Tạo 1 Workbook hoàn chỉnh cho 1 style (long hoặc short)."""
     wb = Workbook()
+    imap = industry_map or {}
 
     overviews = (company_data or {}).get("overviews")
 
     _sheet_signals(wb, signals, style_filter=style, overviews=overviews,
-                   results=results, scan_date=scan_date)
-    _sheet_nam_giu(wb, results, style=style)
-    _sheet_dung_ngoai(wb, results, style=style)
-    _sheet_super_stocks(wb, results, scan_date)
+                   results=results, scan_date=scan_date, industry_map=imap)
+    _sheet_nam_giu(wb, results, style=style, industry_map=imap)
+    _sheet_dung_ngoai(wb, results, style=style, industry_map=imap)
+    _sheet_super_stocks(wb, results, scan_date, industry_map=imap)
 
-    _sheet_history(wb, results=results, style=style, overviews=overviews)
+    _sheet_history(wb, results=results, style=style, overviews=overviews, industry_map=imap)
     _sheet_stats(wb, results, scan_date, style=style, company_data=company_data)
 
     if "Sheet" in wb.sheetnames:
@@ -150,8 +158,9 @@ def _save_workbook(wb: "Workbook", path) -> str:
     return str(path)
 
 
-def _sheet_all(wb: Workbook, df: pd.DataFrame) -> None:
+def _sheet_all(wb: Workbook, df: pd.DataFrame, industry_map: dict[str, str] | None = None) -> None:
     ws = wb.create_sheet("Tất cả cổ phiếu")
+    imap = industry_map or {}
 
     criteria = ["ema", "vwap", "rsi", "macd", "adx", "obv", "stoch", "candle", "vol"]
     crit_labels = ["EMA", "VWAP", "RSI", "MACD", "ADX", "OBV", "Stoch", "Nến", "Vol"]
@@ -160,7 +169,7 @@ def _sheet_all(wb: Workbook, df: pd.DataFrame) -> None:
 
     if is_dual:
         headers = [
-            "STT", "Mã", "Xu hướng DH", "Xu hướng NH",
+            "STT", "Mã", "Ngành", "Xu hướng DH", "Xu hướng NH",
             "Tín hiệu DH", "Tín hiệu NH", "Đồng thuận",
             "Lệnh HĐ", "Ngày vào lệnh", "Giá vào lệnh", "Giá hiện tại",
             "Giữ (phiên)", "Lời/Lỗ %",
@@ -168,7 +177,7 @@ def _sheet_all(wb: Workbook, df: pd.DataFrame) -> None:
         ] + crit_labels
     else:
         headers = [
-            "STT", "Mã", "Xu hướng", "Tín hiệu mới",
+            "STT", "Mã", "Ngành", "Xu hướng", "Tín hiệu mới",
             "Lệnh HĐ", "Ngày vào lệnh", "Giá vào lệnh", "Giá hiện tại",
             "Giữ (phiên)", "Lời/Lỗ %",
             "BiasNorm", "Nhận xét", "bScore", "rScore",
@@ -183,6 +192,7 @@ def _sheet_all(wb: Workbook, df: pd.DataFrame) -> None:
         sig_date  = row.get("last_signal_date")
         sig_price = row.get("last_signal_price")
         bars      = row.get("bars_since_signal")
+        ticker    = row.get("ticker", "")
 
         def _sig_str(buy_col, sell_col):
             if row.get(buy_col):  return "🟢 MUA"
@@ -197,7 +207,8 @@ def _sheet_all(wb: Workbook, df: pd.DataFrame) -> None:
             both     = "🔥 CẢ 2" if row.get("both_buy") or row.get("both_sell") else ""
             base_row = [
                 i - 1,
-                row.get("ticker", ""),
+                ticker,
+                imap.get(ticker, ""),
                 trend_dh, trend_nh,
                 sig_dh, sig_nh, both,
                 "Nắm giữ" if last_sig == "MUA" else ("Đứng ngoài" if last_sig == "BÁN" else ""),
@@ -215,7 +226,8 @@ def _sheet_all(wb: Workbook, df: pd.DataFrame) -> None:
             new_sig = _sig_str("buy_signal", "sell_signal")
             base_row = [
                 i - 1,
-                row.get("ticker", ""),
+                ticker,
+                imap.get(ticker, ""),
                 trend_str,
                 new_sig,
                 "Nắm giữ" if last_sig == "MUA" else ("Đứng ngoài" if last_sig == "BÁN" else ""),
@@ -248,7 +260,6 @@ def _sheet_all(wb: Workbook, df: pd.DataFrame) -> None:
             for j in range(1, len(headers) + 1):
                 ws.cell(row=i, column=j).fill = fill
 
-        ticker = row.get("ticker", "")
         _set_ticker_link(ws, i, 2, ticker, exch_map.get(ticker, ""))
 
     _auto_width(ws)
@@ -268,10 +279,11 @@ _SS_LABELS = [
 _SS_LIQTHRESH = 50e6
 
 
-def _sheet_super_stocks(wb: Workbook, df: pd.DataFrame, scan_date: str) -> None:
+def _sheet_super_stocks(wb: Workbook, df: pd.DataFrame, scan_date: str, industry_map: dict[str, str] | None = None) -> None:
     ws = wb.create_sheet("Siêu cổ phiếu (5-7 tiêu chí)")
+    imap = industry_map or {}
 
-    headers = ["STT", "Mã", "Giá", "Score", "Thanh khoản TB 20p (tỷ)"] + _SS_LABELS
+    headers = ["STT", "Mã", "Ngành", "Giá", "Score", "Thanh khoản TB 20p (tỷ)"] + _SS_LABELS
     _write_header(ws, headers)
     exch_map = df.set_index("ticker")["exchange"].to_dict() if "exchange" in df.columns else {}
 
@@ -299,9 +311,11 @@ def _sheet_super_stocks(wb: Workbook, df: pd.DataFrame, scan_date: str) -> None:
     rows_data.sort(key=lambda x: x[0], reverse=True)
 
     for i, (avg_tk, score, tk_ty, row) in enumerate(rows_data, start=2):
+        ticker = row.get("ticker", "")
         vals = [
             i - 1,
-            row.get("ticker", ""),
+            ticker,
+            imap.get(ticker, ""),
             row.get("close", ""),
             f"{score}/7",
             round(tk_ty, 1),
@@ -317,10 +331,10 @@ def _sheet_super_stocks(wb: Workbook, df: pd.DataFrame, scan_date: str) -> None:
             if fill == STRONG_FILL:
                 cell.font = Font(color="FFFFFF")
 
-        for j, c in enumerate(_SS_COLS, start=6):  # cột 1=STT, shift +1
+        for j, c in enumerate(_SS_COLS, start=7):  # STT+Mã+Ngành+Giá+Score+TK = 6 cột trước
             ws.cell(row=i, column=j).fill = GREEN_FILL if row.get(c) else RED_FILL
 
-        _set_ticker_link(ws, i, 2, row.get("ticker", ""), exch_map.get(row.get("ticker", ""), ""))
+        _set_ticker_link(ws, i, 2, ticker, exch_map.get(ticker, ""))
 
     note_row = len(rows_data) + 3
     ws.cell(row=note_row, column=1, value="Tiêu chí: score>=5/7 và Thanh khoản TB 20 phiên >=50 tỷ VND").font = BOLD
@@ -356,9 +370,11 @@ def _sheet_super_stocks(wb: Workbook, df: pd.DataFrame, scan_date: str) -> None:
             c.font = Font(bold=True)
 
         for k, (avg_tk, score, tk_ty, row) in enumerate(almost_top5, start=hdr_row + 1):
+            ticker = row.get("ticker", "")
             vals = [
                 k - hdr_row,
-                row.get("ticker", ""),
+                ticker,
+                imap.get(ticker, ""),
                 row.get("close", ""),
                 f"{score}/7",
                 round(tk_ty, 1),
@@ -367,7 +383,7 @@ def _sheet_super_stocks(wb: Workbook, df: pd.DataFrame, scan_date: str) -> None:
             for j, v in enumerate(vals, start=1):
                 ws.cell(row=k, column=j, value=v).fill = ALMOST_FILL
 
-            for j, c in enumerate(_SS_COLS, start=6):
+            for j, c in enumerate(_SS_COLS, start=7):
                 ws.cell(row=k, column=j).fill = GREEN_FILL if row.get(c) else _LIGHT_RED
 
     _auto_width(ws)
@@ -382,13 +398,15 @@ def _sheet_signals(
     overviews: dict | None = None,
     results: pd.DataFrame | None = None,
     scan_date: str | None = None,
+    industry_map: dict[str, str] | None = None,
 ) -> None:
     """Tab đầu tiên: Tín hiệu trong ngày."""
+    imap = industry_map or {}
     style_label = {"long": " Dài hạn", "short": " Ngắn hạn"}.get(style_filter or "", "")
     ws = wb.create_sheet(f"Tín hiệu trong ngày{style_label}")
 
     headers = [
-        "STT", "Mã", "Tín hiệu", "Khung",
+        "STT", "Mã", "Ngành", "Tín hiệu", "Khung",
         "Giá Break", "Giá hiện tại",
         "Thanh khoản (tỷ VND)", "BiasNorm",
         "NN Sở hữu %", "NN Room %",
@@ -451,6 +469,7 @@ def _sheet_signals(
         vals = [
             stt,
             ticker,
+            imap.get(ticker, ""),
             signal_label,
             khung,
             round(float(st),    2) if st    else "",
@@ -468,9 +487,7 @@ def _sheet_signals(
     for r in range(2, row_idx):
         ws.row_dimensions[r].height = 40
 
-    ws.column_dimensions["K"].width = 60
     _auto_width(ws)
-    ws.column_dimensions["K"].width = max(ws.column_dimensions["K"].width, 60)
     ws.freeze_panes = "B2"
     ws.auto_filter.ref = ws.dimensions
 
@@ -546,6 +563,7 @@ def _sheet_signals(
                         vals = [
                             stt2,
                             rec["ticker"],
+                            imap.get(rec["ticker"], ""),
                             rec["rut_type"],
                             khung,
                             round(rec["st_val"], 2),
@@ -636,10 +654,11 @@ def _sheet_co_dong(
     ws.freeze_panes = "B2"
 
 
-def _sheet_nam_giu(wb: Workbook, results: pd.DataFrame, style: str = "long") -> None:
+def _sheet_nam_giu(wb: Workbook, results: pd.DataFrame, style: str = "long", industry_map: dict[str, str] | None = None) -> None:
     """Vùng xanh: long_trend=1, ngày/giá mua từ SuperTrend flip gần nhất, sort thanh khoản↓."""
     ws = wb.create_sheet("Vùng xanh (Nắm giữ)")
-    headers = ["STT", "Mã", "Ngày Mua", "Giữ lệnh (ngày)", "Giá Mua", "Giá Hiện Tại", "Lời/Lỗ %", "Thanh khoản (tỷ)"]
+    imap = industry_map or {}
+    headers = ["STT", "Mã", "Ngành", "Ngày Mua", "Giữ lệnh (ngày)", "Giá Mua", "Giá Hiện Tại", "Lời/Lỗ %", "Thanh khoản (tỷ)"]
     _write_header(ws, headers)
     exch_map = results.set_index("ticker")["exchange"].to_dict() if "exchange" in results.columns else {}
 
@@ -667,7 +686,7 @@ def _sheet_nam_giu(wb: Workbook, results: pd.DataFrame, style: str = "long") -> 
         pnl     = round((close - buy_p) / buy_p * 100, 2) if buy_p > 0 and close > 0 else None
         pnl_str = f"{pnl:+.2f}%" if pnl is not None else ""
 
-        vals = [i - 1, ticker, bd, hold, buy_p or "", close or "", pnl_str, round(tk / 1e9, 1) if tk else ""]
+        vals = [i - 1, ticker, imap.get(ticker, ""), bd, hold, buy_p or "", close or "", pnl_str, round(tk / 1e9, 1) if tk else ""]
         for j, v in enumerate(vals, start=1):
             ws.cell(row=i, column=j, value=v)
         fill = GREEN_FILL if (pnl is None or pnl >= 0) else YELLOW_FILL
@@ -684,10 +703,11 @@ _LIGHT_RED   = PatternFill("solid", fgColor="FFD7D7")
 _LIGHT_GREEN = PatternFill("solid", fgColor="C6EFCE")
 
 
-def _sheet_dung_ngoai(wb: Workbook, results: pd.DataFrame, style: str = "long") -> None:
+def _sheet_dung_ngoai(wb: Workbook, results: pd.DataFrame, style: str = "long", industry_map: dict[str, str] | None = None) -> None:
     """Vùng đỏ: long_trend=-1, ngày/giá bán từ SuperTrend flip gần nhất, sort thanh khoản↓."""
     ws = wb.create_sheet("Vùng đỏ (Đứng ngoài)")
-    headers = ["STT", "Mã", "Ngày Bán", "Đứng ngoài (ngày)", "Giá Bán", "Giá Hiện Tại", "Tránh lỗ", "Thanh khoản (tỷ)"]
+    imap = industry_map or {}
+    headers = ["STT", "Mã", "Ngành", "Ngày Bán", "Đứng ngoài (ngày)", "Giá Bán", "Giá Hiện Tại", "Tránh lỗ", "Thanh khoản (tỷ)"]
     _write_header(ws, headers)
     exch_map = results.set_index("ticker")["exchange"].to_dict() if "exchange" in results.columns else {}
 
@@ -700,7 +720,7 @@ def _sheet_dung_ngoai(wb: Workbook, results: pd.DataFrame, style: str = "long") 
     if "turnover" in df.columns:
         df = df.sort_values("turnover", ascending=False)
 
-    pnl_col_idx = 7  # cột "Tránh lỗ" sau khi thêm STT
+    pnl_col_idx = 8  # cột "Tránh lỗ": STT+Mã+Ngành+Ngày Bán+Đứng ngoài+Giá Bán+Giá HT = 7 trước
 
     for i, (_, row) in enumerate(df.iterrows(), start=2):
         ticker = row.get("ticker", "")
@@ -717,7 +737,7 @@ def _sheet_dung_ngoai(wb: Workbook, results: pd.DataFrame, style: str = "long") 
         pnl = round((close - sell_p) / sell_p * 100, 2) if sell_p > 0 and close > 0 else None
         pnl_str = f"{pnl:+.2f}%" if pnl is not None else ""
 
-        vals = [i - 1, ticker, sd, hold, sell_p or "", close or "", pnl_str, round(tk / 1e9, 1) if tk else ""]
+        vals = [i - 1, ticker, imap.get(ticker, ""), sd, hold, sell_p or "", close or "", pnl_str, round(tk / 1e9, 1) if tk else ""]
         for j, v in enumerate(vals, start=1):
             ws.cell(row=i, column=j, value=v)
 
@@ -846,12 +866,13 @@ OPEN_FILL   = PatternFill("solid", fgColor="DDEBF7")
 CLOSED_FILL = PatternFill("solid", fgColor="F2F2F2")
 
 
-def _sheet_history(wb: Workbook, results: pd.DataFrame, style: str = "long", overviews: dict | None = None) -> None:
+def _sheet_history(wb: Workbook, results: pd.DataFrame, style: str = "long", overviews: dict | None = None, industry_map: dict[str, str] | None = None) -> None:
     """Tab lịch sử lệnh: 1 giao dịch gần nhất/mã (MUA→BÁN), sort theo Thanh khoản cao→thấp."""
     ws = wb.create_sheet("Lịch sử lệnh")
+    imap = industry_map or {}
 
     headers = [
-        "STT", "Mã", "Ngày Mua", "Giá Mua",
+        "STT", "Mã", "Ngành", "Ngày Mua", "Giá Mua",
         "Ngày Bán", "Giá Bán",
         "Lời/Lỗ %", "Trạng thái", "Thanh khoản (tỷ)",
         "NN Sở hữu %", "NN Room %",
@@ -905,6 +926,7 @@ def _sheet_history(wb: Workbook, results: pd.DataFrame, style: str = "long", ove
         vals = [
             i - 1,
             ticker,
+            imap.get(ticker, ""),
             buy_date,
             round(float(buy_price), 2)  if buy_price  else "",
             sell_date,
