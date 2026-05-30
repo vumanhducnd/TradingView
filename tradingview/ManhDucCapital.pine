@@ -742,10 +742,9 @@ if barstate.islast and showHistory and array.size(hist_buyDate) > 0
 // =========================================================
 // BẢNG TÍN HIỆU GÓC PHẢI Vũ Mạnh Đức 0973124824
 // =========================================================
-var table stbl = table.new(position.top_right, 2, 9,
-     bgcolor=T_BG_DRK, border_width=1, border_color=T_BRD, frame_width=2, frame_color=T_BRD)
-
 if barstate.islast and showTable
+    stbl = table.new(position.top_right, 2, 9,
+         bgcolor=T_BG_DRK, border_width=1, border_color=T_BRD, frame_width=2, frame_color=T_BRD)
     srPrc  = trend == 1 ? up : dn
     srClr  = trend == 1 ? T_GRN : T_RED
     pnlR   = math.round(pnl * 100) / 100
