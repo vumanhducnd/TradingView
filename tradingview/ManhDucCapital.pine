@@ -42,9 +42,7 @@ Periods           = input.int(10,    "Chu kỳ ATR (chỉ dùng khi Tùy chỉnh
 src               = input.source(hl2,"Nguồn giá",                              group="Tín hiệu")
 Multiplier        = input.float(3.0, "Hệ số nhân ATR (chỉ dùng khi Tùy chỉnh)", step=0.1, group="Tín hiệu")
 changeATR         = input.bool(true, "Thay đổi phương pháp tính ATR?",         group="Tín hiệu")
-useStrengthFilter = input.bool(false,"Lọc sức mạnh khi đảo chiều?",      group="Tín hiệu")
-weakThr           = input.int(40,    "Ngưỡng YẾU (<=) cho hết trend",   group="Tín hiệu", minval=0, maxval=100)
-strongThr         = input.int(60,    "Ngưỡng MẠNH (>=) cho vào trend",  group="Tín hiệu", minval=0, maxval=100)
+
 
 // =========================================================
 // BOLLINGER BAND OPTION
@@ -242,11 +240,9 @@ dn1 := nz(dn[1], dn)
 dn  := close[1] < dn1 ? math.min(dn, dn1) : dn
 
 var int trend = 1
-allowFlipToLong  = not useStrengthFilter or (biasNorm >= strongThr and biasChange > 0)
-allowFlipToShort = not useStrengthFilter or (biasNorm <= weakThr   and biasChange < 0)
 trend := nz(trend[1], 1)
-trend := trend == -1 and close > dn1 and allowFlipToLong  ?  1 :
-         trend ==  1 and close < up1 and allowFlipToShort ? -1 : trend
+trend := trend == -1 and close > dn1 ?  1 :
+         trend ==  1 and close < up1 ? -1 : trend
 
 buySignal  = trend == 1  and trend[1] == -1
 sellSignal = trend == -1 and trend[1] == 1
