@@ -1,5 +1,5 @@
 //@version=6
-indicator("ManhDucCapital-0973124824", overlay=true, format=format.price, precision=2, max_labels_count=500, max_lines_count=500)
+indicator("ManhDucCapital-0973124824", overlay=true, format=format.price, precision=2, max_labels_count=500, max_lines_count=500, max_boxes_count=50)
 // =========================================================
 // DISCLAIMER - ManhDucCapital
 // =========================================================
@@ -102,6 +102,18 @@ tp3R      = input.float(3.0,  "TP3 (R-multiple)",                group="TP / SL"
      tooltip="TP3 = Vào lệnh + Risk × R3\nGợi ý gồng phần còn lại đến mục tiêu xa nhất")
 
 // =========================================================
+// VÙNG MUA/BÁN THEO KHỐI LƯỢNG Vũ Mạnh Đức 0973124824
+// =========================================================
+showVolSR    = input.bool(false, "Hiển thị vùng Mua/Bán theo khối lượng?", group="Vùng Mua/Bán (KL)",
+     tooltip="Vùng XANH = hỗ trợ pivot thấp có khối lượng mua đột biến\nVùng ĐỎ = kháng cự pivot cao có khối lượng bán đột biến\n◆ xanh bên dưới = HT giữ vững hoặc KC đổi thành HT\n◆ đỏ bên trên = KC giữ vững hoặc HT đổi thành KC\nNhãn 'Phá HT' / 'Phá KC' = xác nhận phá vỡ")
+vsr_lookback = input.int(20,    "Chu kỳ nhìn lại pivot",       group="Vùng Mua/Bán (KL)", minval=1,
+     tooltip="Số nến để xác định pivot high/low. Nhỏ hơn = nhạy hơn, nhiều vùng hơn")
+vsr_vol_len  = input.int(2,     "Độ nhạy lọc khối lượng",      group="Vùng Mua/Bán (KL)", minval=1,
+     tooltip="So sánh KL với N nến gần nhất. Càng cao = lọc càng gắt, chỉ giữ vùng KL thực sự đột biến")
+vsr_box_wd   = input.float(1.0, "Độ dày vùng (×ATR200)",       group="Vùng Mua/Bán (KL)", minval=0.0, step=0.1,
+     tooltip="Độ dày của vùng hỗ trợ/kháng cự tính bằng bội số của ATR(200)")
+
+// =========================================================
 // HÀM TIỆN ÍCH Vũ Mạnh Đức 0973124824
 // =========================================================
 f_pad(v)        => v < 10 ? "0" + str.tostring(v) : str.tostring(v)
@@ -115,6 +127,106 @@ f_round2(v)     => math.round(v * 100) / 100
 f_pct(v)        => f_sign(v) + str.tostring(f_round2(v)) + "%"
 f_today()       => f_pad(dayofmonth) + "/" + f_pad(month) + "/" + str.tostring(year)
 f_tsize(s)      => s == "tiny" ? size.tiny : s == "small" ? size.small : s == "normal" ? size.normal : s == "large" ? size.large : size.huge
+
+// =========================================================
+// HÀM VÙNG MUA/BÁN THEO KHỐI LƯỢNG Vũ Mạnh Đức 0973124824
+// =========================================================
+_vsr_delta() =>
+    posVol = 0.0
+    negVol = 0.0
+    var bool isBuy = true
+    switch
+        close > open => isBuy := true
+        close < open => isBuy := false
+    if isBuy
+        posVol += volume
+    else
+        negVol -= volume
+    posVol + negVol
+
+_vsr_calc(src, lb) =>
+    Vol    = _vsr_delta()
+    vol_hi = ta.highest(Vol / 2.5, vsr_vol_len)
+    vol_lo = ta.lowest (Vol / 2.5, vsr_vol_len)
+
+    var float supLvl  = na
+    var float supLvl1 = na
+    var float resLvl  = na
+    var float resLvl1 = na
+    var box   supBox  = box.new(na, na, na, na)
+    var box   resBox  = box.new(na, na, na, na)
+
+    var bool vsr_brkRes = false
+    var bool vsr_brkSup = false
+    var bool vsr_hldRes = false
+    var bool vsr_hldSup = false
+
+    pivHigh = ta.pivothigh(src, lb, lb)
+    pivLow  = ta.pivotlow (src, lb, lb)
+    atr200  = ta.atr(200)
+    wd      = atr200 * vsr_box_wd
+
+    // Vùng HỖ TRỢ: pivot thấp + KL mua đột biến
+    if not na(pivLow) and Vol > vol_hi
+        supLvl  := pivLow
+        supLvl1 := supLvl - wd
+        if showVolSR
+            supBox := box.new(
+                 chart.point.from_index(bar_index - lb, supLvl),
+                 chart.point.from_index(bar_index, supLvl1),
+                 border_color = color.new(color.green, 0),
+                 border_width = 1,
+                 bgcolor      = color.new(color.green, 70),
+                 text         = "KL: " + str.tostring(math.round(Vol, 2)),
+                 text_color   = chart.fg_color,
+                 text_size    = size.small)
+
+    // Vùng KHÁNG CỰ: pivot cao + KL bán đột biến
+    if not na(pivHigh) and Vol < vol_lo
+        resLvl  := pivHigh
+        resLvl1 := resLvl + wd
+        if showVolSR
+            resBox := box.new(
+                 chart.point.from_index(bar_index - lb, resLvl),
+                 chart.point.from_index(bar_index, resLvl1),
+                 border_color = color.new(color.red, 0),
+                 border_width = 1,
+                 bgcolor      = color.new(color.red, 70),
+                 text         = "KL: " + str.tostring(math.round(Vol, 2)),
+                 text_color   = chart.fg_color,
+                 text_size    = size.small)
+
+    // Kéo dài vùng đến nến hiện tại
+    if showVolSR
+        supBox.set_right(bar_index + 1)
+        resBox.set_right(bar_index + 1)
+
+    // Phát hiện phá vỡ / giữ vững
+    vsr_brkRes := ta.crossover (low,  resLvl1)
+    vsr_hldRes := ta.crossunder(high, resLvl)
+    vsr_hldSup := ta.crossover (low,  supLvl)
+    vsr_brkSup := ta.crossunder(high, supLvl1)
+
+    // Đổi màu vùng theo trạng thái
+    if showVolSR
+        if vsr_brkSup
+            supBox.set_bgcolor(color.new(color.red, 80))
+            supBox.set_border_color(color.red)
+            supBox.set_border_style(line.style_dashed)
+        if vsr_hldSup
+            supBox.set_bgcolor(color.new(color.green, 70))
+            supBox.set_border_color(color.new(color.green, 0))
+            supBox.set_border_style(line.style_solid)
+        if vsr_brkRes
+            resBox.set_bgcolor(color.new(color.green, 80))
+            resBox.set_border_color(color.new(color.green, 0))
+            resBox.set_border_style(line.style_dashed)
+        if vsr_hldRes
+            resBox.set_bgcolor(color.new(color.red, 70))
+            resBox.set_border_color(color.new(color.red, 0))
+            resBox.set_border_style(line.style_solid)
+
+    [supLvl, resLvl, vsr_brkRes, vsr_hldRes, vsr_hldSup, vsr_brkSup]
 
 // =========================================================
 // PALETTE Vũ Mạnh Đức 0973124824
@@ -565,6 +677,37 @@ if showSR
     label.set_xy(lbSR,   bar_index + 12, srPrice)
     label.set_text(lbSR, (trend == 1 ? "HT: " : "KC: ") + f_price(srPrice))
     label.set_color(lbSR, srColor)
+
+// =========================================================
+// VÙNG MUA/BÁN THEO KHỐI LƯỢNG — GỌI HÀM & HIỂN THỊ
+// =========================================================
+[vsr_supLvl, vsr_resLvl,
+     vsr_brkRes, vsr_hldRes,
+         vsr_hldSup, vsr_brkSup] = _vsr_calc(close, vsr_lookback)
+
+var bool vsr_resIsSup = false
+var bool vsr_supIsRes = false
+
+switch
+    vsr_brkRes => vsr_resIsSup := true
+    vsr_hldRes => vsr_resIsSup := false
+
+switch
+    vsr_brkSup => vsr_supIsRes := true 
+    vsr_hldSup => vsr_supIsRes := false
+
+plotshape(showVolSR and vsr_hldRes,                       "KC giữ vững",     shape.diamond, location.abovebar, color.new(#e92929, 0), size=size.tiny, offset=-1)
+plotshape(showVolSR and vsr_hldSup,                       "HT giữ vững",     shape.diamond, location.belowbar, color.new(#20ca26, 0), size=size.tiny, offset=-1)
+plotshape(showVolSR and vsr_brkRes and vsr_resIsSup[1],   "KC đổi thành HT", shape.diamond, location.belowbar, color.new(#20ca26, 0), size=size.tiny, offset=-1)
+plotshape(showVolSR and vsr_brkSup and vsr_supIsRes[1],   "HT đổi thành KC", shape.diamond, location.abovebar, color.new(#e92929, 0), size=size.tiny, offset=-1)
+
+if showVolSR and vsr_brkSup and not vsr_supIsRes[1]
+    label.new(bar_index[1], vsr_supLvl[1], "Phá HT",
+         style=label.style_label_down, color=color.new(#7e1e1e, 0), textcolor=chart.fg_color, size=size.small)
+
+if showVolSR and vsr_brkRes and not vsr_resIsSup[1]
+    label.new(bar_index[1], vsr_resLvl[1], "Phá KC",
+         style=label.style_label_up, color=color.new(#2b6d2d, 0), textcolor=chart.fg_color, size=size.small)
 
 // =========================================================
 // 2 ĐƯỜNG DỌC VÙNG BACKTEST Vũ Mạnh Đức 0973124824
