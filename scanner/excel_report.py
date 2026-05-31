@@ -80,6 +80,8 @@ def build_excel_report(
         wb = Workbook()
         _sheet_signals(wb, signals, overviews=(company_data or {}).get("overviews"),
                        results=results, scan_date=scan_date, industry_map=industry_map)
+        _sheet_vung_mua_dep(wb, results, style="long", industry_map=industry_map)
+        _sheet_vung_nen_ban(wb, results, style="long", industry_map=industry_map)
         if super_stocks is not None and not super_stocks.empty:
             _sheet_super_stocks(wb, super_stocks, scan_date, industry_map=industry_map)
         _sheet_all(wb, results, industry_map=industry_map)
@@ -132,6 +134,8 @@ def _build_workbook(
 
     _sheet_signals(wb, signals, style_filter=style, overviews=overviews,
                    results=results, scan_date=scan_date, industry_map=imap)
+    _sheet_vung_mua_dep(wb, results, style=style, industry_map=imap)
+    _sheet_vung_nen_ban(wb, results, style=style, industry_map=imap)
     _sheet_nam_giu(wb, results, style=style, industry_map=imap)
     _sheet_dung_ngoai(wb, results, style=style, industry_map=imap)
     _sheet_super_stocks(wb, results, scan_date, industry_map=imap)
@@ -701,6 +705,9 @@ def _sheet_nam_giu(wb: Workbook, results: pd.DataFrame, style: str = "long", ind
 
 _LIGHT_RED   = PatternFill("solid", fgColor="FFD7D7")
 _LIGHT_GREEN = PatternFill("solid", fgColor="C6EFCE")
+_ORANGE_FILL = PatternFill("solid", fgColor="FFD9A0")
+_BOLD_RED_FILL = PatternFill("solid", fgColor="FF9999")
+_STRONG_GREEN_FILL = PatternFill("solid", fgColor="B7E1CD")
 
 
 def _sheet_dung_ngoai(wb: Workbook, results: pd.DataFrame, style: str = "long", industry_map: dict[str, str] | None = None) -> None:
@@ -746,6 +753,204 @@ def _sheet_dung_ngoai(wb: Workbook, results: pd.DataFrame, style: str = "long", 
 
         if pnl is not None:
             ws.cell(row=i, column=pnl_col_idx).fill = _LIGHT_GREEN if pnl <= 0 else _LIGHT_RED
+
+        _set_ticker_link(ws, i, 2, ticker, exch_map.get(ticker, ""))
+
+    _auto_width(ws)
+    ws.freeze_panes = "B2"
+    ws.auto_filter.ref = ws.dimensions
+
+
+def _sheet_vung_mua_dep(wb: Workbook, results: pd.DataFrame, style: str = "long", industry_map: dict[str, str] | None = None) -> None:
+    """Vùng mua đẹp: trend=1, bias>=55, gần hỗ trợ SuperTrend ≤5% hoặc có tín hiệu MUA mới."""
+    ws = wb.create_sheet("🟢 Vùng Mua Đẹp")
+    imap = industry_map or {}
+    headers = [
+        "STT", "Mã", "Ngành", "Tín hiệu",
+        "BiasNorm", "Hỗ trợ ST", "Cách HT %",
+        "Ngày MUA", "Giữ (phiên)", "Giá MUA", "Giá HT", "Lãi/Lỗ %",
+        "Siêu CP", "Thanh khoản (tỷ)",
+    ]
+    _write_header(ws, headers)
+    exch_map = results.set_index("ticker")["exchange"].to_dict() if "exchange" in results.columns else {}
+
+    p         = f"{style}_"
+    trend_col = f"{p}trend"             if f"{p}trend"             in results.columns else "trend"
+    st_col    = f"{p}supertrend"        if f"{p}supertrend"        in results.columns else "supertrend"
+    buy_col   = f"{p}buy_signal"        if f"{p}buy_signal"        in results.columns else "buy_signal"
+    date_col  = f"{p}last_signal_date"  if f"{p}last_signal_date"  in results.columns else "last_signal_date"
+    price_col = f"{p}last_signal_price" if f"{p}last_signal_price" in results.columns else "last_signal_price"
+    pnl_col   = f"{p}signal_pnl_pct"   if f"{p}signal_pnl_pct"   in results.columns else "signal_pnl_pct"
+    bars_col  = f"{p}bars_since_signal" if f"{p}bars_since_signal" in results.columns else "bars_since_signal"
+
+    # Lọc: trend=1, bias>=55
+    mask_trend = results.get(trend_col, pd.Series(0, index=results.index)) == 1
+    mask_bias  = results["bias_norm"].fillna(0) >= 55
+    df = results[mask_trend & mask_bias].copy()
+
+    # Tính % khoảng cách từ giá đến hỗ trợ SuperTrend
+    def _dist(row):
+        c  = float(row.get("close") or 0)
+        st = float(row.get(st_col)  or 0)
+        if st <= 0 or c <= 0:
+            return None
+        return round((c - st) / st * 100, 2)
+
+    df["_dist"]   = df.apply(_dist, axis=1)
+    df["_is_buy"] = df.get(buy_col, pd.Series(False, index=df.index)).astype(int)
+
+    # Chỉ giữ: gần hỗ trợ ≤5% HOẶC có tín hiệu MUA mới
+    mask_near = df["_dist"].notna() & (df["_dist"] <= 5)
+    mask_new  = df["_is_buy"] == 1
+    df = df[mask_near | mask_new]
+
+    # Sort: tín hiệu MUA mới lên đầu, sau đó gần hỗ trợ nhất
+    df = df.sort_values(["_is_buy", "_dist"], ascending=[False, True])
+
+    for i, (_, row) in enumerate(df.iterrows(), start=2):
+        ticker   = row.get("ticker", "")
+        close    = float(row.get("close")    or 0)
+        st_val   = float(row.get(st_col)     or 0)
+        tk       = float(row.get("turnover") or 0)
+        bd       = str(row.get(date_col)     or "")[:10]
+        buy_p    = float(row.get(price_col)  or 0)
+        pnl      = row.get(pnl_col)
+        dist     = row.get("_dist")
+        is_buy   = bool(row.get(buy_col, False))
+        ss       = int(row.get("super_score") or 0)
+        bias     = float(row.get("bias_norm") or 0)
+
+        try:
+            hold = int(row.get(bars_col) or 0) or ""
+        except Exception:
+            hold = ""
+
+        pnl_str  = f"{float(pnl):+.2f}%" if pnl is not None and not pd.isna(pnl) else ""
+        dist_str = f"{dist:.1f}%"         if dist is not None else ""
+        sig_str  = "🟢 MUA MỚI"           if is_buy else "✅ Nắm giữ"
+        ss_str   = f"💎 {ss}/7"            if ss >= 5 else f"{ss}/7"
+
+        vals = [
+            i - 1, ticker, imap.get(ticker, ""), sig_str,
+            round(bias, 1), fmt_price(st_val) if st_val else "",
+            dist_str, bd, hold,
+            fmt_price(buy_p) if buy_p else "", fmt_price(close),
+            pnl_str, ss_str, round(tk / 1e9, 1) if tk else "",
+        ]
+        for j, v in enumerate(vals, start=1):
+            ws.cell(row=i, column=j, value=v)
+
+        row_fill = _STRONG_GREEN_FILL if is_buy else _LIGHT_GREEN
+        for j in range(1, len(headers) + 1):
+            ws.cell(row=i, column=j).fill = row_fill
+
+        # Màu riêng cột Lãi/Lỗ
+        if pnl is not None and not pd.isna(pnl):
+            ws.cell(row=i, column=12).fill = _LIGHT_GREEN if float(pnl) >= 0 else RED_FILL
+
+        _set_ticker_link(ws, i, 2, ticker, exch_map.get(ticker, ""))
+
+    _auto_width(ws)
+    ws.freeze_panes = "B2"
+    ws.auto_filter.ref = ws.dimensions
+
+
+def _sheet_vung_nen_ban(wb: Workbook, results: pd.DataFrame, style: str = "long", industry_map: dict[str, str] | None = None) -> None:
+    """Vùng cân nhắc bán: đang giữ lệnh MUA nhưng trend đã flip hoặc đà đang yếu."""
+    ws = wb.create_sheet("🔴 Vùng Cân Nhắc Bán")
+    imap = industry_map or {}
+    headers = [
+        "STT", "Mã", "Ngành", "Mức độ", "Lý do",
+        "BiasNorm", "Xu hướng",
+        "Ngày MUA", "Giữ (phiên)", "Giá MUA", "Giá HT", "Lãi/Lỗ %",
+        "Thanh khoản (tỷ)",
+    ]
+    _write_header(ws, headers)
+    exch_map = results.set_index("ticker")["exchange"].to_dict() if "exchange" in results.columns else {}
+
+    p            = f"{style}_"
+    trend_col    = f"{p}trend"             if f"{p}trend"             in results.columns else "trend"
+    sell_col     = f"{p}sell_signal"       if f"{p}sell_signal"       in results.columns else "sell_signal"
+    sigtype_col  = f"{p}last_signal_type"  if f"{p}last_signal_type"  in results.columns else "last_signal_type"
+    date_col     = f"{p}last_signal_date"  if f"{p}last_signal_date"  in results.columns else "last_signal_date"
+    price_col    = f"{p}last_signal_price" if f"{p}last_signal_price" in results.columns else "last_signal_price"
+    pnl_col      = f"{p}signal_pnl_pct"   if f"{p}signal_pnl_pct"   in results.columns else "signal_pnl_pct"
+    bars_col     = f"{p}bars_since_signal" if f"{p}bars_since_signal" in results.columns else "bars_since_signal"
+
+    trend_s   = results.get(trend_col,   pd.Series(0,    index=results.index))
+    sell_s    = results.get(sell_col,    pd.Series(False, index=results.index))
+    sigtype_s = results.get(sigtype_col, pd.Series("",   index=results.index)).fillna("")
+    bias_s    = results["bias_norm"].fillna(50)
+
+    is_holding = sigtype_s == "MUA"
+
+    # Nhóm 1 — CẦN BÁN: trend đã flip xuống -1 trong khi đang giữ lệnh MUA
+    crit_urgent = is_holding & (trend_s == -1)
+    # Nhóm 2 — THEO DÕI: trend=1 nhưng bias ≤45 (đà suy yếu)
+    crit_watch  = is_holding & (trend_s == 1) & (bias_s <= 45)
+    # Nhóm 3 — vừa xuất hiện tín hiệu BÁN
+    crit_sell   = sell_s.astype(bool)
+
+    df = results[crit_urgent | crit_watch | crit_sell].copy()
+
+    def _urgency(row):
+        is_sell = bool(row.get(sell_col, False))
+        t       = int(row.get(trend_col) or 0)
+        sig     = str(row.get(sigtype_col) or "")
+        if is_sell or (t == -1 and sig == "MUA"):
+            return 0  # khẩn cấp nhất
+        return 1
+
+    df["_urg"] = df.apply(_urgency, axis=1)
+    df = df.sort_values(["_urg", "bias_norm"], ascending=[True, True])
+
+    for i, (_, row) in enumerate(df.iterrows(), start=2):
+        ticker   = row.get("ticker", "")
+        close    = float(row.get("close")    or 0)
+        tk       = float(row.get("turnover") or 0)
+        bd       = str(row.get(date_col)     or "")[:10]
+        buy_p    = float(row.get(price_col)  or 0)
+        pnl      = row.get(pnl_col)
+        trend_v  = int(row.get(trend_col)    or 0)
+        bias     = float(row.get("bias_norm") or 50)
+        is_sell  = bool(row.get(sell_col, False))
+        sig_type = str(row.get(sigtype_col)  or "")
+        urg      = int(row.get("_urg")       or 1)
+
+        try:
+            hold = int(row.get(bars_col) or 0) or ""
+        except Exception:
+            hold = ""
+
+        pnl_str   = f"{float(pnl):+.2f}%" if pnl is not None and not pd.isna(pnl) else ""
+        trend_str = "↑ TĂNG" if trend_v == 1 else "↓ GIẢM"
+
+        if is_sell:
+            muc_do = "🔴 BÁN NGAY"
+            ly_do  = "Tín hiệu BÁN xuất hiện"
+        elif trend_v == -1 and sig_type == "MUA":
+            muc_do = "🔴 CẦN BÁN"
+            ly_do  = "Trend đã đảo chiều giảm"
+        else:
+            muc_do = "⚠️ THEO DÕI"
+            ly_do  = f"Đà yếu — Bias {bias:.0f}%"
+
+        vals = [
+            i - 1, ticker, imap.get(ticker, ""), muc_do, ly_do,
+            round(bias, 1), trend_str,
+            bd, hold, fmt_price(buy_p) if buy_p else "", fmt_price(close),
+            pnl_str, round(tk / 1e9, 1) if tk else "",
+        ]
+        for j, v in enumerate(vals, start=1):
+            ws.cell(row=i, column=j, value=v)
+
+        row_fill = _BOLD_RED_FILL if urg == 0 else _ORANGE_FILL
+        for j in range(1, len(headers) + 1):
+            ws.cell(row=i, column=j).fill = row_fill
+
+        # Màu riêng cột Lãi/Lỗ
+        if pnl is not None and not pd.isna(pnl):
+            ws.cell(row=i, column=12).fill = _LIGHT_GREEN if float(pnl) >= 0 else RED_FILL
 
         _set_ticker_link(ws, i, 2, ticker, exch_map.get(ticker, ""))
 
