@@ -338,6 +338,17 @@ def analyze_ticker(
     super_score    = sum([ss1, ss2, ss3, ss4, ss5, ss6, ss7])
     is_super_stock = super_score >= 5
 
+    # VSR levels (Volume Support/Resistance — port of Pine _vsr_calc)
+    vsr_sup, vsr_res = _calc_vsr_levels(df)
+    vsr_near_breakout   = False
+    vsr_dist_to_res_pct = None
+    vsr_base_width_pct  = None
+    if not (np.isnan(vsr_sup) or np.isnan(vsr_res)) and vsr_sup < vsr_res:
+        if vsr_sup < close_val < vsr_res:
+            vsr_dist_to_res_pct = round((vsr_res - close_val) / close_val * 100, 2)
+            vsr_base_width_pct  = round((vsr_res - vsr_sup)  / vsr_sup  * 100, 2)
+            vsr_near_breakout   = vsr_dist_to_res_pct <= 7.0
+
     return {
         "close": close_val,
         "trend": int(last["trend"]),
@@ -372,6 +383,12 @@ def analyze_ticker(
         "ss5": ss5, "ss6": ss6, "ss7": ss7,
         "super_score":    super_score,
         "is_super_stock": is_super_stock,
+        # VSR — vùng hỗ trợ/kháng cự theo khối lượng
+        "vsr_sup":              vsr_sup if not np.isnan(vsr_sup) else None,
+        "vsr_res":              vsr_res if not np.isnan(vsr_res) else None,
+        "vsr_near_breakout":    vsr_near_breakout,
+        "vsr_dist_to_res_pct":  vsr_dist_to_res_pct,
+        "vsr_base_width_pct":   vsr_base_width_pct,
     }
 
 
@@ -390,6 +407,58 @@ def _wilder_atr(high: np.ndarray, low: np.ndarray, close: np.ndarray, period: in
     for i in range(period, n):
         atr[i] = (atr[i - 1] * (period - 1) + tr[i]) / period
     return atr
+
+
+def _calc_vsr_levels(
+    df: pd.DataFrame, lb: int = 20, vol_len: int = 2
+) -> tuple[float, float]:
+    """
+    Port of Pine Script _vsr_calc.  Returns (sup_lvl, res_lvl).
+
+    Logic:
+      - sup_lvl: pivot low confirmed while current bar has a buying-volume spike
+      - res_lvl: pivot high confirmed while current bar has a selling-volume spike
+    Both NaN when insufficient data or no qualifying pivot found.
+    """
+    n = len(df)
+    if n < 2 * lb + 1:
+        return float("nan"), float("nan")
+
+    close = df["close"]
+    open_ = df["open"]
+    high  = df["high"]
+    low   = df["low"]
+    vol   = df["volume"]
+
+    # Signed volume per bar (_vsr_delta in Pine): +vol for bull candle, -vol for bear
+    delta = pd.Series(
+        np.where(close > open_, vol, np.where(close < open_, -vol, 0.0)),
+        index=df.index,
+    )
+
+    # Volume thresholds (Pine: ta.highest/lowest of Vol/2.5 over vsr_vol_len)
+    vol_hi = (delta / 2.5).rolling(vol_len, min_periods=1).max()
+    vol_lo = (delta / 2.5).rolling(vol_len, min_periods=1).min()
+
+    # Pivot detection: ta.pivothigh(src, lb, lb) at bar i returns high[i-lb]
+    # if high[i-lb] == max(high[i-2lb : i+1])
+    roll_max = high.rolling(2 * lb + 1, min_periods=2 * lb + 1).max()
+    roll_min = low.rolling(2 * lb + 1,  min_periods=2 * lb + 1).min()
+
+    piv_high = high.shift(lb).where(high.shift(lb) == roll_max)
+    piv_low  = low.shift(lb).where(low.shift(lb)   == roll_min)
+
+    # Support: pivot low confirmed + strong buying delta on confirmation bar
+    sup_mask = piv_low.notna()  & (delta > vol_hi)
+    res_mask = piv_high.notna() & (delta < vol_lo)
+
+    sup_idx = sup_mask[sup_mask].index
+    res_idx = res_mask[res_mask].index
+
+    sup_lvl = float(piv_low.loc[sup_idx[-1]])  if len(sup_idx) > 0 else float("nan")
+    res_lvl = float(piv_high.loc[res_idx[-1]]) if len(res_idx) > 0 else float("nan")
+
+    return sup_lvl, res_lvl
 
 
 def _rsi(close: pd.Series, period: int) -> pd.Series:

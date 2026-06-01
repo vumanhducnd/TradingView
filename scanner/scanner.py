@@ -77,7 +77,9 @@ def run_scan_dual(
     shared = ["ticker", "close", "bias_norm", "bias_label", "b_score", "r_score",
               "volume", "turnover",
               "ss1", "ss2", "ss3", "ss4", "ss5", "ss6", "ss7",
-              "super_score", "is_super_stock"]
+              "super_score", "is_super_stock",
+              "vsr_sup", "vsr_res", "vsr_near_breakout",
+              "vsr_dist_to_res_pct", "vsr_base_width_pct"]
     # Cột riêng từng style
     style_cols = ["trend", "supertrend", "support", "resistance",
                   "buy_signal", "sell_signal",

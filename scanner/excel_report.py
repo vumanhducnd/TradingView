@@ -83,6 +83,7 @@ def build_excel_report(
         if super_stocks is not None and not super_stocks.empty:
             _sheet_super_stocks(wb, super_stocks, scan_date, industry_map=industry_map)
         _sheet_all(wb, results, industry_map=industry_map)
+        _sheet_tich_luy(wb, results, industry_map=industry_map)
         _sheet_stats(wb, results, scan_date, style=None, company_data=company_data)
         if "Sheet" in wb.sheetnames:
             del wb["Sheet"]
@@ -135,6 +136,7 @@ def _build_workbook(
     _sheet_nam_giu(wb, results, style=style, industry_map=imap)
     _sheet_dung_ngoai(wb, results, style=style, industry_map=imap)
     _sheet_super_stocks(wb, results, scan_date, industry_map=imap)
+    _sheet_tich_luy(wb, results, style=style, industry_map=imap)
 
     _sheet_history(wb, results=results, style=style, overviews=overviews, industry_map=imap)
     _sheet_stats(wb, results, scan_date, style=style, company_data=company_data)
@@ -1157,6 +1159,74 @@ def _sheet_dong_thuan(wb: Workbook, df: pd.DataFrame) -> None:
             ws.cell(row=i, column=j).fill = fill
 
     _auto_width(ws)
+
+
+_LIGHT_YELLOW = PatternFill("solid", fgColor="FFEB9C")
+
+
+def _sheet_tich_luy(
+    wb: Workbook,
+    results: pd.DataFrame,
+    style: str = "long",
+    industry_map: dict[str, str] | None = None,
+) -> None:
+    """Tab: cổ phiếu đang tích lũy nền, giá gần kháng cự VSR, chuẩn bị phá vỡ."""
+    ws = wb.create_sheet("Tích Lũy - Phá KC")
+    imap = industry_map or {}
+
+    headers = [
+        "STT", "Mã", "Ngành", "Giá", "Hỗ Trợ VSR", "Kháng Cự VSR",
+        "Cách KC%", "Rộng nền%", "Xu hướng ST", "BiasNorm", "Nhận xét", "Siêu CP",
+    ]
+    _write_header(ws, headers)
+
+    exch_map = results.set_index("ticker")["exchange"].to_dict() if "exchange" in results.columns else {}
+
+    trend_col = f"{style}_trend" if f"{style}_trend" in results.columns else "trend"
+
+    df = results[results.get("vsr_near_breakout", False) == True].copy()  # noqa: E712
+    if "bias_norm" in df.columns:
+        df = df[df["bias_norm"] >= 45]
+    if "vsr_dist_to_res_pct" in df.columns:
+        df = df.sort_values("vsr_dist_to_res_pct", ascending=True)
+
+    for i, (_, row) in enumerate(df.iterrows(), start=2):
+        ticker  = row.get("ticker", "")
+        close   = row.get("close") or 0
+        sup     = row.get("vsr_sup")
+        res     = row.get("vsr_res")
+        dist    = row.get("vsr_dist_to_res_pct")
+        width   = row.get("vsr_base_width_pct")
+        bias    = row.get("bias_norm")
+        label   = row.get("bias_label", "")
+        trend   = row.get(trend_col, row.get("trend"))
+        trend_s = "↑ TĂNG" if trend == 1 else "↓ GIẢM"
+        ss      = f"{int(row.get('super_score', 0))}/7"
+
+        vals = [
+            i - 1, ticker, imap.get(ticker, ""),
+            round(close, 2) if close else "",
+            round(sup, 2) if sup else "",
+            round(res, 2) if res else "",
+            f"{dist:.1f}%" if dist is not None else "",
+            f"{width:.1f}%" if width is not None else "",
+            trend_s,
+            round(bias, 1) if bias is not None else "",
+            label,
+            ss,
+        ]
+        for j, v in enumerate(vals, start=1):
+            ws.cell(row=i, column=j, value=v)
+
+        fill = _LIGHT_GREEN if (dist is not None and dist <= 3.0) else _LIGHT_YELLOW
+        for j in range(1, len(headers) + 1):
+            ws.cell(row=i, column=j).fill = fill
+
+        _set_ticker_link(ws, i, 2, ticker, exch_map.get(ticker, ""))
+
+    _auto_width(ws)
+    ws.freeze_panes = "B2"
+    ws.auto_filter.ref = ws.dimensions
 
 
 def _auto_width(ws, max_width: int = 30) -> None:
