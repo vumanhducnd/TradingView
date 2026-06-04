@@ -177,7 +177,7 @@ _vsr_calc(src, lb) =>
                  border_color = color.new(color.green, 0),
                  border_width = 1,
                  bgcolor      = color.new(color.green, 70),
-                 text         = "KL: " + str.tostring(math.round(Vol, 2)),
+                 text         = "KL: " + str.tostring(Vol, format.volume),
                  text_color   = chart.fg_color,
                  text_size    = size.small)
 
@@ -192,7 +192,7 @@ _vsr_calc(src, lb) =>
                  border_color = color.new(color.red, 0),
                  border_width = 1,
                  bgcolor      = color.new(color.red, 70),
-                 text         = "KL: " + str.tostring(math.round(Vol, 2)),
+                 text         = "KL: " + str.tostring(Vol, format.volume),
                  text_color   = chart.fg_color,
                  text_size    = size.small)
 
@@ -357,7 +357,7 @@ trend := trend == -1 and close > dn1 ?  1 :
          trend ==  1 and close < up1 ? -1 : trend
 
 buySignal  = trend == 1  and trend[1] == -1
-sellSignal = trend == -1 and trend[1] == 1
+sellSignal = trend == -1 and trend[1] ==  1
 
 // ── Pivot High/Low để tính SL động ───────────────────────
 _phRaw = ta.pivothigh(high, pivotLen, pivotLen)
