@@ -403,7 +403,11 @@ def fetch_yesterday_review() -> tuple[str, str]:
                               .replace("&", "&amp;")
                               .replace("<", "&lt;")
                               .replace(">", "&gt;"))
-                html_lines.append(f"  • [{n['source']}] {title_html}")
+                link = n.get("link", "").strip()
+                if link:
+                    html_lines.append(f'  • [{n["source"]}] <a href="{link}">{title_html}</a>')
+                else:
+                    html_lines.append(f"  • [{n['source']}] {title_html}")
                 plain_lines.append(f"  - [{n['source']}] {n['title']}")
     except Exception as e:
         logger.debug(f"fetch_yesterday_review news: {e}")
