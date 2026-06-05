@@ -383,6 +383,40 @@ def generate_pre_session_ai(
     return _call(client, prompt, max_tokens=2000)
 
 
+# ─── Yesterday market review AI ──────────────────────────────────────────────
+
+def generate_yesterday_review(market_ctx: str) -> str:
+    """Phân tích nguyên nhân biến động TTCK VN phiên hôm qua dựa trên chỉ số + tin trong nước."""
+    if not market_ctx.strip():
+        return ""
+    try:
+        client = _get_client()
+    except Exception as e:
+        logger.warning(f"AI không khả dụng: {e}")
+        return ""
+
+    today = date.today().strftime("%d/%m/%Y")
+    prompt = textwrap.dedent(f"""
+        Bạn là chuyên gia phân tích thị trường chứng khoán Việt Nam.
+        Ngày: {today}
+
+        Dữ liệu thị trường và tin tức trong nước hôm qua:
+        {market_ctx}
+
+        Hãy phân tích ngắn gọn TẠI SAO thị trường VN biến động như vậy trong phiên hôm qua.
+        Tập trung vào:
+        - Nguyên nhân chính: tin tức trong nước, sự kiện vĩ mô VN, dòng tiền, tâm lý NĐT
+        - Nhóm ngành hay yếu tố nổi bật dẫn dắt thị trường (nếu có trong tin tức)
+        - 1 điểm cần chú ý cho phiên hôm nay
+
+        Yêu cầu: 3-4 câu súc tích, tiếng Việt có dấu đầy đủ, không markdown, không bullet,
+        không mở đầu bằng "Dưới đây là" hay "Theo phân tích". Bắt đầu thẳng vào nội dung.
+    """).strip()
+
+    logger.info("AI: phân tích nguyên nhân biến động hôm qua...")
+    return _call(client, prompt, max_tokens=600)
+
+
 # ─── Global events AI ─────────────────────────────────────────────────────────
 
 def summarize_global_events(events_text: str) -> str:

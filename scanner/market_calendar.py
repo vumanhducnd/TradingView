@@ -240,14 +240,14 @@ _COUNTRY_FLAG = {
 _ICT = timezone(timedelta(hours=7))
 
 
-def fetch_global_events(today: date | None = None) -> str:
+def fetch_global_events(today: date | None = None) -> tuple[str, str]:
     """
     Fetch lịch sự kiện kinh tế quốc tế từ Finnhub cho ngày `today` và ngày mai.
-    Trả về block HTML sẵn sàng gửi Telegram, hoặc chuỗi rỗng nếu không có / lỗi.
+    Trả về (html_data, plain_ctx) — không chứa AI inline.
     """
     from scanner.config import FINNHUB_API_KEY
     if not FINNHUB_API_KEY:
-        return ""
+        return "", ""
 
     if today is None:
         today = date.today()
@@ -268,7 +268,7 @@ def fetch_global_events(today: date | None = None) -> str:
     except Exception as e:
         from scanner.utils import logger
         logger.warning(f"Finnhub calendar fetch failed: {e}")
-        return ""
+        return "", ""
 
     # Lọc: chỉ giữ high-impact hoặc medium của các nước watch
     rows: list[dict] = []
@@ -314,7 +314,7 @@ def fetch_global_events(today: date | None = None) -> str:
         })
 
     if not rows:
-        return ""
+        return "", ""
 
     # Ưu tiên: high-impact US/CN → high-impact khác → medium US/CN → còn lại
     rows.sort(key=lambda r: (
@@ -346,20 +346,69 @@ def fetch_global_events(today: date | None = None) -> str:
             lines.append(f"  {dot} {flag} <b>{event_html}</b> — {r['time']}")
             plain_lines.append(f"  [{r['country']}] {r['event']} lúc {r['time']}")
 
-    # AI tóm tắt tác động đến TTCK Việt
-    try:
-        from scanner.ai_analyst import summarize_global_events
-        from scanner.utils import logger
-        ai_summary = summarize_global_events("\n".join(plain_lines))
-        if ai_summary:
-            lines.append(f"\n💬 <i>{ai_summary}</i>")
-        else:
-            logger.warning("AI global events: trả về rỗng (Groq/OpenAI/Gemini đều lỗi?)")
-    except Exception as e:
-        from scanner.utils import logger
-        logger.warning(f"AI global events thất bại: {e}")
+    return "\n".join(lines), "\n".join(plain_lines)
 
-    return "\n".join(lines)
+
+# ─── Yesterday market review ─────────────────────────────────────────────────
+
+def fetch_yesterday_review() -> tuple[str, str]:
+    """
+    Lấy chỉ số VNINDEX/VN30/HNX + tin tức trong nước.
+    Trả về (html_data, plain_ctx) — không chứa AI inline.
+    """
+    import pandas as _pd
+    from scanner.utils import logger
+
+    html_lines: list[str] = []
+    plain_lines: list[str] = []
+
+    # ── Chỉ số index ──────────────────────────────────────────────────────────
+    try:
+        from vnstock import Trading
+        t = Trading(source="VCI")
+        df = t.price_board(symbols_list=["VNINDEX", "VN30", "HNX"])
+        if df is not None and not df.empty:
+            if isinstance(df.columns, _pd.MultiIndex):
+                df.columns = [f"{a}.{b}".lower() for a, b in df.columns]
+            ticker_col = next(
+                (c for c in ["listing.symbol", "symbol"] if c in df.columns),
+                df.columns[0],
+            )
+            index_lines_html: list[str] = []
+            for _, row in df.iterrows():
+                sym   = str(row.get(ticker_col, "")).strip()
+                close = row.get("match.match_price") or row.get("match.close_price", 0)
+                chg   = float(row.get("match.price_change_ratio", 0) or 0)
+                if not sym or not close:
+                    continue
+                arrow = "▲" if chg >= 0 else "▼"
+                sign  = "+" if chg >= 0 else ""
+                index_lines_html.append(f"  {arrow} <b>{sym}</b>: {float(close):,.0f} ({sign}{chg:.2f}%)")
+                plain_lines.append(f"{sym}: {float(close):,.0f} ({sign}{chg:.2f}%)")
+            if index_lines_html:
+                html_lines.append("📊 <b>Thị trường hôm qua:</b>")
+                html_lines.extend(index_lines_html)
+    except Exception as e:
+        logger.debug(f"fetch_yesterday_review index: {e}")
+
+    # ── Tin tức trong nước ────────────────────────────────────────────────────
+    try:
+        from scanner.news_fetcher import fetch_hot_news
+        news_items = fetch_hot_news(max_items=8)
+        if news_items:
+            html_lines.append("\n📰 <b>Tin nổi bật trong nước:</b>")
+            plain_lines.append("\nTin tức nổi bật:")
+            for n in news_items[:6]:
+                title_html = (n["title"]
+                              .replace("&", "&amp;")
+                              .replace("<", "&lt;")
+                              .replace(">", "&gt;"))
+                html_lines.append(f"  • [{n['source']}] {title_html}")
+                plain_lines.append(f"  - [{n['source']}] {n['title']}")
+    except Exception as e:
+        logger.debug(f"fetch_yesterday_review news: {e}")
+
+    return "\n".join(html_lines), "\n".join(plain_lines)
 
 
 # ─── Public API ──────────────────────────────────────────────────────────────

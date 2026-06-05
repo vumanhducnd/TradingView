@@ -173,9 +173,31 @@ def run_pre_session(force: bool = False) -> None:
 
     today_str = datetime.now(ICT).strftime("%d/%m/%Y")
 
-    # Fetch sự kiện quốc tế 1 lần duy nhất, dùng chung cho cả long và short
-    from scanner.market_calendar import fetch_global_events
-    global_block = fetch_global_events()
+    # Fetch review hôm qua + sự kiện quốc tế — gộp data trước, AI xuống cuối
+    from scanner.market_calendar import fetch_yesterday_review, fetch_global_events
+    from scanner.ai_analyst import generate_yesterday_review, summarize_global_events
+    from scanner.utils import logger as _log
+
+    review_html, review_plain = fetch_yesterday_review()
+    global_html, global_plain = fetch_global_events()
+
+    ai_parts: list[str] = []
+    if review_plain:
+        try:
+            t = generate_yesterday_review(review_plain)
+            if t:
+                ai_parts.append(f"💬 <i>{t}</i>")
+        except Exception as _e:
+            _log.warning(f"AI yesterday review: {_e}")
+    if global_plain:
+        try:
+            t = summarize_global_events(global_plain)
+            if t:
+                ai_parts.append(f"💬 <i>{t}</i>")
+        except Exception as _e:
+            _log.warning(f"AI global events: {_e}")
+
+    combined_block = "\n\n".join(b for b in [review_html, global_html] + ai_parts if b)
 
     for style, style_label, bot_style in [
         ("long",  "Dài hạn",  "long"),
@@ -222,10 +244,10 @@ def run_pre_session(force: bool = False) -> None:
         send_message(msg, style=bot_style)
         logger.info(f"Pre-session [{style}]: {len(results)} mã, gửi bot {bot_style}")
 
-    # Gửi sự kiện quốc tế riêng sau cả 2 báo cáo
-    if global_block:
+    # Gửi review hôm qua + sự kiện quốc tế (1 message) sau cả 2 báo cáo
+    if combined_block:
         for bot_style in ("long", "short"):
-            send_message(global_block, style=bot_style)
+            send_message(combined_block, style=bot_style)
 
     logger.info("Pre-session xong")
 
