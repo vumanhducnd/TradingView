@@ -405,9 +405,9 @@ def fetch_yesterday_review() -> tuple[str, str]:
                               .replace(">", "&gt;"))
                 link = n.get("link", "").strip()
                 if link:
-                    html_lines.append(f'  • [{n["source"]}] <a href="{link}">{title_html}</a>')
+                    html_lines.append(f'  • <a href="{link}">{title_html}</a> [{n["source"]}]')
                 else:
-                    html_lines.append(f"  • [{n['source']}] {title_html}")
+                    html_lines.append(f"  • {title_html} [{n['source']}]")
                 plain_lines.append(f"  - [{n['source']}] {n['title']}")
     except Exception as e:
         logger.debug(f"fetch_yesterday_review news: {e}")
