@@ -17,7 +17,7 @@ tableSize    = input.string("normal", "Cỡ chữ bảng",                 group
 themeMode    = input.string("Light",  "Giao diện (Theme)",            group="Cài đặt chung", options=["Dark","Light"])
 showsignals  = input.bool(true,   "Hiển thị tín hiệu vào/hết trend?", group="Cài đặt chung")
 showSR       = input.bool(false,  "Hiển thị đường Hỗ trợ/Kháng cự?", group="Cài đặt chung")
-showVolLabel      = input.bool(true,   "Hiển thị Phân tích trực tiếp?",    group="Cài đặt chung")
+showVolLabel      = input.bool(false,  "Hiển thị Phân tích trực tiếp?",    group="Cài đặt chung")
 showSuperStock    = input.bool(false,   "Hiển thị nền & ký hiệu Siêu cổ phiếu?", group="Cài đặt chung")
 ssLiqThresh       = input.float(50,     "Thanh khoản tối thiểu Siêu CP (tỷ/ngày)", group="Cài đặt chung",
      minval=1, step=10,
@@ -25,11 +25,31 @@ ssLiqThresh       = input.float(50,     "Thanh khoản tối thiểu Siêu CP (t
 showCandlePattern = input.bool(true,    "Đọc vị nến khi gần đỉnh/đáy?",     group="Cài đặt chung",
      tooltip="Nhận diện mẫu nến đảo chiều khi giá tiếp cận vùng hỗ trợ/kháng cự")
 nearThreshPct     = input.float(3.0,    "Ngưỡng gần đỉnh/đáy (%)",          group="Cài đặt chung",
-     minval=0.5, maxval=10.0, step=0.5,
+     minval=0.5, maxval=7.0, step=0.5,
      tooltip="% khoảng cách từ giá đóng cửa đến hỗ trợ/kháng cự để coi là 'gần' (mặc định 3%)")
-maxCandleLabels   = input.int(3,        "Số nhãn vị nến tối đa",             group="Cài đặt chung",
-     minval=1, maxval=20,
+maxCandleLabels   = input.int(1,        "Số nhãn vị nến tối đa",             group="Cài đặt chung",
+     minval=1, maxval=3,
      tooltip="Chỉ giữ lại N nhãn vị nến gần nhất trên biểu đồ")
+
+// =========================================================
+// CÀI ĐẶT TP / SL Vũ Mạnh Đức 0973124824
+// =========================================================
+showTPSL  = input.bool(true,   "Hiển thị đường TP/SL?",          group="TP / SL",
+     tooltip="Vẽ đường TP/SL khi vào trend, tự xóa khi hết trend.\n✅ Dùng khi thị trường biến động mạnh, cổ phiếu đang ở vùng giữa xu hướng.\n❌ Không dùng khi giá ở vùng đỉnh lịch sử hoặc đáy chưa xác nhận.")
+slAtrMult = input.float(1.5,  "SL Buffer (×ATR)",               group="TP / SL", minval=0.3, maxval=5.0,  step=0.1,
+     tooltip="SL đặt dưới Pivot Low một khoảng = slMult × ATR\nGiá trị lớn hơn = SL rộng hơn, ít bị quét hơn\nVí dụ: 1.5 × ATR dưới pivot low gần nhất")
+pivotLen  = input.int(10,     "Độ dài Pivot (bars)",             group="TP / SL", minval=3, maxval=50,
+     tooltip="Số nến dùng để xác định Pivot Low làm vùng SL\nLớn hơn = pivot xa hơn, SL ổn định hơn")
+tp1R      = input.float(1.0,  "TP1 (R-multiple)",                group="TP / SL", minval=0.5, maxval=10.0, step=0.1,
+     tooltip="TP1 = Vào lệnh + Risk × R1\nRisk = khoảng cách từ entry đến SL (tự tính theo ATR + pivot)")
+tp2R      = input.float(2.0,  "TP2 (R-multiple)",                group="TP / SL", minval=0.5, maxval=10.0, step=0.1,
+     tooltip="TP2 = Vào lệnh + Risk × R2\nGợi ý chốt thêm 30–40% vị thế khi chạm")
+tp3R      = input.float(3.0,  "TP3 (R-multiple)",                group="TP / SL", minval=0.5, maxval=10.0, step=0.1,
+     tooltip="TP3 = Vào lệnh + Risk × R3\nGợi ý gồng phần còn lại đến mục tiêu xa nhất")
+slVnBuf   = input.float(1.8,  "SL-HT — buffer % dưới SuperTrend HT", group="TP / SL", minval=1.0, maxval=3.0, step=0.1,
+     tooltip="Đường SL trailing theo đường hỗ trợ SuperTrend (up)\nSL-HT = up × (1 − buffer%)\nTự động đi lên theo giá, phù hợp thị trường VN chỉ mua một chiều\nVí dụ: 1.5% → SL đặt thấp hơn đường HT 1.5%")
+showTPHit = input.bool(true,  "Đánh dấu nến đạt TP?",               group="TP / SL",
+     tooltip="Hiển thị nhãn 🎯 trên cây nến khi giá lần đầu chạm mỗi mức TP\nMỗi mức chỉ đánh dấu một lần, reset khi có tín hiệu mới")
 
 // =========================================================
 // CT TÍN HIỆU
@@ -84,22 +104,6 @@ entryMode      = input.string("Lý tưởng nhất", "Kiểu điểm vào/thoát
 showTimeCursor = input.bool(false, "Xem lại tín hiệu theo thời gian?", group="Xem lại lịch sử",
      tooltip="BẬT tính năng này, kéo 'Thời điểm muốn xem' đến bất kỳ ngày nào\nBảng tín hiệu góc phải sẽ hiển thị lại thông tin lệnh + lãi/lỗ tại thời điểm đó\nĐường vàng đứt đoạn đánh dấu mốc thời gian đã chọn trên biểu đồ")
 cursorTime     = input.time(timestamp("2025-06-01"), "Thời điểm muốn xem", group="Xem lại lịch sử")
-
-// =========================================================
-// CÀI ĐẶT TP / SL Vũ Mạnh Đức 0973124824
-// =========================================================
-showTPSL  = input.bool(false,  "Hiển thị đường TP/SL?",          group="TP / SL",
-     tooltip="Vẽ đường ngang thể hiện điểm vào trend, cắt lỗ và các mục tiêu chốt lời\nChỉ hiển thị khi đang trong trend tăng\nTự động xóa khi xuất hiện tín hiệu hết trend")
-slAtrMult = input.float(1.5,  "SL Buffer (×ATR)",               group="TP / SL", minval=0.3, maxval=5.0,  step=0.1,
-     tooltip="SL đặt dưới Pivot Low một khoảng = slMult × ATR\nGiá trị lớn hơn = SL rộng hơn, ít bị quét hơn\nVí dụ: 1.5 × ATR dưới pivot low gần nhất")
-pivotLen  = input.int(10,     "Độ dài Pivot (bars)",             group="TP / SL", minval=3, maxval=50,
-     tooltip="Số nến dùng để xác định Pivot Low làm vùng SL\nLớn hơn = pivot xa hơn, SL ổn định hơn")
-tp1R      = input.float(1.0,  "TP1 (R-multiple)",                group="TP / SL", minval=0.5, maxval=10.0, step=0.1,
-     tooltip="TP1 = Vào lệnh + Risk × R1\nRisk = khoảng cách từ entry đến SL (tự tính theo ATR + pivot)")
-tp2R      = input.float(2.0,  "TP2 (R-multiple)",                group="TP / SL", minval=0.5, maxval=10.0, step=0.1,
-     tooltip="TP2 = Vào lệnh + Risk × R2\nGợi ý chốt thêm 30–40% vị thế khi chạm")
-tp3R      = input.float(3.0,  "TP3 (R-multiple)",                group="TP / SL", minval=0.5, maxval=10.0, step=0.1,
-     tooltip="TP3 = Vào lệnh + Risk × R3\nGợi ý gồng phần còn lại đến mục tiêu xa nhất")
 
 // =========================================================
 // VÙNG MUA/BÁN THEO KHỐI LƯỢNG Vũ Mạnh Đức 0973124824
@@ -570,33 +574,42 @@ if showCandlePattern
 // TP / SL LINES Vũ Mạnh Đức 0973124824
 // =========================================================
 var line  lnEntry = na
-var line  lnSL    = na
 var line  lnTP1   = na
 var line  lnTP2   = na
 var line  lnTP3   = na
 var label lbEntry = na
-var label lbSL    = na
 var label lbTP1   = na
 var label lbTP2   = na
 var label lbTP3   = na
 
 // Lưu giá trị tại thời điểm buySignal để label không bị tính lại sai
-var float saved_ep  = na
-var float saved_sl  = na
-var float saved_tp1 = na
-var float saved_tp2 = na
-var float saved_tp3 = na
+var float saved_ep   = na
+var float saved_tp1  = na
+var float saved_tp2  = na
+var float saved_tp3  = na
+var line  lnSLVN     = na
+var label lbSLVN     = na
+var bool  tp1_hit    = false
+var bool  tp2_hit    = false
+var bool  tp3_hit    = false
+var label lbTP1hit   = na
+var label lbTP2hit   = na
+var label lbTP3hit   = na
 
 _tpslOn = showTPSL and signalType == "VÀO TREND" and not na(signalPrice) and trend == 1
 
 if sellSignal
-    line.delete(lnEntry),  line.delete(lnSL),  line.delete(lnTP1),  line.delete(lnTP2),  line.delete(lnTP3)
-    label.delete(lbEntry), label.delete(lbSL), label.delete(lbTP1), label.delete(lbTP2), label.delete(lbTP3)
+    line.delete(lnEntry),  line.delete(lnTP1),  line.delete(lnTP2),  line.delete(lnTP3)
+    label.delete(lbEntry), label.delete(lbTP1), label.delete(lbTP2), label.delete(lbTP3)
+    line.delete(lnSLVN),   label.delete(lbSLVN)
     saved_ep  := na
-    saved_sl  := na
     saved_tp1 := na
     saved_tp2 := na
     saved_tp3 := na
+    tp1_hit := false,  tp2_hit := false,  tp3_hit := false
+    label.delete(lbTP1hit), lbTP1hit := na
+    label.delete(lbTP2hit), lbTP2hit := na
+    label.delete(lbTP3hit), lbTP3hit := na
 
 if buySignal and showTPSL
     _ep     = signalPrice
@@ -607,14 +620,15 @@ if buySignal and showTPSL
     _tp2    = _ep + _risk * tp2R
     _tp3    = _ep + _risk * tp3R
     saved_ep  := _ep
-    saved_sl  := _sl
     saved_tp1 := _tp1
     saved_tp2 := _tp2
     saved_tp3 := _tp3
+    tp1_hit := false,  tp2_hit := false,  tp3_hit := false
+    label.delete(lbTP1hit), lbTP1hit := na
+    label.delete(lbTP2hit), lbTP2hit := na
+    label.delete(lbTP3hit), lbTP3hit := na
     line.delete(lnEntry)
     lnEntry := line.new(bar_index, _ep,  bar_index + 1, _ep,  color=color.new(#FFC107, 0), width=1, style=line.style_dotted, extend=extend.right)
-    line.delete(lnSL)
-    lnSL    := line.new(bar_index, _sl,  bar_index + 1, _sl,  color=color.new(#F44336, 0), width=1, style=line.style_dashed, extend=extend.right)
     line.delete(lnTP1)
     lnTP1   := line.new(bar_index, _tp1, bar_index + 1, _tp1, color=color.new(#8BC34A, 0), width=1, style=line.style_dashed, extend=extend.right)
     line.delete(lnTP2)
@@ -622,13 +636,45 @@ if buySignal and showTPSL
     line.delete(lnTP3)
     lnTP3   := line.new(bar_index, _tp3, bar_index + 1, _tp3, color=color.new(#009688, 0), width=1, style=line.style_dashed, extend=extend.right)
 
+// Đánh dấu cây nến lần đầu chạm TP
+if not na(saved_tp1) and showTPSL and showTPHit and trend == 1
+    if not tp1_hit and high >= saved_tp1
+        tp1_hit  := true
+        line.delete(lnTP1),   lnTP1   := na
+        label.delete(lbTP1),  lbTP1   := na
+        label.delete(lbTP1hit)
+        lbTP1hit := label.new(bar_index, high,
+             "🎯 T1  +" + str.tostring(math.round((saved_tp1 - saved_ep) / saved_ep * 1000) / 10) + "%",
+             style=label.style_label_down, color=color.new(#8BC34A, 0), textcolor=color.black, size=size.tiny)
+    if not tp2_hit and high >= saved_tp2
+        tp2_hit  := true
+        line.delete(lnTP2),   lnTP2   := na
+        label.delete(lbTP2),  lbTP2   := na
+        label.delete(lbTP2hit)
+        lbTP2hit := label.new(bar_index, high,
+             "🎯 T2  +" + str.tostring(math.round((saved_tp2 - saved_ep) / saved_ep * 1000) / 10) + "%",
+             style=label.style_label_down, color=color.new(#4CAF50, 0), textcolor=color.white, size=size.tiny)
+    if not tp3_hit and high >= saved_tp3
+        tp3_hit  := true
+        line.delete(lnTP3),   lnTP3   := na
+        label.delete(lbTP3),  lbTP3   := na
+        label.delete(lbTP3hit)
+        lbTP3hit := label.new(bar_index, high,
+             "🎯 T3  +" + str.tostring(math.round((saved_tp3 - saved_ep) / saved_ep * 1000) / 10) + "%",
+             style=label.style_label_down, color=color.new(#009688, 0), textcolor=color.white, size=size.tiny)
+
+// SL-HT trailing theo SuperTrend support — vẽ lại mỗi khi up thay đổi
+if not na(saved_ep) and showTPSL and trend == 1 and up != up[1]
+    _slvn_val = up * (1 - slVnBuf / 100)
+    _slvn_clr = _slvn_val >= saved_ep ? color.new(#FF9800, 0) : color.new(#2196F3, 0)
+    line.delete(lnSLVN)
+    lnSLVN := line.new(bar_index, _slvn_val, bar_index + 1, _slvn_val, color=_slvn_clr, width=1, style=line.style_dashed, extend=extend.right)
+
 if barstate.islast and _tpslOn and not na(saved_ep)
     _ep        = saved_ep
-    _sl        = saved_sl
     _tp1       = saved_tp1
     _tp2       = saved_tp2
     _tp3       = saved_tp3
-    _slPctStr  = str.tostring(math.round((_ep - _sl) / _ep * 100 * 10) / 10)
     _tp1PctStr = str.tostring(math.round((_tp1 - _ep) / _ep * 100 * 10) / 10)
     _tp2PctStr = str.tostring(math.round((_tp2 - _ep) / _ep * 100 * 10) / 10)
     _tp3PctStr = str.tostring(math.round((_tp3 - _ep) / _ep * 100 * 10) / 10)
@@ -638,25 +684,32 @@ if barstate.islast and _tpslOn and not na(saved_ep)
          "📌 Vào:  " + f_price(_ep),
          style=label.style_label_left, color=color.new(#FFC107, 0), textcolor=color.black, size=size.small)
 
-    label.delete(lbSL)
-    lbSL := label.new(bar_index + 2, _sl,
-         "🛑 SL:    " + f_price(_sl) + "   -" + _slPctStr + "%",
-         style=label.style_label_left, color=color.new(#F44336, 0), textcolor=color.white, size=size.small)
+    if not tp1_hit
+        label.delete(lbTP1)
+        lbTP1 := label.new(bar_index + 2, _tp1,
+             "🎯 T1:   " + f_price(_tp1) + "   +" + _tp1PctStr + "%   → chốt 20%",
+             style=label.style_label_left, color=color.new(#8BC34A, 0), textcolor=color.black, size=size.small)
 
-    label.delete(lbTP1)
-    lbTP1 := label.new(bar_index + 2, _tp1,
-         "🎯 T1:   " + f_price(_tp1) + "   +" + _tp1PctStr + "%   RR 1:" + str.tostring(tp1R),
-         style=label.style_label_left, color=color.new(#8BC34A, 0), textcolor=color.black, size=size.small)
+    if not tp2_hit
+        label.delete(lbTP2)
+        lbTP2 := label.new(bar_index + 2, _tp2,
+             "🎯 T2:   " + f_price(_tp2) + "   +" + _tp2PctStr + "%   → chốt 30%",
+             style=label.style_label_left, color=color.new(#4CAF50, 0), textcolor=color.white, size=size.small)
 
-    label.delete(lbTP2)
-    lbTP2 := label.new(bar_index + 2, _tp2,
-         "🎯 T2:   " + f_price(_tp2) + "   +" + _tp2PctStr + "%   RR 1:" + str.tostring(tp2R),
-         style=label.style_label_left, color=color.new(#4CAF50, 0), textcolor=color.white, size=size.small)
-
-    label.delete(lbTP3)
-    lbTP3 := label.new(bar_index + 2, _tp3,
-         "🎯 T3:   " + f_price(_tp3) + "   +" + _tp3PctStr + "%   RR 1:" + str.tostring(tp3R),
-         style=label.style_label_left, color=color.new(#009688, 0), textcolor=color.white, size=size.small)
+    if not tp3_hit
+        label.delete(lbTP3)
+        lbTP3 := label.new(bar_index + 2, _tp3,
+             "🎯 T3:   " + f_price(_tp3) + "   +" + _tp3PctStr + "%   → chốt 40%",
+             style=label.style_label_left, color=color.new(#009688, 0), textcolor=color.white, size=size.small)
+    _slvn       = up * (1 - slVnBuf / 100)
+    _slvnPct    = (_slvn - _ep) / _ep * 100
+    _slvnSign   = _slvnPct >= 0 ? "+" : "-"
+    _slvnPctStr = str.tostring(math.round(math.abs(_slvnPct) * 10) / 10)
+    _slvnClr    = _slvnPct >= 0 ? color.new(#FF9800, 0) : color.new(#2196F3, 0)
+    label.delete(lbSLVN)
+    lbSLVN := label.new(bar_index + 2, _slvn,
+         "🟠 SL : " + f_price(_slvn) + "   " + _slvnSign + _slvnPctStr + "% ",
+         style=label.style_label_left, color=_slvnClr, textcolor=color.white, size=size.small)
 
 // =========================================================
 // HỖ TRỢ / KHÁNG CỰ Vũ Mạnh Đức 0973124824
