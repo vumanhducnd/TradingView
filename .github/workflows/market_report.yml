@@ -1,4 +1,4 @@
-name: Foreign Flow Report (15:30 GMT+7)
+name: Vietstock Market Report (15:30 GMT+7)
 
 on:
   schedule:
@@ -36,7 +36,7 @@ jobs:
       - name: Install Playwright browsers
         run: playwright install chromium --with-deps
 
-      - name: Run foreign flow report
+      - name: Run Vietstock market report
         env:
           TELEGRAM_BOT_TOKEN_LONG:  ${{ secrets.TELEGRAM_BOT_TOKEN_LONG }}
           TELEGRAM_CHAT_ID_LONG:    ${{ secrets.TELEGRAM_CHAT_ID_LONG }}
