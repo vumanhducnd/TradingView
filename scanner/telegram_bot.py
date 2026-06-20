@@ -177,6 +177,33 @@ def send_file(file_path: str, caption: str = "", style: str = "long") -> bool:
     return ok_any
 
 
+def send_photo(image_bytes: bytes, caption: str = "", style: str = "long") -> bool:
+    """Gửi ảnh PNG/JPEG (bytes) đến tất cả channel theo style."""
+    token, chat_ids = _chat_ids(style)
+    if not token or not chat_ids:
+        logger.warning("Telegram credentials not set — skipping send_photo")
+        return False
+    url = f"https://api.telegram.org/bot{token}/sendPhoto"
+    ok_any = False
+    for cid in chat_ids:
+        try:
+            resp = requests.post(
+                url,
+                data={"chat_id": cid, "caption": caption, "parse_mode": "HTML"},
+                files={"photo": ("chart.png", image_bytes, "image/png")},
+                timeout=60,
+                verify=False,
+            )
+            resp.raise_for_status()
+            ok_any = True
+            logger.info(f"[{style.upper()}] ✓ send_photo → {cid}")
+            if len(chat_ids) > 1:
+                time.sleep(0.5)
+        except Exception as e:
+            logger.warning(f"send_photo failed ({cid}): {e}")
+    return ok_any
+
+
 def send_daily_report(
     results: pd.DataFrame,
     signals: dict[str, pd.DataFrame],

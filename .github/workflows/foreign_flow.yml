@@ -1,0 +1,40 @@
+name: Foreign Flow Report (22:15 GMT+7)
+
+on:
+  schedule:
+    - cron: '15 15 * * 1-5'   # 22:15 ICT (15:15 UTC), thứ 2-6
+  workflow_dispatch:            # chạy tay để test
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install Playwright browsers
+        run: playwright install chromium --with-deps
+
+      - name: Run foreign flow report
+        env:
+          TELEGRAM_BOT_TOKEN_LONG:  ${{ secrets.TELEGRAM_BOT_TOKEN_LONG }}
+          TELEGRAM_CHAT_ID_LONG:    ${{ secrets.TELEGRAM_CHAT_ID_LONG }}
+          TELEGRAM_BOT_TOKEN_SHORT: ${{ secrets.TELEGRAM_BOT_TOKEN_SHORT }}
+          TELEGRAM_CHAT_ID_SHORT:   ${{ secrets.TELEGRAM_CHAT_ID_SHORT }}
+          DATABASE_URL:             ${{ secrets.DATABASE_URL }}
+          GROQ_API_KEY:             ${{ secrets.GROQ_API_KEY }}
+        run: python -m scanner.foreign_flow
