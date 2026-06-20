@@ -713,8 +713,9 @@ def run_session(interval: int = 180, session: str = "full") -> None:
 
     while _is_market_open(session):
         now = datetime.now(ICT)
+        is_atc = (now.hour, now.minute) >= (14, 30)   # ATC 14:30–14:45, không gửi tín hiệu
         scan_count += 1
-        logger.info(f"[{now.strftime('%H:%M')}] Scan #{scan_count}...")
+        logger.info(f"[{now.strftime('%H:%M')}] Scan #{scan_count}{' [ATC - no signal]' if is_atc else ''}...")
 
         # ── Fetch toàn bộ watchlist (1 API call) ──
         today_bars = _fetch_via_price_board(all_tickers)
@@ -805,7 +806,11 @@ def run_session(interval: int = 180, session: str = "full") -> None:
                 dropped = len(flip_tickers) - len(flips)
                 logger.info(f"  Bo qua {dropped} flip vi TK TB20 < {_TK_MIN_TY:.0f} ty")
 
-        # ── Gửi Telegram cho từng flip ──
+        # ── Gửi Telegram cho từng flip (không gửi trong ATC 14:30–14:45) ──
+        if is_atc:
+            if flips:
+                logger.info(f"  ATC: bỏ qua {len(flips)} flip, không gửi Telegram")
+            flips = []
         for flip in flips:
             ticker = flip["ticker"]
             price  = flip["price"]
