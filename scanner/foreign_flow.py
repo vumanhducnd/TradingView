@@ -28,11 +28,11 @@ VIETSTOCK_URL = "https://finance.vietstock.vn/"
 
 # ─── Public entry point ───────────────────────────────────────────────────────
 
-def run() -> None:
+def run(force: bool = False) -> None:
     """Scrape → caption → gửi Telegram cả 2 bot."""
     from scanner.utils import is_trading_day
     from datetime import date
-    if not is_trading_day(date.today()):
+    if not force and not is_trading_day(date.today()):
         logger.info("Hôm nay không phải ngày giao dịch — bỏ qua foreign flow")
         return
 
@@ -232,4 +232,6 @@ def _send_text(msg: str) -> None:
 # ─── CLI ─────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    run()
+    import sys
+    force = "--force" in sys.argv
+    run(force=force)
