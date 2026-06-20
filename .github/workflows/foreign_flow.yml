@@ -1,8 +1,8 @@
-name: Foreign Flow Report (22:15 GMT+7)
+name: Foreign Flow Report (15:30 GMT+7)
 
 on:
   schedule:
-    - cron: '15 15 * * 1-5'   # 22:15 ICT (15:15 UTC), thứ 2-6
+    - cron: '30 8 * * 1-5'   # 15:30 ICT (08:30 UTC), thứ 2-6
   workflow_dispatch:
     inputs:
       force:
