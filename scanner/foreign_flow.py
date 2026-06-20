@@ -74,9 +74,9 @@ def _scrape() -> tuple[bytes, list[dict], list[dict]]:
             except Exception:
                 pass
 
-        # Chờ container render xong thay vì sleep cố định
+        # Chờ container visible, sau đó đợi thêm chart render
         page.wait_for_selector(_CONTAINER, state="visible", timeout=_TIMEOUT)
-        page.wait_for_load_state("networkidle", timeout=_TIMEOUT)
+        page.wait_for_timeout(3_000)
 
         # Screenshot đúng element
         el = page.locator(_CONTAINER).first
