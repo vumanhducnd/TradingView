@@ -3,26 +3,16 @@ Foreign flow daily report — chụp ảnh Vietstock, viết caption AI, gửi T
 Chạy sau 22:00 ICT mỗi ngày giao dịch.
 
 Usage:
-  python -m scanner.foreign_flow
+  python -m scanner.foreign_flow [--force]
 """
 
 from __future__ import annotations
 
-import time
 from datetime import datetime, timezone, timedelta
 
 from scanner.utils import logger
 
 ICT = timezone(timedelta(hours=7))
-
-# Sections cần chụp (tên + selector để thử)
-_SECTIONS = [
-    ("ndtnn",   "#tab-ndtnn,#ndtnn-container,.ndtnn-wrapper,[id*='foreign'],[class*='ndtnn']"),
-    ("top10",   "#top-10-container,.top10-wrapper,[id*='top10'],[id*='top-10']"),
-]
-
-_FALLBACK_SELECTOR = "body"   # nếu không tìm thấy gì thì chụp viewport
-
 VIETSTOCK_URL = "https://finance.vietstock.vn/"
 
 
@@ -38,38 +28,29 @@ def run(force: bool = False) -> None:
 
     logger.info("=== Foreign Flow Report ===")
     try:
-        screenshots, rows = _scrape()
+        screenshot, sell_rows, buy_rows = _scrape()
     except Exception as e:
         logger.error(f"Scrape Vietstock thất bại: {e}")
         _send_text(f"⚠️ <b>Foreign flow</b>: không scrape được Vietstock\n<code>{e}</code>")
         return
 
-    caption = _gen_caption(rows)
+    caption = _gen_caption(sell_rows, buy_rows)
+    logger.info(f"Caption: {caption[:80]}...")
 
     from scanner.telegram_bot import send_photo
-    # Gửi từng ảnh (mỗi section 1 ảnh), caption chỉ gắn vào ảnh cuối
-    for i, (name, img_bytes) in enumerate(screenshots):
-        cap = caption if i == len(screenshots) - 1 else ""
-        send_photo(img_bytes, cap, style="long")
-        send_photo(img_bytes, cap, style="short")
-        if i < len(screenshots) - 1:
-            time.sleep(0.5)
-
+    send_photo(screenshot, caption, style="long")
+    send_photo(screenshot, caption, style="short")
     logger.info("Foreign flow report đã gửi")
 
 
 # ─── Scraping ────────────────────────────────────────────────────────────────
 
-def _scrape() -> tuple[list[tuple[str, bytes]], list[dict]]:
+def _scrape() -> tuple[bytes, list[dict], list[dict]]:
     """
-    Trả về:
-      screenshots: [(section_name, png_bytes), ...]
-      rows: dữ liệu bảng top mua/bán ròng
+    Trả về (screenshot_bytes, sell_rows, buy_rows).
+    sell_rows/buy_rows: [{"ticker": "VHM", "value": 817.77}, ...]
     """
     from playwright.sync_api import sync_playwright
-
-    screenshots: list[tuple[str, bytes]] = []
-    rows: list[dict] = []
 
     with sync_playwright() as pw:
         browser = pw.chromium.launch(
@@ -77,7 +58,7 @@ def _scrape() -> tuple[list[tuple[str, bytes]], list[dict]]:
             args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
         )
         ctx = browser.new_context(
-            viewport={"width": 1440, "height": 900},
+            viewport={"width": 1440, "height": 860},
             user_agent=(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -87,117 +68,182 @@ def _scrape() -> tuple[list[tuple[str, bytes]], list[dict]]:
         )
         page = ctx.new_page()
 
-        logger.info(f"Navigating to {VIETSTOCK_URL} ...")
+        logger.info("Mở Vietstock...")
         page.goto(VIETSTOCK_URL, wait_until="domcontentloaded", timeout=60_000)
+        page.wait_for_timeout(3_000)
 
-        # Chờ JS render charts (canvas/SVG thường mất 3-5s)
-        page.wait_for_timeout(5_000)
+        # Click tab "Nước ngoài" trong sub-navigation
+        _click_foreign_tab(page)
+        page.wait_for_timeout(4_000)   # chờ chart + bảng render
 
-        # Thử click tab "Đầu tư nước ngoài" nếu có
-        _try_click_foreign_tab(page)
+        # Chụp phần content (bỏ top nav)
+        screenshot = _screenshot_content(page)
 
-        page.wait_for_timeout(2_000)
-
-        # Chụp từng section
-        for name, sel_list in _SECTIONS:
-            img = _screenshot_first(page, sel_list)
-            if img:
-                screenshots.append((name, img))
-                logger.info(f"  [{name}] screenshot OK ({len(img)//1024} KB)")
-            else:
-                logger.warning(f"  [{name}] không tìm thấy element, bỏ qua")
-
-        # Nếu không chụp được gì → chụp viewport
-        if not screenshots:
-            logger.warning("Không tìm thấy section, chụp viewport")
-            img = page.screenshot(full_page=False)
-            screenshots.append(("viewport", img))
-
-        # Trích dữ liệu bảng top mua/bán ròng
-        rows = _extract_rows(page)
-        logger.info(f"  Trích được {len(rows)} dòng từ bảng")
+        # Extract dữ liệu bảng
+        sell_rows, buy_rows = _extract_table_data(page)
+        logger.info(f"Bán ròng: {len(sell_rows)} mã | Mua ròng: {len(buy_rows)} mã")
 
         browser.close()
 
-    return screenshots, rows
+    return screenshot, sell_rows, buy_rows
 
 
-def _try_click_foreign_tab(page) -> None:
-    """Click tab 'Đầu tư nước ngoài' hoặc 'NĐTNN' nếu tồn tại."""
-    for text in ["Đầu tư nước ngoài", "NĐTNN", "Nước ngoài"]:
+def _click_foreign_tab(page) -> None:
+    """Click tab 'Nước ngoài' trong sub-nav của Vietstock."""
+    # Thử các selector khác nhau
+    candidates = [
+        "text=Nước ngoài",
+        "a:has-text('Nước ngoài')",
+        "li:has-text('Nước ngoài') a",
+        "[href*='nuoc-ngoai']",
+        "[href*='foreign']",
+        "a[href*='ndtnn']",
+    ]
+    for sel in candidates:
         try:
-            el = page.get_by_text(text, exact=False).first
-            if el and el.is_visible():
+            el = page.locator(sel).first
+            if el.is_visible(timeout=2_000):
                 el.click()
-                logger.info(f"  Clicked tab: '{text}'")
+                logger.info(f"Clicked tab: {sel}")
                 return
         except Exception:
             pass
+    logger.warning("Không tìm thấy tab 'Nước ngoài' — dùng trang hiện tại")
 
 
-def _screenshot_first(page, selectors_csv: str) -> bytes | None:
-    """Thử từng selector trong chuỗi CSV, trả về screenshot của element đầu tiên tìm thấy."""
-    for sel in selectors_csv.split(","):
-        sel = sel.strip()
-        if not sel:
-            continue
+def _screenshot_content(page) -> bytes:
+    """Chụp container nước ngoài: .foreign-row.chart-box-surround"""
+    container_sels = [
+        ".foreign-row.chart-box-surround",
+        ".foreign-row",
+        ".chart-box-surround.pos-relative",
+    ]
+    for sel in container_sels:
         try:
-            el = page.query_selector(sel)
-            if el and el.is_visible():
-                # Scroll element vào view
+            el = page.locator(sel).first
+            if el.is_visible(timeout=3_000):
                 el.scroll_into_view_if_needed()
-                page.wait_for_timeout(500)
-                return el.screenshot()
+                page.wait_for_timeout(800)
+                img = el.screenshot()
+                logger.info(f"Screenshot: {sel} ({len(img)//1024} KB)")
+                return img
         except Exception:
             pass
-    return None
+
+    logger.warning("Không tìm được .foreign-row, crop viewport")
+    full = page.screenshot(full_page=False)
+    return _crop_top(full, crop_px=80)
 
 
-def _extract_rows(page) -> list[dict]:
-    """Trích dữ liệu bảng top mua/bán ròng từ DOM."""
-    rows: list[dict] = []
+def _crop_top(png_bytes: bytes, crop_px: int = 80) -> bytes:
+    """Crop bỏ crop_px pixel từ trên xuống (loại nav bar)."""
     try:
-        # Tìm tất cả table rows có ticker + giá trị
-        trs = page.query_selector_all("table tbody tr, .table-body tr, [class*='row']")
-        for tr in trs[:30]:
-            cells = tr.query_selector_all("td, [class*='cell']")
-            if len(cells) < 2:
-                continue
-            ticker = cells[0].inner_text().strip().upper()
-            value  = cells[-1].inner_text().strip()
-            # Lọc: ticker hợp lệ (2-4 chữ in hoa), value có số
-            if 2 <= len(ticker) <= 4 and ticker.isalpha() and any(c.isdigit() for c in value):
-                rows.append({"ticker": ticker, "value": value})
+        import io
+        from PIL import Image
+        img = Image.open(io.BytesIO(png_bytes))
+        w, h = img.size
+        cropped = img.crop((0, crop_px, w, h))
+        buf = io.BytesIO()
+        cropped.save(buf, format="PNG")
+        return buf.getvalue()
+    except ImportError:
+        logger.debug("Pillow chưa cài — bỏ qua crop")
+        return png_bytes
+
+
+def _extract_table_data(page) -> tuple[list[dict], list[dict]]:
+    """
+    Trích top bán ròng và mua ròng từ DOM Vietstock.
+    Trả về (sell_rows, buy_rows) dạng [{"ticker": "VHM", "value": 817.77}]
+    """
+    sell_rows: list[dict] = []
+    buy_rows:  list[dict] = []
+
+    try:
+        data = page.evaluate("""
+        () => {
+            const result = { sell: [], buy: [] };
+
+            // Tìm trong container .foreign-row trước
+            const root = document.querySelector('.foreign-row') || document;
+
+            // SVG text: Vietstock dùng Highcharts/D3 — text elements chứa mã + số
+            const svgTexts = Array.from(root.querySelectorAll('svg text'));
+            let i = 0;
+            while (i < svgTexts.length) {
+                const t = svgTexts[i].textContent.trim();
+                if (/^[A-Z]{2,4}$/.test(t)) {
+                    // Tìm số gần nhất (trước hoặc sau)
+                    const prev = svgTexts[i - 1] ? parseFloat(svgTexts[i - 1].textContent.replace(/,/g, '')) : NaN;
+                    const next = svgTexts[i + 1] ? parseFloat(svgTexts[i + 1].textContent.replace(/,/g, '')) : NaN;
+                    const val = !isNaN(prev) ? prev : (!isNaN(next) ? next : NaN);
+                    if (!isNaN(val)) {
+                        result.sell.push({ ticker: t, value: Math.abs(val) });
+                    }
+                }
+                i++;
+            }
+
+            // Table rows fallback
+            if (result.sell.length === 0) {
+                root.querySelectorAll('table tr').forEach(row => {
+                    const cells = Array.from(row.querySelectorAll('td'));
+                    if (cells.length >= 2) {
+                        const t = cells[0].innerText.trim();
+                        const v = parseFloat(cells[cells.length - 1].innerText.replace(/,/g, ''));
+                        if (/^[A-Z]{2,4}$/.test(t) && !isNaN(v))
+                            result.sell.push({ ticker: t, value: Math.abs(v) });
+                    }
+                });
+            }
+
+            // Tách sell/buy: Vietstock xếp bán trái, mua phải
+            // Nếu có 2 SVG riêng → phân biệt qua vị trí x
+            const svgs = root.querySelectorAll('svg');
+            if (svgs.length >= 2 && result.sell.length > 0) {
+                // Đã merge cả 2 — dùng mid split
+                const mid = Math.ceil(result.sell.length / 2);
+                result.buy  = result.sell.slice(mid);
+                result.sell = result.sell.slice(0, mid);
+            }
+
+            return result;
+        }
+        """)
+
+        sell_rows = data.get("sell", [])
+        buy_rows  = data.get("buy",  [])
+
     except Exception as e:
-        logger.debug(f"_extract_rows: {e}")
-    return rows
+        logger.debug(f"_extract_table_data JS: {e}")
+
+    return sell_rows, buy_rows
 
 
 # ─── Caption generation ───────────────────────────────────────────────────────
 
-def _gen_caption(rows: list[dict]) -> str:
+def _gen_caption(sell_rows: list[dict], buy_rows: list[dict]) -> str:
     """Groq → viết caption phân tích dòng vốn nước ngoài."""
     today = datetime.now(ICT).strftime("%d/%m/%Y")
     header = f"🌍 <b>Dòng vốn nước ngoài — {today}</b>"
 
-    if not rows:
+    if not sell_rows and not buy_rows:
         return header
 
-    # Phân loại mua/bán từ dấu giá trị
-    buy_rows  = [r for r in rows if "-" not in r["value"]]
-    sell_rows = [r for r in rows if "-"     in r["value"]]
-
-    data_lines = ["Top BÁN RÒNG:"] + [f"  {r['ticker']}: {r['value']} tỷ" for r in sell_rows[:6]]
-    data_lines += ["Top MUA RÒNG:"] + [f"  {r['ticker']}: {r['value']} tỷ" for r in buy_rows[:6]]
-    data_text = "\n".join(data_lines)
+    sell_text = ", ".join(
+        f"{r['ticker']} (-{r['value']:.0f} tỷ)" for r in sell_rows[:6]
+    )
+    buy_text = ", ".join(
+        f"{r['ticker']} (+{r['value']:.0f} tỷ)" for r in buy_rows[:6]
+    )
 
     prompt = (
-        f"Dữ liệu giao dịch ròng nhà đầu tư nước ngoài ngày {today} (tỷ đồng):\n\n"
-        f"{data_text}\n\n"
-        "Viết đúng 3-4 câu phân tích bằng tiếng Việt tự nhiên (không dùng gạch đầu dòng, không in đậm):\n"
-        "1. Tổng quan xu hướng mua hay bán ròng hôm nay\n"
-        "2. Nêu cụ thể 2-3 mã bị tác động lớn nhất và ảnh hưởng đến VN-Index\n"
-        "3. Nhận định ngắn về dòng tiền nội phản ứng ra sao"
+        f"Dữ liệu giao dịch ròng nhà đầu tư nước ngoài ngày {today}:\n\n"
+        f"Top BÁN RÒNG: {sell_text or '(không có)'}\n"
+        f"Top MUA RÒNG: {buy_text or '(không có)'}\n\n"
+        "Viết đúng 3-4 câu phân tích bằng tiếng Việt tự nhiên, không dùng gạch đầu dòng, "
+        "không in đậm tên chỉ báo. Nêu cụ thể mã và số tỷ đồng, nhận xét ảnh hưởng đến "
+        "VN-Index và dòng tiền nội."
     )
 
     try:
@@ -214,13 +260,17 @@ def _gen_caption(rows: list[dict]) -> str:
         return f"{header}\n\n{ai_text}"
     except Exception as e:
         logger.warning(f"Groq caption failed: {e}")
-        return header
+        lines = [header]
+        if sell_text:
+            lines.append(f"📉 Bán ròng: {sell_text}")
+        if buy_text:
+            lines.append(f"📈 Mua ròng: {buy_text}")
+        return "\n".join(lines)
 
 
-# ─── Helper ──────────────────────────────────────────────────────────────────
+# ─── Helpers ─────────────────────────────────────────────────────────────────
 
 def _send_text(msg: str) -> None:
-    """Gửi text fallback khi scrape thất bại."""
     try:
         from scanner.telegram_bot import send_message
         send_message(msg, style="long")
