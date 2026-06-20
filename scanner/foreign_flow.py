@@ -28,12 +28,12 @@ class Section:
 
 
 SECTIONS = [
-    Section("Bản đồ thị trường",   "🗺️",  ".bangdo-row,.market-map-row,#bangdo"),
-    Section("Tổng hợp thị trường", "📊",  ".tonghop-row,.summary-row,#tonghop"),
-    Section("Thanh khoản",          "💧",  ".thanh-khoan-row,.liquidity-row,#thanhkhoan"),
-    Section("Ảnh hưởng Index",      "📈",  ".anh-huong-row,.index-impact-row,#anhuong"),
+    Section("Bản đồ thị trường",   "🗺️",  "#visualization"),
+    Section("Tổng hợp thị trường", "📊",  "#general-markets-container"),
+    Section("Thanh khoản",          "💧",  "#liquidity-container"),
+    Section("Ảnh hưởng Index",      "📈",  ".top-influence-box"),
     Section("Nước ngoài",           "🌍",  ".foreign-row"),
-    Section("Tự doanh",             "🏦",  ".tu-doanh-row,.self-trading-row,#tudoanh"),
+    Section("Tự doanh",             "🏦",  ".proprietary-row"),
 ]
 
 _TIMEOUT_MS = 12_000
