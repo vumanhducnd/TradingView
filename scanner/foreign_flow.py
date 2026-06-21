@@ -308,10 +308,9 @@ def _gen_caption(section: Section, img_bytes: bytes) -> str:
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
 def _send_with_retry(img: bytes, caption: str, style: str) -> None:
-    from scanner.config import TELEGRAM_TOKEN, TELEGRAM_TOKEN_SHORT
-    from scanner.telegram_bot import send_photo
-    token = TELEGRAM_TOKEN if style == "long" else TELEGRAM_TOKEN_SHORT
-    if not token:
+    from scanner.telegram_bot import send_photo, _chat_ids
+    token, chat_ids = _chat_ids(style)
+    if not token or not chat_ids:
         return  # credentials không có — bỏ qua, không retry
     for attempt in range(1, _SEND_RETRIES + 1):
         if send_photo(img, caption, style=style):
