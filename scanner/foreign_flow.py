@@ -166,9 +166,7 @@ SECTIONS = [
 
 ]
 
-_TIMEOUT_MS    = 12_000
-_SEND_RETRIES  = 3
-_SEND_RETRY_S  = 15   # giây chờ giữa các lần thử
+_TIMEOUT_MS = 12_000
 
 
 def build_prompt(section: Section) -> str:
@@ -191,10 +189,11 @@ def run(force: bool = False) -> None:
         _send_both(f"⚠️ <b>Market Report</b>: không scrape được\n<code>{e}</code>")
         return
 
+    from scanner.telegram_bot import send_photo
     for section, img in results:
         caption = _gen_caption(section, img)
-        _send_with_retry(img, caption, "long")
-        _send_with_retry(img, caption, "short")
+        send_photo(img, caption, style="long")
+        send_photo(img, caption, style="short")
         logger.info(f"  Sent: {section.tab}")
         time.sleep(1)   # tránh flood Telegram
 
@@ -306,19 +305,6 @@ def _gen_caption(section: Section, img_bytes: bytes) -> str:
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
-
-def _send_with_retry(img: bytes, caption: str, style: str) -> None:
-    from scanner.telegram_bot import send_photo, _chat_ids
-    token, chat_ids = _chat_ids(style)
-    if not token or not chat_ids:
-        return  # credentials không có — bỏ qua, không retry
-    for attempt in range(1, _SEND_RETRIES + 1):
-        if send_photo(img, caption, style=style):
-            return
-        if attempt < _SEND_RETRIES:
-            logger.warning(f"send_photo [{style}] lần {attempt} thất bại, thử lại sau {_SEND_RETRY_S}s...")
-            time.sleep(_SEND_RETRY_S)
-    logger.error(f"send_photo [{style}] thất bại sau {_SEND_RETRIES} lần")
 
 
 def _send_both(msg: str) -> None:
