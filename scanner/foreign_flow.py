@@ -23,6 +23,7 @@ _NAV_HEIGHT   = 115   # px — cắt nav khi fallback viewport
 # ─── Style suffix dùng chung cho mọi section ─────────────────────────────────
 
 STYLE_SUFFIX = (
+    "Chỉ viết đúng 3-4 câu liên tiếp, không chia thành nhiều đoạn, không viết thêm dù còn ý. "
     "Văn phong tự nhiên như người viết bản tin chứng khoán, không liệt kê máy móc, "
     "không lặp cấu trúc kiểu 'có thể thấy... cho thấy... đáng chú ý là...'. "
     "Không dùng gạch đầu dòng, không in đậm. "
@@ -307,7 +308,11 @@ def _gen_caption(section: Section, img_bytes: bytes) -> str:
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
 def _send_with_retry(img: bytes, caption: str, style: str) -> None:
+    from scanner.config import TELEGRAM_TOKEN, TELEGRAM_TOKEN_SHORT
     from scanner.telegram_bot import send_photo
+    token = TELEGRAM_TOKEN if style == "long" else TELEGRAM_TOKEN_SHORT
+    if not token:
+        return  # credentials không có — bỏ qua, không retry
     for attempt in range(1, _SEND_RETRIES + 1):
         if send_photo(img, caption, style=style):
             return
