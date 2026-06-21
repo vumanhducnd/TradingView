@@ -20,23 +20,156 @@ VIETSTOCK_URL = "https://finance.vietstock.vn/"
 _NAV_HEIGHT   = 115   # px — cắt nav khi fallback viewport
 
 
+# ─── Style suffix dùng chung cho mọi section ─────────────────────────────────
+
+STYLE_SUFFIX = (
+    "Văn phong tự nhiên như người viết bản tin chứng khoán, không liệt kê máy móc, "
+    "không lặp cấu trúc kiểu 'có thể thấy... cho thấy... đáng chú ý là...'. "
+    "Không dùng gạch đầu dòng, không in đậm. "
+    "Đảm bảo câu kết luận khớp với toàn bộ số liệu đã nêu ở trên, không mâu thuẫn. "
+    "Ví dụ giọng văn mong muốn: 'Khối ngoại tiếp tục bán ròng trên 3 sàn, tập trung mạnh vào "
+    "nhóm trụ như FPT (-501 tỷ), VHM (-182 tỷ), TCB (-159 tỷ) – đây là các mã vốn hóa lớn nên "
+    "áp lực bán có thể ảnh hưởng trực tiếp đến diễn biến VN-Index. Ở chiều ngược lại, dòng tiền "
+    "ngoại vẫn mua ròng chọn lọc ở VIC (+74 tỷ), PVS (+34 tỷ), cho thấy động thái này nghiêng về "
+    "cơ cấu danh mục hơn là rút vốn đồng loạt.'"
+)
+
+
+# ─── Section dataclass ────────────────────────────────────────────────────────
+
 @dataclass
 class Section:
-    tab:       str   # text tab để click
-    icon:      str   # emoji cho header
-    container: str   # CSS selector(s), phân cách bằng ","
+    tab:      str   # text tab để click
+    icon:     str   # emoji cho header
+    selector: str   # CSS selector(s), phân cách bằng ","
+    layout:   str   # mô tả cấu trúc ảnh
+    focus:    str   # nội dung cần phân tích
 
+
+# ─── 6 Sections ──────────────────────────────────────────────────────────────
 
 SECTIONS = [
-    Section("Bản đồ thị trường",   "🗺️",  "#visualization"),
-    Section("Tổng hợp thị trường", "📊",  "#general-markets-container"),
-    Section("Thanh khoản",          "💧",  "#liquidity-container"),
-    Section("Ảnh hưởng Index",      "📈",  ".top-influence-box"),
-    Section("Nước ngoài",           "🌍",  ".foreign-row"),
-    Section("Tự doanh",             "🏦",  ".proprietary-row"),
+
+    Section(
+        "Bản đồ thị trường", "🗺️", "#visualization",
+        layout=(
+            "Ảnh là bản đồ nhiệt (heatmap) toàn thị trường, chia theo nhóm ngành (Tài chính, "
+            "Bất động sản, Nguyên vật liệu, Công nghệ thông tin, Tiêu dùng, Công nghiệp, Năng "
+            "lượng...). Diện tích mỗi ô tỷ lệ theo vốn hóa, màu xanh = tăng giá, màu đỏ = giảm giá. "
+            "Lưu ý: trong mỗi ngành thường có 1-2 mã vốn hóa lớn nhất chiếm ô to nhất, nhưng các "
+            "mã này có thể tăng/giảm ngược hướng với phần lớn các mã nhỏ hơn còn lại trong cùng "
+            "ngành — không lấy riêng 1-2 ô lớn nhất để đại diện cho cả ngành. Hãy đếm tỷ lệ ô "
+            "đỏ/xanh trên toàn bộ bản đồ (không chỉ các ô lớn) để xác định sắc thái chủ đạo thực "
+            "sự, rồi mới chọn ra ngành/mã nổi bật để liệt kê chi tiết."
+        ),
+        focus=(
+            "Viết 3-4 câu phân tích bằng tiếng Việt: sắc thái chủ đạo của toàn bản đồ (đỏ hay xanh "
+            "áp đảo về số lượng ô), độ phân hóa trong từng ngành lớn (nêu rõ nếu mã đầu ngành tăng "
+            "nhưng các mã khác trong ngành lại giảm, hoặc ngược lại), và ngành nào đồng thuận "
+            "giảm/tăng rõ nhất. Nêu cụ thể tên ngành, tên mã và tỷ lệ %."
+        ),
+    ),
+
+    Section(
+        "Tổng hợp thị trường", "📊", "#general-markets-container",
+        layout=(
+            "Ảnh gồm 2 phần. Trái là biểu đồ đường VN-Index trong phiên giao dịch hiện tại (theo "
+            "khung giờ trong ngày, không phải nhiều ngày), có đường tham chiếu đứt nét màu vàng là "
+            "mức tham chiếu. Phải là bảng so sánh nhiều chỉ số (VN-Index, HNX, UPCOM, VN30, HNX30, "
+            "VNMidcap, VNSmallcap...), mỗi chỉ số có % thay đổi theo nhiều mốc khác nhau: D (so với "
+            "phiên trước), W (so với 1 tuần trước), M (1 tháng), Q (1 quý), YTD (từ đầu năm) — đây "
+            "là các mốc so sánh của CÙNG một thời điểm hiện tại, không phải diễn biến nhiều ngày "
+            "liên tiếp."
+        ),
+        focus=(
+            "Viết 3-4 câu phân tích bằng tiếng Việt: diễn biến VN-Index trong phiên hôm nay "
+            "(tăng/giảm bao nhiêu điểm và %, so với mức tham chiếu), so sánh xu hướng ngắn hạn (D, "
+            "W) với xu hướng dài hơn (M, Q, YTD) để thấy thị trường đang đảo chiều hay tiếp diễn, "
+            "và điểm đáng chú ý nhất giữa các chỉ số (ví dụ chỉ số nào phân kỳ mạnh so với "
+            "VN-Index). Nêu cụ thể con số điểm và %."
+        ),
+    ),
+
+    Section(
+        "Thanh khoản", "💧", "#liquidity-container",
+        layout=(
+            "Ảnh gồm 2 phần. Trái là biểu đồ vùng (area chart) thể hiện giá trị giao dịch tích lũy "
+            "(GTGD) của VN-Index theo khung giờ trong phiên hôm nay (màu xanh đậm) so với cùng giờ "
+            "phiên hôm qua (màu xám), kèm % thay đổi tổng thanh khoản so với hôm qua. Phải là bảng "
+            "Top 10 mã có giá trị giao dịch (GTGD) lớn nhất trong phiên, gồm giá, % thay đổi giá, "
+            "khối lượng giao dịch (KLGD) và GTGD tính bằng tỷ đồng cùng % đóng góp vào tổng GTGD."
+        ),
+        focus=(
+            "Viết 3-4 câu phân tích bằng tiếng Việt: tổng giá trị giao dịch hôm nay là bao nhiêu và "
+            "tăng/giảm bao nhiêu % so với hôm qua, mã nào có thanh khoản (GTGD) cao nhất và chiếm "
+            "bao nhiêu % tổng GTGD, nhận xét dòng tiền đang tập trung vào nhóm ngành nào dựa trên "
+            "các mã đứng đầu danh sách. Nêu cụ thể số liệu tỷ đồng, % và tên mã."
+        ),
+    ),
+
+    Section(
+        "Ảnh hưởng Index", "📈", ".top-influence-box",
+        layout=(
+            "Ảnh gồm 3 biểu đồ riêng biệt cho 3 chỉ số: VN-Index, VN30-Index, HNX-Index (mỗi chỉ "
+            "số có mức điểm và % thay đổi riêng). Mỗi biểu đồ liệt kê các mã kéo chỉ số đó tăng "
+            "(thanh xanh, phía trên) và các mã kéo chỉ số đó giảm (thanh đỏ, phía dưới), đơn vị là "
+            "điểm ảnh hưởng (không phải %). Dưới mỗi biểu đồ có 2 số tổng: tổng điểm kéo tăng "
+            "(xanh) và tổng điểm kéo giảm (đỏ) của toàn bộ thị trường thuộc chỉ số đó — so sánh 2 "
+            "số này cho biết lực kéo giảm hay tăng đang chiếm ưu thế. Ba chỉ số có danh sách mã ảnh "
+            "hưởng khác nhau, không dùng chung số liệu."
+        ),
+        focus=(
+            "Viết 3-4 câu phân tích bằng tiếng Việt, tập trung chủ yếu vào VN-Index: mã nào kéo "
+            "VN-Index giảm/tăng nhiều điểm nhất, so sánh tổng điểm kéo tăng và tổng điểm kéo giảm "
+            "để thấy lực nào đang chiếm ưu thế, và một so sánh ngắn với VN30 hoặc HNX nếu có sự "
+            "khác biệt đáng chú ý (ví dụ mã ảnh hưởng khác nhau giữa 2 chỉ số). Nêu cụ thể tên mã "
+            "và điểm ảnh hưởng."
+        ),
+    ),
+
+    Section(
+        "Nước ngoài", "🌍", ".foreign-row",
+        layout=(
+            "Ảnh gồm 2 phần. Trái là biểu đồ giá trị mua (xanh)/bán (đỏ) của NĐTNN trên 3 sàn theo "
+            "ngày, đường vàng là giá trị mua ròng (mua trừ bán) — đường này âm khi bán ròng, dương "
+            "khi mua ròng. Phải là bảng top 10 mã có giá trị giao dịch ròng lớn nhất riêng trong "
+            "ngày gần nhất: cột trái (thanh đỏ) là top bán ròng, cột phải (thanh xanh) là top mua "
+            "ròng — đây là 2 danh sách độc lập, mã ở cùng hàng bên trái và bên phải KHÔNG liên quan "
+            "đến nhau."
+        ),
+        focus=(
+            "Viết 3-4 câu phân tích bằng tiếng Việt: khối ngoại mua ròng hay bán ròng trong ngày "
+            "gần nhất (dựa vào đường giá trị mua ròng), mã nào bị bán ròng mạnh nhất và mã nào "
+            "được mua ròng mạnh nhất, xu hướng vài phiên gần đây đang nghiêng về mua hay bán. Nêu "
+            "cụ thể số liệu tỷ đồng và tên mã, không gộp chung 2 danh sách bán ròng/mua ròng thành "
+            "1 cặp đối ứng."
+        ),
+    ),
+
+    Section(
+        "Tự doanh", "🏦", ".proprietary-row",
+        layout=(
+            "Ảnh gồm 2 phần, cấu trúc tương tự khối ngoại. Trái là biểu đồ giá trị mua (xanh)/bán "
+            "(đỏ) của khối tự doanh công ty chứng khoán trên 3 sàn theo ngày, đường vàng là giá trị "
+            "mua ròng. Phải là bảng top 10 mã giao dịch ròng lớn nhất trong ngày gần nhất: cột trái "
+            "(thanh đỏ) là top bán ròng, cột phải (thanh xanh) là top mua ròng — 2 danh sách độc "
+            "lập, mã cùng hàng trái/phải KHÔNG liên quan đến nhau."
+        ),
+        focus=(
+            "Viết 3-4 câu phân tích bằng tiếng Việt: tự doanh mua ròng hay bán ròng trong ngày gần "
+            "nhất, mã nào bị bán ròng mạnh nhất và mã nào được mua ròng mạnh nhất, nhận xét xu "
+            "hướng so với vài phiên trước. Nêu cụ thể số liệu tỷ đồng và tên mã, không gộp chung 2 "
+            "danh sách thành 1 cặp đối ứng."
+        ),
+    ),
+
 ]
 
 _TIMEOUT_MS = 12_000
+
+
+def build_prompt(section: Section) -> str:
+    return f"{section.layout} {section.focus} {STYLE_SUFFIX}"
 
 
 # ─── Entry point ─────────────────────────────────────────────────────────────
@@ -114,7 +247,7 @@ def _scrape_section(page, section: Section) -> bytes:
             pass
 
     # Thử từng container selector
-    for sel in (s.strip() for s in section.container.split(",")):
+    for sel in (s.strip() for s in section.selector.split(",")):
         try:
             page.wait_for_selector(sel, state="visible", timeout=_TIMEOUT_MS)
             page.wait_for_timeout(2_500)   # chờ chart/SVG render
@@ -153,13 +286,7 @@ def _gen_caption(section: Section, img_bytes: bytes) -> str:
                     },
                     {
                         "type": "text",
-                        "text": (
-                            f"Đây là ảnh chụp màn hình phần '{section.tab}' "
-                            f"từ trang Vietstock ngày {today}. "
-                            "Viết 3-4 câu phân tích bằng tiếng Việt tự nhiên. "
-                            "Không dùng gạch đầu dòng, không in đậm tên chỉ báo. "
-                            "Nêu cụ thể số liệu, xu hướng và điểm đáng chú ý nhất."
-                        ),
+                        "text": build_prompt(section),
                     },
                 ],
             }],
