@@ -245,6 +245,14 @@ def _dismiss_ads(page) -> None:
         page.wait_for_timeout(300)
     except Exception:
         pass
+    # Click nút đóng quảng cáo Vietstock nếu có
+    try:
+        btn = page.locator(".ats-overlay-bottom-close-button").first
+        if btn.is_visible(timeout=500):
+            btn.click()
+            page.wait_for_timeout(300)
+    except Exception:
+        pass
     try:
         page.evaluate("""() => {
             document.querySelectorAll(
