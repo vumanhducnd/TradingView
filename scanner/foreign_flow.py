@@ -165,7 +165,9 @@ SECTIONS = [
 
 ]
 
-_TIMEOUT_MS = 12_000
+_TIMEOUT_MS    = 12_000
+_SEND_RETRIES  = 3
+_SEND_RETRY_S  = 15   # giây chờ giữa các lần thử
 
 
 def build_prompt(section: Section) -> str:
@@ -188,11 +190,10 @@ def run(force: bool = False) -> None:
         _send_both(f"⚠️ <b>Market Report</b>: không scrape được\n<code>{e}</code>")
         return
 
-    from scanner.telegram_bot import send_photo
     for section, img in results:
         caption = _gen_caption(section, img)
-        send_photo(img, caption, style="long")
-        send_photo(img, caption, style="short")
+        _send_with_retry(img, caption, "long")
+        _send_with_retry(img, caption, "short")
         logger.info(f"  Sent: {section.tab}")
         time.sleep(1)   # tránh flood Telegram
 
@@ -293,13 +294,28 @@ def _gen_caption(section: Section, img_bytes: bytes) -> str:
             max_tokens=300,
             temperature=0.4,
         )
-        return f"{header}\n\n{resp.choices[0].message.content.strip()}"
+        body    = resp.choices[0].message.content.strip()
+        caption = f"{header}\n\n{body}"
+        if len(caption) > 1024:
+            caption = caption[:1021] + "..."
+        return caption
     except Exception as e:
         logger.warning(f"Vision caption [{section.tab}]: {e}")
         return header
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
+
+def _send_with_retry(img: bytes, caption: str, style: str) -> None:
+    from scanner.telegram_bot import send_photo
+    for attempt in range(1, _SEND_RETRIES + 1):
+        if send_photo(img, caption, style=style):
+            return
+        if attempt < _SEND_RETRIES:
+            logger.warning(f"send_photo [{style}] lần {attempt} thất bại, thử lại sau {_SEND_RETRY_S}s...")
+            time.sleep(_SEND_RETRY_S)
+    logger.error(f"send_photo [{style}] thất bại sau {_SEND_RETRIES} lần")
+
 
 def _send_both(msg: str) -> None:
     try:
