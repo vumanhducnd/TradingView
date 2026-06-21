@@ -238,6 +238,24 @@ def _scrape_all() -> list[tuple[Section, bytes]]:
     return results
 
 
+def _dismiss_ads(page) -> None:
+    """Đóng popup/quảng cáo trước khi chụp."""
+    try:
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(300)
+    except Exception:
+        pass
+    try:
+        page.evaluate("""() => {
+            document.querySelectorAll(
+                'iframe, [class*="adsby"], [id*="google_ads"], '
+                '[class*="ad-overlay"], [class*="popup"], .modal-backdrop'
+            ).forEach(el => { el.style.display = 'none'; });
+        }""")
+    except Exception:
+        pass
+
+
 def _scrape_section(page, section: Section) -> bytes:
     # Click tab
     for sel in [f"a:has-text('{section.tab}')", f"text={section.tab}"]:
@@ -252,6 +270,7 @@ def _scrape_section(page, section: Section) -> bytes:
         try:
             page.wait_for_selector(sel, state="visible", timeout=_TIMEOUT_MS)
             page.wait_for_timeout(2_500)   # chờ chart/SVG render
+            _dismiss_ads(page)
             el = page.locator(sel).first
             el.scroll_into_view_if_needed()
             return el.screenshot()
