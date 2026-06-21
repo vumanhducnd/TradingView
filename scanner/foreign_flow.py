@@ -202,9 +202,10 @@ def run(force: bool = False) -> None:
 
 # ─── Scraping ────────────────────────────────────────────────────────────────
 
-def _scrape_all() -> list[tuple[Section, bytes]]:
+def _scrape_all(sections: list[Section] | None = None) -> list[tuple[Section, bytes]]:
     from playwright.sync_api import sync_playwright
 
+    sections = sections or SECTIONS
     results: list[tuple[Section, bytes]] = []
 
     with sync_playwright() as pw:
@@ -225,7 +226,7 @@ def _scrape_all() -> list[tuple[Section, bytes]]:
         page.goto(VIETSTOCK_URL, wait_until="domcontentloaded", timeout=60_000)
         page.wait_for_timeout(2_000)
 
-        for section in SECTIONS:
+        for section in sections:
             try:
                 img = _scrape_section(page, section)
                 results.append((section, img))
@@ -343,8 +344,42 @@ def _send_both(msg: str) -> None:
         logger.error(f"_send_both: {e}")
 
 
+_MIDDAY_TABS = {"Bản đồ thị trường", "Ảnh hưởng Index"}
+
+
+def run_midday(force: bool = False) -> None:
+    from scanner.utils import is_trading_day
+    if not force and not is_trading_day(date.today()):
+        logger.info("Hôm nay không phải ngày giao dịch — bỏ qua")
+        return
+
+    sections = [s for s in SECTIONS if s.tab in _MIDDAY_TABS]
+    logger.info("=== Vietstock Midday Report ===")
+    try:
+        results = _scrape_all(sections)
+    except Exception as e:
+        logger.error(f"Scrape thất bại: {e}")
+        _send_both(f"⚠️ <b>Midday Report</b>: không scrape được\n<code>{e}</code>")
+        return
+
+    from scanner.telegram_bot import send_photo
+    for section, img in results:
+        caption = _gen_caption(section, img)
+        send_photo(img, caption, style="long")
+        send_photo(img, caption, style="short")
+        logger.info(f"  Sent: {section.tab}")
+        time.sleep(1)
+
+    logger.info(f"=== Xong {len(results)}/2 sections ===")
+
+
 # ─── CLI ─────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     import sys
-    run(force="--force" in sys.argv)
+    args = sys.argv[1:]
+    force = "--force" in args
+    if "--midday" in args:
+        run_midday(force=force)
+    else:
+        run(force=force)
