@@ -54,7 +54,8 @@ class Section:
 SECTIONS = [
 
     Section(
-        "Bản đồ thị trường", "🗺️", "#visualization",
+        "Bản đồ thị trường", "🗺️", "#heatmap-wrapper-right",
+        ready_selector="#heatmap-container",
         layout=(
             "Ảnh là bản đồ nhiệt (heatmap) toàn thị trường, chia theo nhóm ngành (Tài chính, "
             "Bất động sản, Nguyên vật liệu, Công nghệ thông tin, Tiêu dùng, Công nghiệp, Năng "
