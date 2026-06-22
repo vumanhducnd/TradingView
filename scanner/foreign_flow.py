@@ -277,7 +277,10 @@ def _scrape_section(page, section: Section) -> bytes:
     for sel in (s.strip() for s in section.selector.split(",")):
         try:
             page.wait_for_selector(sel, state="visible", timeout=_TIMEOUT_MS)
-            page.wait_for_timeout(5_000)   # chờ chart/SVG + data render
+            try:
+                page.wait_for_load_state("networkidle", timeout=8_000)
+            except Exception:
+                page.wait_for_timeout(3_000)  # fallback nếu networkidle timeout
             _dismiss_ads(page)
             el = page.locator(sel).first
             el.scroll_into_view_if_needed()
