@@ -45,7 +45,8 @@ class Section:
     selector:      str   # CSS selector(s), phân cách bằng ","
     layout:        str   # mô tả cấu trúc ảnh
     focus:         str   # nội dung cần phân tích
-    extra_wait_ms: int = 0  # chờ thêm sau networkidle nếu cần
+    extra_wait_ms:   int = 0   # chờ thêm sau networkidle nếu cần
+    ready_selector: str = ""  # chờ element này visible trước khi chụp
 
 
 # ─── 6 Sections ──────────────────────────────────────────────────────────────
@@ -130,7 +131,8 @@ SECTIONS = [
     ),
 
     Section(
-        "Nước ngoài", "🌍", ".foreign-row", extra_wait_ms=4_000,
+        "Nước ngoài", "🌍", ".foreign-row",
+        ready_selector="#toast-foreign-section",
         layout=(
             "Ảnh gồm 2 phần. Trái là biểu đồ giá trị mua (xanh)/bán (đỏ) của NĐTNN trên 3 sàn theo "
             "ngày, đường vàng là giá trị mua ròng (mua trừ bán) — đường này âm khi bán ròng, dương "
@@ -149,7 +151,8 @@ SECTIONS = [
     ),
 
     Section(
-        "Tự doanh", "🏦", ".proprietary-row", extra_wait_ms=4_000,
+        "Tự doanh", "🏦", ".proprietary-row",
+        ready_selector="#toast-proprietary-section",
         layout=(
             "Ảnh gồm 2 phần, cấu trúc tương tự khối ngoại. Trái là biểu đồ giá trị mua (xanh)/bán "
             "(đỏ) của khối tự doanh công ty chứng khoán trên 3 sàn theo ngày, đường vàng là giá trị "
@@ -278,15 +281,21 @@ def _scrape_section(page, section: Section) -> bytes:
     for sel in (s.strip() for s in section.selector.split(",")):
         try:
             page.wait_for_selector(sel, state="visible", timeout=_TIMEOUT_MS)
-            try:
-                page.wait_for_load_state("networkidle", timeout=8_000)
-            except Exception:
-                page.wait_for_timeout(3_000)  # fallback nếu networkidle timeout
+            el = page.locator(sel).first
+            el.scroll_into_view_if_needed()  # scroll trước để trigger lazy load
+            if section.ready_selector:
+                try:
+                    page.wait_for_selector(section.ready_selector, state="visible", timeout=12_000)
+                except Exception:
+                    page.wait_for_timeout(3_000)
+            else:
+                try:
+                    page.wait_for_load_state("networkidle", timeout=8_000)
+                except Exception:
+                    page.wait_for_timeout(3_000)
             if section.extra_wait_ms:
                 page.wait_for_timeout(section.extra_wait_ms)
             _dismiss_ads(page)
-            el = page.locator(sel).first
-            el.scroll_into_view_if_needed()
             return el.screenshot()
         except Exception:
             pass
