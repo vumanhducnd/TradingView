@@ -40,11 +40,12 @@ STYLE_SUFFIX = (
 
 @dataclass
 class Section:
-    tab:      str   # text tab để click
-    icon:     str   # emoji cho header
-    selector: str   # CSS selector(s), phân cách bằng ","
-    layout:   str   # mô tả cấu trúc ảnh
-    focus:    str   # nội dung cần phân tích
+    tab:           str   # text tab để click
+    icon:          str   # emoji cho header
+    selector:      str   # CSS selector(s), phân cách bằng ","
+    layout:        str   # mô tả cấu trúc ảnh
+    focus:         str   # nội dung cần phân tích
+    extra_wait_ms: int = 0  # chờ thêm sau networkidle nếu cần
 
 
 # ─── 6 Sections ──────────────────────────────────────────────────────────────
@@ -129,7 +130,7 @@ SECTIONS = [
     ),
 
     Section(
-        "Nước ngoài", "🌍", ".foreign-row",
+        "Nước ngoài", "🌍", ".foreign-row", extra_wait_ms=4_000,
         layout=(
             "Ảnh gồm 2 phần. Trái là biểu đồ giá trị mua (xanh)/bán (đỏ) của NĐTNN trên 3 sàn theo "
             "ngày, đường vàng là giá trị mua ròng (mua trừ bán) — đường này âm khi bán ròng, dương "
@@ -148,7 +149,7 @@ SECTIONS = [
     ),
 
     Section(
-        "Tự doanh", "🏦", ".proprietary-row",
+        "Tự doanh", "🏦", ".proprietary-row", extra_wait_ms=4_000,
         layout=(
             "Ảnh gồm 2 phần, cấu trúc tương tự khối ngoại. Trái là biểu đồ giá trị mua (xanh)/bán "
             "(đỏ) của khối tự doanh công ty chứng khoán trên 3 sàn theo ngày, đường vàng là giá trị "
@@ -281,6 +282,8 @@ def _scrape_section(page, section: Section) -> bytes:
                 page.wait_for_load_state("networkidle", timeout=8_000)
             except Exception:
                 page.wait_for_timeout(3_000)  # fallback nếu networkidle timeout
+            if section.extra_wait_ms:
+                page.wait_for_timeout(section.extra_wait_ms)
             _dismiss_ads(page)
             el = page.locator(sel).first
             el.scroll_into_view_if_needed()
