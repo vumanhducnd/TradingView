@@ -8,6 +8,7 @@ Usage:
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import time
 from dataclasses import dataclass
@@ -205,61 +206,30 @@ def run(force: bool = False) -> None:
     logger.info(f"=== Xong {len(results)}/{len(SECTIONS)} sections ===")
 
 
-# ─── Scraping ────────────────────────────────────────────────────────────────
+# ─── Scraping (async parallel) ───────────────────────────────────────────────
 
-def _scrape_all() -> list[tuple[Section, bytes]]:
-    from playwright.sync_api import sync_playwright
-
-    results: list[tuple[Section, bytes]] = []
-
-    with sync_playwright() as pw:
-        browser = pw.chromium.launch(
-            headless=True,
-            args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
-        )
-        page = browser.new_context(
-            viewport={"width": 1440, "height": 860},
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/124.0.0.0 Safari/537.36"
-            ),
-            locale="vi-VN",
-        ).new_page()
-
-        page.goto(VIETSTOCK_URL, wait_until="domcontentloaded", timeout=60_000)
-        page.wait_for_timeout(2_000)
-
-        for section in SECTIONS:
-            try:
-                img = _scrape_section(page, section)
-                results.append((section, img))
-                logger.info(f"[OK] {section.tab}: {len(img)//1024} KB")
-            except Exception as e:
-                logger.warning(f"[SKIP] {section.tab}: {e}")
-
-        browser.close()
-
-    return results
+_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/124.0.0.0 Safari/537.36"
+)
 
 
-def _dismiss_ads(page) -> None:
-    """Đóng popup/quảng cáo trước khi chụp."""
+async def _dismiss_ads_async(page) -> None:
     try:
-        page.keyboard.press("Escape")
-        page.wait_for_timeout(300)
+        await page.keyboard.press("Escape")
+        await page.wait_for_timeout(300)
     except Exception:
         pass
-    # Click nút đóng quảng cáo Vietstock nếu có
     try:
         btn = page.locator(".ats-overlay-bottom-close-button").first
-        if btn.is_visible(timeout=500):
-            btn.click()
-            page.wait_for_timeout(300)
+        if await btn.is_visible(timeout=500):
+            await btn.click()
+            await page.wait_for_timeout(300)
     except Exception:
         pass
     try:
-        page.evaluate("""() => {
+        await page.evaluate("""() => {
             document.querySelectorAll(
                 'iframe, [class*="adsby"], [id*="google_ads"], '
                 '[class*="ad-overlay"], [class*="popup"], .modal-backdrop'
@@ -269,44 +239,77 @@ def _dismiss_ads(page) -> None:
         pass
 
 
-def _scrape_section(page, section: Section) -> bytes:
-    # Click tab
+async def _scrape_section_async(page, section: Section) -> bytes:
     for sel in [f"a:has-text('{section.tab}')", f"text={section.tab}"]:
         try:
-            page.locator(sel).first.click(timeout=3_000)
+            await page.locator(sel).first.click(timeout=3_000)
             break
         except Exception:
             pass
 
-    # Thử từng container selector
     for sel in (s.strip() for s in section.selector.split(",")):
         try:
-            page.wait_for_selector(sel, state="visible", timeout=_TIMEOUT_MS)
+            await page.wait_for_selector(sel, state="visible", timeout=_TIMEOUT_MS)
             el = page.locator(sel).first
-            el.scroll_into_view_if_needed()  # scroll trước để trigger lazy load
+            await el.scroll_into_view_if_needed()
             if section.ready_selector:
                 try:
-                    page.wait_for_selector(section.ready_selector, state="visible", timeout=12_000)
+                    await page.wait_for_selector(section.ready_selector, state="visible", timeout=12_000)
                 except Exception:
-                    page.wait_for_timeout(3_000)
+                    await page.wait_for_timeout(3_000)
             else:
                 try:
-                    page.wait_for_load_state("networkidle", timeout=8_000)
+                    await page.wait_for_load_state("networkidle", timeout=8_000)
                 except Exception:
-                    page.wait_for_timeout(3_000)
+                    await page.wait_for_timeout(3_000)
             if section.extra_wait_ms:
-                page.wait_for_timeout(section.extra_wait_ms)
-            _dismiss_ads(page)
-            return el.screenshot()
+                await page.wait_for_timeout(section.extra_wait_ms)
+            await _dismiss_ads_async(page)
+            return await el.screenshot()
         except Exception:
             pass
 
-    # Fallback: cắt viewport bỏ nav (không cần Pillow)
     logger.debug(f"[{section.tab}] fallback viewport clip")
-    page.wait_for_timeout(2_500)
-    return page.screenshot(clip={
+    await page.wait_for_timeout(2_500)
+    return await page.screenshot(clip={
         "x": 0, "y": _NAV_HEIGHT, "width": 1440, "height": 860 - _NAV_HEIGHT
     })
+
+
+async def _scrape_one(browser, section: Section) -> tuple[Section, bytes] | None:
+    context = await browser.new_context(
+        viewport={"width": 1440, "height": 860},
+        user_agent=_UA,
+        locale="vi-VN",
+    )
+    page = await context.new_page()
+    try:
+        await page.goto(VIETSTOCK_URL, wait_until="domcontentloaded", timeout=60_000)
+        await page.wait_for_timeout(2_000)
+        img = await _scrape_section_async(page, section)
+        logger.info(f"[OK] {section.tab}: {len(img)//1024} KB")
+        return (section, img)
+    except Exception as e:
+        logger.warning(f"[SKIP] {section.tab}: {e}")
+        return None
+    finally:
+        await context.close()
+
+
+async def _scrape_all_async(sections: list[Section]) -> list[tuple[Section, bytes]]:
+    from playwright.async_api import async_playwright
+    async with async_playwright() as pw:
+        browser = await pw.chromium.launch(
+            headless=True,
+            args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+        )
+        results = await asyncio.gather(*[_scrape_one(browser, s) for s in sections])
+        await browser.close()
+    return [r for r in results if r is not None]
+
+
+def _scrape_all(sections: list[Section] | None = None) -> list[tuple[Section, bytes]]:
+    return asyncio.run(_scrape_all_async(sections or SECTIONS))
 
 
 # ─── Caption (vision AI) ─────────────────────────────────────────────────────
