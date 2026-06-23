@@ -47,6 +47,7 @@ class Section:
     focus:         str   # nội dung cần phân tích
     extra_wait_ms:   int = 0   # chờ thêm sau networkidle nếu cần
     ready_selector: str = ""  # chờ element này visible trước khi chụp
+    fullscreen:     bool = False  # click toolbar-fullscreen trước khi chụp, restore sau
 
 
 # ─── 6 Sections ──────────────────────────────────────────────────────────────
@@ -54,8 +55,9 @@ class Section:
 SECTIONS = [
 
     Section(
-        "Bản đồ thị trường", "🗺️", "#heatmap-wrapper-right",
+        "Bản đồ thị trường", "🗺️", "#heatmap-container,#heatmap-wrapper-right",
         ready_selector="#heatmap-container",
+        fullscreen=True,
         layout=(
             "Ảnh là bản đồ nhiệt (heatmap) toàn thị trường, chia theo nhóm ngành (Tài chính, "
             "Bất động sản, Nguyên vật liệu, Công nghệ thông tin, Tiêu dùng, Công nghiệp, Năng "
@@ -207,7 +209,11 @@ def run(force: bool = False) -> None:
 
 # ─── Scraping ────────────────────────────────────────────────────────────────
 
-def _scrape_all(sections: list[Section] | None = None) -> list[tuple[Section, bytes]]:
+def _scrape_all(
+    sections: list[Section] | None = None,
+    *,
+    debug: bool = False,
+) -> list[tuple[Section, bytes]]:
     from playwright.sync_api import sync_playwright
 
     sections = sections or SECTIONS
@@ -215,7 +221,8 @@ def _scrape_all(sections: list[Section] | None = None) -> list[tuple[Section, by
 
     with sync_playwright() as pw:
         browser = pw.chromium.launch(
-            headless=True,
+            headless=not debug,
+            slow_mo=600 if debug else 0,
             args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
         )
         page = browser.new_context(
@@ -230,18 +237,61 @@ def _scrape_all(sections: list[Section] | None = None) -> list[tuple[Section, by
 
         page.goto(VIETSTOCK_URL, wait_until="domcontentloaded", timeout=60_000)
         page.wait_for_timeout(2_000)
+        _kill_chatbot(page)
 
         for section in sections:
             try:
-                img = _scrape_section(page, section)
+                img = _scrape_section(page, section, debug=debug)
                 results.append((section, img))
                 logger.info(f"[OK] {section.tab}: {len(img)//1024} KB")
             except Exception as e:
                 logger.warning(f"[SKIP] {section.tab}: {e}")
 
+        if debug:
+            logger.info("[debug] Giữ browser 5s để quan sát...")
+            page.wait_for_timeout(5_000)
         browser.close()
 
     return results
+
+
+def _kill_chatbot(page) -> None:
+    """Inject CSS persistent + MutationObserver — chạy 1 lần sau page load."""
+    try:
+        page.add_style_tag(content="""
+            #iconVietstockMate,
+            [id*="VietstockMate"], [class*="VietstockMate"],
+            [id*="vietstockmate"], [class*="vietstockmate"],
+            [id*="chatMate"], [class*="chatMate"],
+            [id*="foamtree"], [class*="foamtree"] {
+                display: none !important;
+                visibility: hidden !important;
+                pointer-events: none !important;
+            }
+        """)
+    except Exception:
+        pass
+    try:
+        page.evaluate("""() => {
+            document.querySelectorAll(
+                '#iconVietstockMate, [id*="VietstockMate"], [class*="VietstockMate"]'
+            ).forEach(el => el.remove());
+
+            new MutationObserver(mutations => {
+                mutations.forEach(m => m.addedNodes.forEach(node => {
+                    if (node.nodeType !== 1) return;
+                    const id  = node.id || '';
+                    const cls = typeof node.className === 'string' ? node.className : '';
+                    if (id.toLowerCase().includes('vietstockmate') ||
+                        cls.toLowerCase().includes('vietstockmate') ||
+                        id === 'iconVietstockMate') {
+                        node.remove();
+                    }
+                }));
+            }).observe(document.body, { childList: true, subtree: true });
+        }""")
+    except Exception:
+        pass
 
 
 def _dismiss_ads(page) -> None:
@@ -257,21 +307,80 @@ def _dismiss_ads(page) -> None:
             page.wait_for_timeout(300)
     except Exception:
         pass
+    # Xóa bot VietstockMate khỏi DOM hẳn — không dùng display:none vì bị override
+    try:
+        page.evaluate("""() => {
+            ['#iconVietstockMate', '#btn-close-vietstockmate'].forEach(sel => {
+                const el = document.querySelector(sel);
+                if (el) el.remove();
+            });
+        }""")
+    except Exception:
+        pass
     try:
         page.evaluate("""() => {
             document.querySelectorAll(
                 'iframe, [class*="adsby"], [id*="google_ads"], '
-                '[class*="ad-overlay"], [class*="popup"], .modal-backdrop'
+                '[class*="ad-overlay"], [class*="popup"], .modal-backdrop, '
+                '[class*="foamtree"], [id*="foamtree"], '
+                '[class*="chatbox"], [class*="chat-box"], [class*="chat-widget"], '
+                '[class*="live-chat"], [id*="chat-widget"], '
+                '[class*="zalo-chat"], [class*="tawk"], '
+                '.vs-chat, #vs-chat, [class*="vs-chat"]'
             ).forEach(el => { el.style.display = 'none'; });
         }""")
     except Exception:
         pass
 
 
-def _scrape_section(page, section: Section) -> bytes:
+_FULLSCREEN_BTN = "[data-name='toolbar-fullscreen']"
+
+
+def _screenshot_fullscreen(page, el, *, debug: bool = False) -> bytes:
+    """Click fullscreen, chụp, rồi restore về normal."""
+    try:
+        btn = page.locator(_FULLSCREEN_BTN).first
+        btn.click(timeout=3_000)
+        page.wait_for_timeout(800)
+        if debug:
+            bb = el.bounding_box()
+            logger.info(f"[debug] Fullscreen bounding box: {bb}")
+    except Exception as exc:
+        if debug:
+            logger.warning(f"[debug] Fullscreen click failed: {exc} — chụp không fullscreen")
+        return el.screenshot()
+
+    _dismiss_ads(page)
+    # Chờ thêm 500ms rồi remove lại lần nữa — bot có thể được tạo lại sau fullscreen transition
+    page.wait_for_timeout(500)
+    try:
+        page.evaluate("""() => {
+            const el = document.querySelector('#iconVietstockMate');
+            if (el) el.remove();
+        }""")
+    except Exception:
+        pass
+    img = el.screenshot()
+    if debug:
+        logger.info(f"[debug] Fullscreen screenshot: {len(img)//1024} KB")
+
+    try:
+        page.locator(_FULLSCREEN_BTN).first.click(timeout=3_000)
+        page.wait_for_timeout(600)
+        if debug:
+            logger.info("[debug] Restored từ fullscreen")
+    except Exception:
+        pass
+
+    return img
+
+
+def _scrape_section(page, section: Section, *, debug: bool = False) -> bytes:
     for sel in [f"a:has-text('{section.tab}')", f"text={section.tab}"]:
         try:
             page.locator(sel).first.click(timeout=3_000)
+            if debug:
+                logger.info(f"[debug] Clicked tab: {section.tab!r} via {sel!r}")
             break
         except Exception:
             pass
@@ -281,22 +390,56 @@ def _scrape_section(page, section: Section) -> bytes:
             page.wait_for_selector(sel, state="visible", timeout=_TIMEOUT_MS)
             el = page.locator(sel).first
             el.scroll_into_view_if_needed()
+            if debug:
+                logger.info(f"[debug] Container visible: {sel!r}")
+
             if section.ready_selector:
+                if debug:
+                    logger.info(f"[debug] Waiting ready_selector: {section.ready_selector!r}")
+                t0 = time.time()
                 try:
                     page.wait_for_selector(section.ready_selector, state="visible", timeout=12_000)
+                    elapsed = time.time() - t0
+                    if debug:
+                        logger.info(f"[debug] ready_selector visible after {elapsed:.2f}s")
+                        # Log số SVG path/rect bên trong chart — nếu = 0 thì bars chưa render
+                        bars = page.evaluate(f"""() => {{
+                            const el = document.querySelector('{section.ready_selector}');
+                            if (!el) return {{paths: 0, rects: 0, texts: 0}};
+                            return {{
+                                paths: el.querySelectorAll('path').length,
+                                rects: el.querySelectorAll('rect').length,
+                                texts: el.querySelectorAll('text').length,
+                            }};
+                        }}""")
+                        logger.info(f"[debug] SVG elements inside chart: {bars}")
                 except Exception:
+                    if debug:
+                        logger.warning(f"[debug] ready_selector timeout — fallback 3s wait")
                     page.wait_for_timeout(3_000)
             else:
                 try:
                     page.wait_for_load_state("networkidle", timeout=8_000)
                 except Exception:
                     page.wait_for_timeout(3_000)
+
             if section.extra_wait_ms:
                 page.wait_for_timeout(section.extra_wait_ms)
             _dismiss_ads(page)
-            return el.screenshot()
-        except Exception:
-            pass
+
+            if section.fullscreen:
+                img = _screenshot_fullscreen(page, el, debug=debug)
+            else:
+                if debug:
+                    bb = el.bounding_box()
+                    logger.info(f"[debug] Element bounding box: {bb}")
+                img = el.screenshot()
+                if debug:
+                    logger.info(f"[debug] Screenshot taken: {len(img)//1024} KB")
+            return img
+        except Exception as exc:
+            if debug:
+                logger.warning(f"[debug] Selector {sel!r} failed: {exc}")
 
     logger.debug(f"[{section.tab}] fallback viewport clip")
     page.wait_for_timeout(2_500)
@@ -360,10 +503,23 @@ def _send_both(msg: str) -> None:
 if __name__ == "__main__":
     import sys
     args = sys.argv[1:]
-    force = "--force" in args
-    save  = "--save"  in args   # lưu ảnh ra screenshots/ để debug local
+    force  = "--force" in args
+    save   = "--save"  in args   # lưu ảnh ra screenshots/ để debug local
+    debug  = "--debug" in args   # browser hiện, slow_mo, log SVG elements
 
-    if save:
+    # --section "Nước ngoài" --section "Tự doanh"
+    selected: list[str] = []
+    for i, a in enumerate(args):
+        if a == "--section" and i + 1 < len(args):
+            selected.append(args[i + 1])
+    sections_to_run = (
+        [s for s in SECTIONS if s.tab in selected] if selected else None
+    )
+    if selected and not sections_to_run:
+        logger.warning(f"Không tìm thấy section: {selected}. Dùng tên đúng: {[s.tab for s in SECTIONS]}")
+        sys.exit(1)
+
+    if save or debug:
         import pathlib
         out = pathlib.Path("screenshots")
         out.mkdir(exist_ok=True)
@@ -371,12 +527,13 @@ if __name__ == "__main__":
         if not force and not is_trading_day(date.today()):
             logger.info("Không phải ngày giao dịch — bỏ qua (dùng --force để ép)")
         else:
-            logger.info("=== Vietstock Market Report [save mode] ===")
-            results = _scrape_all()
+            mode_label = "[debug+save]" if debug else "[save]"
+            logger.info(f"=== Vietstock Market Report {mode_label} ===")
+            results = _scrape_all(sections_to_run, debug=debug)
             for section, img in results:
                 fname = out / f"{section.tab.replace(' ', '_')}.png"
                 fname.write_bytes(img)
                 logger.info(f"  Saved: {fname} ({len(img)//1024} KB)")
-            logger.info(f"=== Xong {len(results)}/{len(SECTIONS)} — ảnh trong screenshots/ ===")
+            logger.info(f"=== Xong {len(results)} section(s) — ảnh trong screenshots/ ===")
     else:
         run(force=force)
