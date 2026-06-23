@@ -359,4 +359,24 @@ def _send_both(msg: str) -> None:
 
 if __name__ == "__main__":
     import sys
-    run(force="--force" in sys.argv)
+    args = sys.argv[1:]
+    force = "--force" in args
+    save  = "--save"  in args   # lưu ảnh ra screenshots/ để debug local
+
+    if save:
+        import pathlib
+        out = pathlib.Path("screenshots")
+        out.mkdir(exist_ok=True)
+        from scanner.utils import is_trading_day
+        if not force and not is_trading_day(date.today()):
+            logger.info("Không phải ngày giao dịch — bỏ qua (dùng --force để ép)")
+        else:
+            logger.info("=== Vietstock Market Report [save mode] ===")
+            results = _scrape_all()
+            for section, img in results:
+                fname = out / f"{section.tab.replace(' ', '_')}.png"
+                fname.write_bytes(img)
+                logger.info(f"  Saved: {fname} ({len(img)//1024} KB)")
+            logger.info(f"=== Xong {len(results)}/{len(SECTIONS)} — ảnh trong screenshots/ ===")
+    else:
+        run(force=force)
