@@ -132,8 +132,8 @@ SECTIONS = [
     ),
 
     Section(
-        "Nước ngoài", "🌍", ".foreign-row",
-        ready_selector="#toast-foreign-section",
+        "Nước ngoài", "🌍", "#foreign-container",
+        ready_selector="#bar-chart-buy",
         layout=(
             "Ảnh gồm 2 phần. Trái là biểu đồ giá trị mua (xanh)/bán (đỏ) của NĐTNN trên 3 sàn theo "
             "ngày, đường vàng là giá trị mua ròng (mua trừ bán) — đường này âm khi bán ròng, dương "
@@ -152,8 +152,8 @@ SECTIONS = [
     ),
 
     Section(
-        "Tự doanh", "🏦", ".proprietary-row",
-        ready_selector="#toast-proprietary-section",
+        "Tự doanh", "🏦", "#proprietary-container",
+        ready_selector="#bar-chart-buy",
         layout=(
             "Ảnh gồm 2 phần, cấu trúc tương tự khối ngoại. Trái là biểu đồ giá trị mua (xanh)/bán "
             "(đỏ) của khối tự doanh công ty chứng khoán trên 3 sàn theo ngày, đường vàng là giá trị "
