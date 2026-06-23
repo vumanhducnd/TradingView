@@ -75,7 +75,7 @@ SECTIONS = [
     ),
 
     Section(
-        "Tổng hợp thị trường", "📊", "#general-markets-container",
+        "Tổng hợp thị trường", "📊", "#general-markets",
         layout=(
             "Ảnh gồm 2 phần. Trái là biểu đồ đường VN-Index trong phiên giao dịch hiện tại (theo "
             "khung giờ trong ngày, không phải nhiều ngày), có đường tham chiếu đứt nét màu vàng là "
