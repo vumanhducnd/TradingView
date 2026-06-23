@@ -228,8 +228,8 @@ def _scrape_all(sections: list[Section] | None = None) -> list[tuple[Section, by
             locale="vi-VN",
         ).new_page()
 
-        page.goto(VIETSTOCK_URL, wait_until="networkidle", timeout=90_000)
-        page.wait_for_timeout(3_000)
+        page.goto(VIETSTOCK_URL, wait_until="domcontentloaded", timeout=60_000)
+        page.wait_for_timeout(2_000)
 
         for section in sections:
             try:
