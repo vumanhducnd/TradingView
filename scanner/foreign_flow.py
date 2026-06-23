@@ -219,7 +219,7 @@ def _scrape_all(sections: list[Section] | None = None) -> list[tuple[Section, by
             args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
         )
         page = browser.new_context(
-            viewport={"width": 1440, "height": 860},
+            viewport={"width": 1440, "height": 5000},
             user_agent=(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -285,12 +285,12 @@ def _scrape_section(page, section: Section) -> bytes:
                 try:
                     page.wait_for_selector(section.ready_selector, state="visible", timeout=12_000)
                     page.locator(section.ready_selector).scroll_into_view_if_needed()
-                    # Force Highcharts re-render toàn bộ chart (kể cả phần ngoài viewport)
-                    page.evaluate(
-                        "() => { if (window.Highcharts) { "
-                        "Highcharts.charts.forEach(c => c && c.reflow()); } }"
+                    # Chờ Highcharts vẽ xong bars (rect trong .highcharts-series)
+                    page.wait_for_selector(
+                        f"{section.ready_selector} .highcharts-series rect",
+                        state="visible", timeout=10_000,
                     )
-                    page.wait_for_timeout(1_500)
+                    page.wait_for_timeout(500)
                 except Exception:
                     page.wait_for_timeout(3_000)
             else:
