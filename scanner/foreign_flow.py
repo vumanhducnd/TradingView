@@ -27,6 +27,8 @@ STYLE_SUFFIX = (
     "Văn phong tự nhiên như người viết bản tin chứng khoán, không liệt kê máy móc, "
     "không lặp cấu trúc kiểu 'có thể thấy... cho thấy... đáng chú ý là...'. "
     "Không dùng gạch đầu dòng, không in đậm. "
+    "Tuyệt đối không dùng ngôn ngữ mô tả màu sắc bản đồ như 'ô đỏ', 'ô xanh', 'ô màu', "
+    "'số lượng ô' — thay bằng 'phần lớn cổ phiếu', 'đa số mã', 'nhóm ngành', 'dòng tiền'. "
     "Đảm bảo câu kết luận khớp với toàn bộ số liệu đã nêu ở trên, không mâu thuẫn. "
     "Ví dụ giọng văn mong muốn: 'Khối ngoại tiếp tục bán ròng trên 3 sàn, tập trung mạnh vào "
     "nhóm trụ như FPT (-501 tỷ), VHM (-182 tỷ), TCB (-159 tỷ) – đây là các mã vốn hóa lớn nên "
@@ -61,18 +63,20 @@ SECTIONS = [
         layout=(
             "Ảnh là bản đồ nhiệt (heatmap) toàn thị trường, chia theo nhóm ngành (Tài chính, "
             "Bất động sản, Nguyên vật liệu, Công nghệ thông tin, Tiêu dùng, Công nghiệp, Năng "
-            "lượng...). Diện tích mỗi ô tỷ lệ theo vốn hóa, màu xanh = tăng giá, màu đỏ = giảm giá. "
-            "Lưu ý: trong mỗi ngành thường có 1-2 mã vốn hóa lớn nhất chiếm ô to nhất, nhưng các "
-            "mã này có thể tăng/giảm ngược hướng với phần lớn các mã nhỏ hơn còn lại trong cùng "
-            "ngành — không lấy riêng 1-2 ô lớn nhất để đại diện cho cả ngành. Hãy đếm tỷ lệ ô "
-            "đỏ/xanh trên toàn bộ bản đồ (không chỉ các ô lớn) để xác định sắc thái chủ đạo thực "
-            "sự, rồi mới chọn ra ngành/mã nổi bật để liệt kê chi tiết."
+            "lượng...). Diện tích mỗi mã tỷ lệ theo vốn hóa, màu xanh = tăng giá, màu đỏ = giảm giá. "
+            "Lưu ý: trong mỗi ngành thường có 1-2 mã vốn hóa lớn chiếm phần lớn diện tích, nhưng "
+            "các mã này có thể tăng/giảm ngược hướng với phần lớn các mã nhỏ hơn trong cùng ngành — "
+            "không dùng 1-2 mã đầu ngành để đại diện cho cả ngành. Hãy quan sát tỷ lệ mã tăng/giảm "
+            "trên toàn bộ bản đồ để xác định sắc thái thị trường, rồi chọn ngành/mã nổi bật nhất."
         ),
         focus=(
-            "Viết 3-4 câu phân tích bằng tiếng Việt: sắc thái chủ đạo của toàn bản đồ (đỏ hay xanh "
-            "áp đảo về số lượng ô), độ phân hóa trong từng ngành lớn (nêu rõ nếu mã đầu ngành tăng "
-            "nhưng các mã khác trong ngành lại giảm, hoặc ngược lại), và ngành nào đồng thuận "
-            "giảm/tăng rõ nhất. Nêu cụ thể tên ngành, tên mã và tỷ lệ %."
+            "Viết 3-4 câu phân tích bằng tiếng Việt theo giọng bản tin chứng khoán tự nhiên: "
+            "thị trường hôm nay nghiêng về bên nào (phần lớn cổ phiếu tăng hay giảm), "
+            "ngành nào có sự phân hóa rõ (trụ ngành tăng nhưng phần lớn mã còn lại giảm, hoặc ngược lại), "
+            "và ngành nào giảm/tăng đồng thuận nhất. "
+            "Tuyệt đối không dùng cụm từ 'ô đỏ', 'ô xanh', 'ô màu', 'số lượng ô' — "
+            "thay bằng 'phần lớn cổ phiếu', 'đa số mã', 'nhóm ngành', 'dòng tiền'. "
+            "Nêu cụ thể tên ngành, tên mã và % thay đổi."
         ),
     ),
 
