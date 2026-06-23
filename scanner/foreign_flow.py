@@ -284,9 +284,13 @@ def _scrape_section(page, section: Section) -> bytes:
             if section.ready_selector:
                 try:
                     page.wait_for_selector(section.ready_selector, state="visible", timeout=12_000)
-                    # scroll đến bar chart để trigger lazy render Highcharts
                     page.locator(section.ready_selector).scroll_into_view_if_needed()
-                    page.wait_for_timeout(2_000)
+                    # Force Highcharts re-render toàn bộ chart (kể cả phần ngoài viewport)
+                    page.evaluate(
+                        "() => { if (window.Highcharts) { "
+                        "Highcharts.charts.forEach(c => c && c.reflow()); } }"
+                    )
+                    page.wait_for_timeout(1_500)
                 except Exception:
                     page.wait_for_timeout(3_000)
             else:
