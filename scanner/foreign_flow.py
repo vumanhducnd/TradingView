@@ -219,7 +219,7 @@ def _scrape_all(sections: list[Section] | None = None) -> list[tuple[Section, by
             args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
         )
         page = browser.new_context(
-            viewport={"width": 1440, "height": 5000},
+            viewport={"width": 1440, "height": 860},
             user_agent=(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -228,8 +228,8 @@ def _scrape_all(sections: list[Section] | None = None) -> list[tuple[Section, by
             locale="vi-VN",
         ).new_page()
 
-        page.goto(VIETSTOCK_URL, wait_until="domcontentloaded", timeout=60_000)
-        page.wait_for_timeout(2_000)
+        page.goto(VIETSTOCK_URL, wait_until="networkidle", timeout=90_000)
+        page.wait_for_timeout(3_000)
 
         for section in sections:
             try:
@@ -285,12 +285,12 @@ def _scrape_section(page, section: Section) -> bytes:
                 try:
                     page.wait_for_selector(section.ready_selector, state="visible", timeout=12_000)
                     page.locator(section.ready_selector).scroll_into_view_if_needed()
-                    # Chờ Highcharts vẽ xong bars (rect trong .highcharts-series)
-                    page.wait_for_selector(
-                        f"{section.ready_selector} .highcharts-series rect",
-                        state="visible", timeout=10_000,
-                    )
-                    page.wait_for_timeout(500)
+                    # Đợi networkidle sau khi scroll để AJAX bar chart data load xong
+                    try:
+                        page.wait_for_load_state("networkidle", timeout=10_000)
+                    except Exception:
+                        pass
+                    page.wait_for_timeout(1_000)
                 except Exception:
                     page.wait_for_timeout(3_000)
             else:
