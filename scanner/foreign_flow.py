@@ -284,13 +284,6 @@ def _scrape_section(page, section: Section) -> bytes:
             if section.ready_selector:
                 try:
                     page.wait_for_selector(section.ready_selector, state="visible", timeout=12_000)
-                    page.locator(section.ready_selector).scroll_into_view_if_needed()
-                    # Đợi networkidle sau khi scroll để AJAX bar chart data load xong
-                    try:
-                        page.wait_for_load_state("networkidle", timeout=10_000)
-                    except Exception:
-                        pass
-                    page.wait_for_timeout(1_000)
                 except Exception:
                     page.wait_for_timeout(3_000)
             else:
