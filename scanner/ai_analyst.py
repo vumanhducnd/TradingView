@@ -437,11 +437,11 @@ def summarize_global_events(events_text: str) -> str:
         Bạn là chuyên gia phân tích thị trường chứng khoán Việt Nam.
         Ngày: {today}
 
-        Dưới đây là các sự kiện kinh tế quốc tế sắp diễn ra:
+        Dưới đây là các tin tức tài chính quốc tế 24h gần nhất:
         {events_text}
 
         Hãy viết đúng 2-3 câu ngắn gọn bằng tiếng Việt có dấu, giải thích:
-        - Sự kiện nào quan trọng nhất và tại sao
+        - Tin nào quan trọng nhất và tại sao
         - Khả năng tác động cụ thể đến TTCK Việt Nam hôm nay/ngày mai
 
         Yêu cầu: thẳng thắn, thực tế, không dùng markdown, không bullet, không mở đầu

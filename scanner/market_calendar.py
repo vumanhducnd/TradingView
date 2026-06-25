@@ -220,138 +220,85 @@ def _check_manual_events(today: date) -> list[MarketEvent]:
     return events
 
 
-# ─── Fetch sự kiện kinh tế quốc tế từ Finnhub ────────────────────────────────
-
-# Quốc gia quan trọng với thị trường VN (theo thứ tự tác động)
-_WATCH_COUNTRIES = {"US", "CN", "EU", "JP", "GB"}
-
-# Từ khóa high-impact cần nổi bật (so khớp không phân biệt hoa thường)
-_HIGH_IMPACT_KEYWORDS = {
-    "interest rate", "fed funds", "fomc", "cpi", "inflation",
-    "nonfarm", "non-farm", "gdp", "unemployment",
-    "pmi", "retail sales", "pce",
-}
-
-_COUNTRY_FLAG = {
-    "US": "🇺🇸", "CN": "🇨🇳", "EU": "🇪🇺",
-    "JP": "🇯🇵", "GB": "🇬🇧",
-}
+# ─── Fetch tin tức tài chính quốc tế từ Finnhub /news ────────────────────────
 
 _ICT = timezone(timedelta(hours=7))
+
+# Từ khóa macro quan trọng với TTCK VN
+_MACRO_KEYWORDS = {
+    "fed", "fomc", "federal reserve", "interest rate", "rate cut", "rate hike",
+    "cpi", "inflation", "nonfarm", "non-farm", "gdp", "unemployment",
+    "pmi", "retail sales", "pce", "tariff", "trade war",
+    "china", "pboc", "nasdaq", "s&p", "wall street", "recession",
+    "treasury", "yield", "dollar", "dxy",
+}
 
 
 def fetch_global_events(today: date | None = None) -> tuple[str, str]:
     """
-    Fetch lịch sự kiện kinh tế quốc tế từ Finnhub cho ngày `today` và ngày mai.
+    Fetch tin tức tài chính quốc tế từ Finnhub /news (free tier).
+    Lọc tin macro 24h gần nhất có liên quan đến TTCK VN.
     Trả về (html_data, plain_ctx) — không chứa AI inline.
     """
     from scanner.config import FINNHUB_API_KEY
     if not FINNHUB_API_KEY:
         return "", ""
 
-    if today is None:
-        today = date.today()
-    tomorrow = today + timedelta(days=1)
-
     try:
         import requests
-        url = "https://finnhub.io/api/v1/calendar/economic"
         resp = requests.get(
-            url,
-            params={"from": today.isoformat(), "to": tomorrow.isoformat(),
-                    "token": FINNHUB_API_KEY},
+            "https://finnhub.io/api/v1/news",
+            params={"category": "general", "token": FINNHUB_API_KEY},
             timeout=10,
             verify=False,
         )
         resp.raise_for_status()
-        data = resp.json().get("economicCalendar", [])
+        items = resp.json()
     except Exception as e:
         from scanner.utils import logger
-        # 403 = plan limitation (permanent) — không cần warning
         msg = str(e)
-        if "403" in msg:
-            logger.debug(f"Finnhub calendar: plan không hỗ trợ endpoint này ({e})")
+        if "403" in msg or "401" in msg:
+            logger.debug(f"Finnhub news: không có quyền truy cập ({e})")
         else:
-            logger.warning(f"Finnhub calendar fetch failed: {e}")
+            logger.warning(f"Finnhub news fetch failed: {e}")
         return "", ""
 
-    # Lọc: chỉ giữ high-impact hoặc medium của các nước watch
-    rows: list[dict] = []
-    for item in data:
-        country = (item.get("country") or "").upper()
-        if country not in _WATCH_COUNTRIES:
+    # Lọc tin 24h gần nhất có từ khóa macro
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    relevant: list[dict] = []
+    seen: set[str] = set()
+    for item in items:
+        ts = item.get("datetime", 0)
+        if not ts:
             continue
-        impact = (item.get("impact") or "").lower()
-        if impact not in ("high", "medium"):
+        if datetime.fromtimestamp(ts, tz=timezone.utc) < cutoff:
             continue
-
-        event_name = item.get("event") or ""
-        time_raw = item.get("time") or ""  # "YYYY-MM-DD HH:MM:SS" UTC
-
-        # Parse string UTC → ICT
-        try:
-            dt_utc = datetime.strptime(time_raw, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
-            dt_ict = dt_utc.astimezone(_ICT)
-            time_str   = dt_ict.strftime("%H:%M (giờ VN) %d/%m")
-            event_date = dt_ict.date()
-        except Exception:
-            time_str   = "TBD"
-            event_date = today
-
-        # Chỉ lấy hôm nay và ngày mai
-        if event_date not in (today, tomorrow):
+        headline = (item.get("headline") or "").strip()
+        if not headline or headline in seen:
             continue
+        combined = (headline + " " + (item.get("summary") or "")).lower()
+        if any(k in combined for k in _MACRO_KEYWORDS):
+            seen.add(headline)
+            relevant.append(item)
 
-        name_lower = event_name.lower()
-        is_high = impact == "high" or any(k in name_lower for k in _HIGH_IMPACT_KEYWORDS)
-
-        # Bỏ qua sự kiện đã có kết quả thực tế (actual != None)
-        if item.get("actual") is not None:
-            continue
-
-        rows.append({
-            "country": country,
-            "event":   event_name,
-            "time":    time_str,
-            "is_high": is_high,
-            "date":    event_date,
-            "core_country": country in ("US", "CN"),  # ưu tiên US/CN
-        })
-
-    if not rows:
+    relevant = relevant[:5]
+    if not relevant:
         return "", ""
 
-    # Ưu tiên: high-impact US/CN → high-impact khác → medium US/CN → còn lại
-    rows.sort(key=lambda r: (
-        not (r["is_high"] and r["core_country"]),  # high US/CN lên đầu
-        not r["is_high"],                           # high khác tiếp theo
-        not r["core_country"],                      # medium US/CN
-        r["date"], r["time"],
-    ))
-    rows = rows[:5]  # chỉ giữ 5 sự kiện quan trọng nhất
+    html_lines = ["\n🌐 <b>Tin tức quốc tế 24h:</b>"]
+    plain_lines = ["Tin tức quốc tế 24h gần nhất:"]
+    for item in relevant:
+        headline = (item.get("headline") or "").strip()
+        source   = (item.get("source")   or "").strip()
+        url      = (item.get("url")      or "").strip()
+        h_esc    = headline.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        if url:
+            html_lines.append(f'  • <a href="{url}">{h_esc}</a> [{source}]')
+        else:
+            html_lines.append(f"  • {h_esc} [{source}]")
+        plain_lines.append(f"  - [{source}] {headline}")
 
-    lines = ["\n🌐 <b>Sự kiện kinh tế quốc tế:</b>"]
-    today_rows    = [r for r in rows if r["date"] == today]
-    tomorrow_rows = [r for r in rows if r["date"] == tomorrow]
-
-    # Build plain-text cho AI trước khi format HTML
-    plain_lines: list[str] = []
-    for section_label, section_rows in [
-        ("Hôm nay", today_rows),
-        ("Ngày mai", tomorrow_rows),
-    ]:
-        if not section_rows:
-            continue
-        lines.append(f"\n<u>{section_label}:</u>")
-        plain_lines.append(f"{section_label}:")
-        for r in section_rows:
-            flag       = _COUNTRY_FLAG.get(r["country"], r["country"])
-            dot        = "‼️" if r["is_high"] else "❕"
-            event_html = r["event"].replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            lines.append(f"  {dot} {flag} <b>{event_html}</b> — {r['time']}")
-            plain_lines.append(f"  [{r['country']}] {r['event']} lúc {r['time']}")
-
-    return "\n".join(lines), "\n".join(plain_lines)
+    return "\n".join(html_lines), "\n".join(plain_lines)
 
 
 # ─── Yesterday market review ─────────────────────────────────────────────────
