@@ -267,7 +267,12 @@ def fetch_global_events(today: date | None = None) -> tuple[str, str]:
         data = resp.json().get("economicCalendar", [])
     except Exception as e:
         from scanner.utils import logger
-        logger.warning(f"Finnhub calendar fetch failed: {e}")
+        # 403 = plan limitation (permanent) — không cần warning
+        msg = str(e)
+        if "403" in msg:
+            logger.debug(f"Finnhub calendar: plan không hỗ trợ endpoint này ({e})")
+        else:
+            logger.warning(f"Finnhub calendar fetch failed: {e}")
         return "", ""
 
     # Lọc: chỉ giữ high-impact hoặc medium của các nước watch

@@ -14,8 +14,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from scanner.utils import logger
 
 _FEEDS = [
-    ("VnEconomy", "https://vneconomy.vn/chung-khoan.rss"),
-    ("CafeF",     "https://cafef.vn/thi-truong-chung-khoan.rss"),
+    ("CafeF", "https://cafef.vn/thi-truong-chung-khoan.rss"),
 ]
 
 
