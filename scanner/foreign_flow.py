@@ -143,17 +143,22 @@ SECTIONS = [
         layout=(
             "Ảnh gồm 2 phần. Trái là biểu đồ giá trị mua (xanh)/bán (đỏ) của NĐTNN trên 3 sàn theo "
             "ngày, đường vàng là giá trị mua ròng (mua trừ bán) — đường này âm khi bán ròng, dương "
-            "khi mua ròng. Phải là bảng top 10 mã có giá trị giao dịch ròng lớn nhất riêng trong "
-            "ngày gần nhất: cột trái (thanh đỏ) là top bán ròng, cột phải (thanh xanh) là top mua "
-            "ròng — đây là 2 danh sách độc lập, mã ở cùng hàng bên trái và bên phải KHÔNG liên quan "
-            "đến nhau."
+            "khi mua ròng. Phải là bảng top 10 mã giao dịch ròng lớn nhất trong ngày gần nhất, chia "
+            "thành 2 cột độc lập: CỘT TRÁI (thanh đỏ, nhãn 'Top bán ròng') liệt kê các mã bị bán "
+            "ròng kèm giá trị tỷ đồng ngay cạnh thanh đó; CỘT PHẢI (thanh xanh, nhãn 'Top mua ròng') "
+            "liệt kê các mã được mua ròng kèm giá trị tỷ đồng ngay cạnh thanh đó. Mã ở cùng hàng "
+            "trong 2 cột KHÔNG liên quan đến nhau — đây là 2 danh sách hoàn toàn riêng biệt. Giá trị "
+            "tỷ đồng của mỗi mã CHỈ thuộc về cột chứa mã đó, không được lấy số từ cột này gán cho "
+            "tên mã ở cột kia."
         ),
         focus=(
             "Viết 3-4 câu phân tích bằng tiếng Việt: khối ngoại mua ròng hay bán ròng trong ngày "
-            "gần nhất (dựa vào đường giá trị mua ròng), mã nào bị bán ròng mạnh nhất và mã nào "
-            "được mua ròng mạnh nhất, xu hướng vài phiên gần đây đang nghiêng về mua hay bán. Nêu "
-            "cụ thể số liệu tỷ đồng và tên mã, không gộp chung 2 danh sách bán ròng/mua ròng thành "
-            "1 cặp đối ứng."
+            "gần nhất (dựa vào đường giá trị mua ròng), mã nào bị bán ròng mạnh nhất (từ cột trái) "
+            "và mã nào được mua ròng mạnh nhất (từ cột phải), xu hướng vài phiên gần đây đang nghiêng "
+            "về mua hay bán. Nêu cụ thể số liệu tỷ đồng và tên mã. "
+            "QUY TẮC BẮT BUỘC: mỗi mã chỉ đọc giá trị từ ĐÚNG cột chứa mã đó — mã ở cột trái (bán "
+            "ròng) đi kèm số tỷ đồng của cột trái, mã ở cột phải (mua ròng) đi kèm số tỷ đồng của "
+            "cột phải. Tuyệt đối không hoán đổi giá trị giữa 2 cột."
         ),
     ),
 
@@ -163,15 +168,18 @@ SECTIONS = [
         layout=(
             "Ảnh gồm 2 phần, cấu trúc tương tự khối ngoại. Trái là biểu đồ giá trị mua (xanh)/bán "
             "(đỏ) của khối tự doanh công ty chứng khoán trên 3 sàn theo ngày, đường vàng là giá trị "
-            "mua ròng. Phải là bảng top 10 mã giao dịch ròng lớn nhất trong ngày gần nhất: cột trái "
-            "(thanh đỏ) là top bán ròng, cột phải (thanh xanh) là top mua ròng — 2 danh sách độc "
-            "lập, mã cùng hàng trái/phải KHÔNG liên quan đến nhau."
+            "mua ròng. Phải là bảng top 10 mã giao dịch ròng lớn nhất trong ngày gần nhất, chia 2 "
+            "cột độc lập: CỘT TRÁI (thanh đỏ, nhãn 'Top bán ròng') liệt kê các mã bị bán ròng kèm "
+            "giá trị tỷ đồng ngay cạnh thanh đó; CỘT PHẢI (thanh xanh, nhãn 'Top mua ròng') liệt kê "
+            "các mã được mua ròng kèm giá trị tỷ đồng ngay cạnh thanh đó. Mã cùng hàng trong 2 cột "
+            "KHÔNG liên quan đến nhau. Giá trị tỷ đồng của mỗi mã CHỈ thuộc về cột chứa mã đó."
         ),
         focus=(
             "Viết 3-4 câu phân tích bằng tiếng Việt: tự doanh mua ròng hay bán ròng trong ngày gần "
-            "nhất, mã nào bị bán ròng mạnh nhất và mã nào được mua ròng mạnh nhất, nhận xét xu "
-            "hướng so với vài phiên trước. Nêu cụ thể số liệu tỷ đồng và tên mã, không gộp chung 2 "
-            "danh sách thành 1 cặp đối ứng."
+            "nhất, mã nào bị bán ròng mạnh nhất (từ cột trái) và mã nào được mua ròng mạnh nhất (từ "
+            "cột phải), nhận xét xu hướng so với vài phiên trước. Nêu cụ thể số liệu tỷ đồng và tên "
+            "mã. QUY TẮC BẮT BUỘC: mỗi mã chỉ đọc giá trị từ ĐÚNG cột chứa mã đó — tuyệt đối không "
+            "hoán đổi giá trị giữa cột trái (bán ròng) và cột phải (mua ròng)."
         ),
     ),
 
