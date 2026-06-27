@@ -29,6 +29,9 @@ TV_PAGES = [
 
 _exchange_cache: dict[str, str] = {}  # cache trong session
 
+NEAR_BUY_THRESHOLD_PCT = 3.0  # % cách ST tối đa để coi là "gần điểm mua"
+_TK_MIN_TY             = 10.0  # thanh khoản tối thiểu (tỷ VND)
+
 _AI_STYLE = (
     "Chỉ viết 2-3 câu liên tiếp, không chia đoạn, văn phong bản tin chứng khoán. "
     "Không liệt kê máy móc, không gạch đầu dòng, không in đậm. "
@@ -38,17 +41,30 @@ _AI_STYLE = (
 
 # ─── Entry point ─────────────────────────────────────────────────────────────
 
-def run(force: bool = False, top_n: int = 5, tickers: list[str] | None = None) -> None:
+_STYLE_LABEL = {"long": "Dài hạn", "short": "Ngắn hạn"}
+
+
+def run(
+    force: bool = False,
+    top_n: int = 5,
+    tickers: list[str] | None = None,
+    mode: str = "top",
+    stocks: list[tuple[str, str, float]] | None = None,
+    send_style: str | None = None,   # "long" | "short" | None = gửi cả 2
+) -> None:
     from scanner.utils import is_trading_day
     if not force and not is_trading_day(date.today()):
         logger.info("Hôm nay không phải ngày giao dịch — bỏ qua")
         return
 
-    if tickers:
-        # (ticker, exchange, score)
-        stocks: list[tuple[str, str, float]] = [
+    if stocks is not None:
+        pass  # dùng luôn list truyền vào
+    elif tickers:
+        stocks = [
             (t.upper(), _exchange(t.upper()), 0.0) for t in tickers
         ]
+    elif mode == "near_buy":
+        stocks = _get_near_buy_stocks(top_n)
     else:
         stocks = _get_top_stocks(top_n)
 
@@ -56,33 +72,119 @@ def run(force: bool = False, top_n: int = 5, tickers: list[str] | None = None) -
         logger.warning("Không tìm thấy cổ phiếu thỏa tiêu chí — bỏ qua")
         return
 
+    send_groups = [send_style] if send_style else ["long", "short"]
     tickers_str = ", ".join(t for t, _, _ in stocks)
-    logger.info(f"=== TV Screenshot: {tickers_str} ===")
+    logger.info(f"=== TV Screenshot [{mode}][nhóm {'/'.join(send_groups)}]: {tickers_str} ===")
 
     stock_pairs = [(t, e) for t, e, _ in stocks]
     results     = _scrape_all(stock_pairs)
 
     from scanner.telegram_bot import send_message, send_photo
 
-    today  = datetime.now(ICT).strftime("%d/%m/%Y")
-    lines  = "\n".join(
-        f"  #{i+1} <b>{t}</b>" + (f" (score: {s:.0f})" if s else "")
-        for i, (t, _, s) in enumerate(stocks)
-    )
-    header = f"📸 <b>Top {len(stocks)} cổ phiếu sắp đến điểm mua — {today}</b>\n{lines}"
+    today = datetime.now(ICT).strftime("%d/%m/%Y")
 
-    send_message(header, style="long")
-    send_message(header, style="short")
+    if mode == "near_buy":
+        style_suffix = f" — {_STYLE_LABEL[send_style]}" if send_style else ""
+        lines = "\n".join(
+            f"  #{i+1} <b>{t}</b>" + (f" (cách ST: {s:.1f}%)" if s > 0 else "")
+            for i, (t, _, s) in enumerate(stocks)
+        )
+        header = f"🔍 <b>Top {len(stocks)} cổ phiếu gần điểm MUA{style_suffix} — {today}</b>\n{lines}"
+    else:
+        lines = "\n".join(
+            f"  #{i+1} <b>{t}</b>" + (f" (score: {s:.0f})" if s else "")
+            for i, (t, _, s) in enumerate(stocks)
+        )
+        header = f"📸 <b>Top {len(stocks)} cổ phiếu sắp đến điểm mua — {today}</b>\n{lines}"
+
+    for g in send_groups:
+        send_message(header, style=g)
     time.sleep(1)
 
     for ticker, page_label, img in results:
         caption = _gen_caption(ticker, page_label, img)
-        send_photo(img, caption, style="long")
-        send_photo(img, caption, style="short")
-        logger.info(f"  Sent: {ticker} / {page_label}")
+        for g in send_groups:
+            send_photo(img, caption, style=g)
+        logger.info(f"  Sent: {ticker}/{page_label} → nhóm {'/'.join(send_groups)}")
         time.sleep(1)
 
     logger.info(f"=== Xong {len(results)} ảnh ===")
+
+
+def run_near_buy_dual(
+    stocks_long: list[tuple[str, str, float]],
+    stocks_short: list[tuple[str, str, float]],
+    force: bool = False,
+) -> None:
+    """
+    Chụp TradingView cho near_buy long + short.
+    Ticker chung cả 2 style → chụp 1 lần, gửi cả 2 bot.
+    Ticker riêng → chụp 1 lần, gửi đúng bot.
+    """
+    from scanner.utils import is_trading_day
+    if not force and not is_trading_day(date.today()):
+        logger.info("Hôm nay không phải ngày giao dịch — bỏ qua")
+        return
+
+    from scanner.telegram_bot import send_message, send_photo
+
+    # Phân loại: chung / chỉ long / chỉ short
+    long_map  = {t: (e, s) for t, e, s in stocks_long}
+    short_map = {t: (e, s) for t, e, s in stocks_short}
+
+    common      = sorted(set(long_map) & set(short_map))
+    only_long   = [t for t, _, _ in stocks_long  if t not in short_map]
+    only_short  = [t for t, _, _ in stocks_short if t not in long_map]
+
+    # Tập tất cả ticker cần scrape (không trùng)
+    all_pairs: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for group, src_map in [(common, long_map), (only_long, long_map), (only_short, short_map)]:
+        for t in group:
+            if t not in seen:
+                all_pairs.append((t, src_map[t][0]))   # (ticker, exchange)
+                seen.add(t)
+
+    if not all_pairs:
+        logger.info("TV Screenshot dual: không có mã nào — bỏ qua")
+        return
+
+    logger.info(
+        f"=== TV Screenshot dual: {len(all_pairs)} mã "
+        f"(chung={len(common)}, chỉ_long={len(only_long)}, chỉ_short={len(only_short)}) ==="
+    )
+    scraped = _scrape_all(all_pairs)   # Playwright chạy 1 lần
+
+    today = datetime.now(ICT).strftime("%d/%m/%Y")
+
+    def _header(stocks: list[tuple[str, str, float]], style_key: str) -> str:
+        label = _STYLE_LABEL[style_key]
+        lines = "\n".join(
+            f"  #{i+1} <b>{t}</b>" + (f" (cách ST: {s:.1f}%)" if s > 0 else "")
+            for i, (t, _, s) in enumerate(stocks)
+        )
+        return f"🔍 <b>Top {len(stocks)} cổ phiếu gần điểm MUA — {label} — {today}</b>\n{lines}"
+
+    if stocks_long:
+        send_message(_header(stocks_long, "long"), style="long")
+    if stocks_short:
+        send_message(_header(stocks_short, "short"), style="short")
+    time.sleep(1)
+
+    for ticker, page_label, img in scraped:
+        caption = _gen_caption(ticker, page_label, img)
+        # Gửi đến nhóm Telegram tương ứng: long → nhóm long, short → nhóm short
+        in_long  = ticker in long_map
+        in_short = ticker in short_map
+        if in_long:
+            send_photo(img, caption, style="long")   # → TELEGRAM_CHAT_IDS_LONG
+        if in_short:
+            send_photo(img, caption, style="short")  # → TELEGRAM_CHAT_IDS_SHORT
+        dest = ("long+short" if (in_long and in_short) else "long" if in_long else "short")
+        logger.info(f"  Sent: {ticker}/{page_label} → nhóm {dest}")
+        time.sleep(1)
+
+    logger.info(f"=== Xong {len(scraped)} ảnh (1 lần Playwright) ===")
 
 
 # ─── Lấy top cổ phiếu từ DB ──────────────────────────────────────────────────
@@ -111,6 +213,43 @@ def _get_top_stocks(top_n: int) -> list[tuple[str, str, float]]:
 
     return [
         (r["ticker"], _exchange(r["ticker"]), float(r.get("bias_norm", 0.0)))
+        for r in rows
+    ]
+
+
+def _get_near_buy_stocks(top_n: int) -> list[tuple[str, str, float]]:
+    """Top N mã long_trend=-1 gần SuperTrend nhất (chờ lật lên MUA).
+    Score trả về = dist_pct (% cách ST từ dưới lên), thấp hơn = gần hơn.
+    """
+    from scanner.database import db_cursor
+
+    try:
+        with db_cursor() as cur:
+            cur.execute("""
+                SELECT ticker,
+                       ROUND(((long_supertrend - close) / long_supertrend * 100)::numeric, 2)
+                           AS dist_pct
+                FROM scan_results
+                WHERE long_trend = -1
+                  AND long_supertrend > 0
+                  AND close > 0
+                  AND (long_supertrend - close) / long_supertrend * 100
+                      BETWEEN 0 AND %s
+                  AND turnover / 1e9 >= %s
+                ORDER BY dist_pct ASC
+                LIMIT %s
+            """, (NEAR_BUY_THRESHOLD_PCT, _TK_MIN_TY, top_n))
+            rows = cur.fetchall()
+    except Exception as e:
+        logger.error(f"DB query near_buy thất bại: {e}")
+        return []
+
+    if not rows:
+        logger.warning(f"Không có mã nào near_buy (dist ≤ {NEAR_BUY_THRESHOLD_PCT}%)")
+        return []
+
+    return [
+        (r["ticker"], _exchange(r["ticker"]), float(r["dist_pct"]))
         for r in rows
     ]
 
@@ -536,6 +675,12 @@ if __name__ == "__main__":
             except ValueError:
                 pass
 
+    # --mode near_buy | top
+    mode = "top"
+    for i, a in enumerate(args):
+        if a == "--mode" and i + 1 < len(args):
+            mode = args[i + 1]
+
     from scanner.utils import is_trading_day
 
     if save or debug:
@@ -548,6 +693,8 @@ if __name__ == "__main__":
 
         if tickers:
             stocks = [(t.upper(), _exchange(t.upper()), 0.0) for t in tickers]
+        elif mode == "near_buy":
+            stocks = _get_near_buy_stocks(top_n)
         else:
             stocks = _get_top_stocks(top_n)
 
@@ -555,7 +702,7 @@ if __name__ == "__main__":
             logger.warning("Không có cổ phiếu thỏa tiêu chí")
             sys.exit(0)
 
-        logger.info(f"=== TV Screenshot [{', '.join(t for t,_,_ in stocks)}] ===")
+        logger.info(f"=== TV Screenshot [{mode}] [{', '.join(t for t,_,_ in stocks)}] ===")
         stock_pairs = [(t, e) for t, e, _ in stocks]
         results = _scrape_all(stock_pairs, debug=debug)
 
@@ -567,4 +714,4 @@ if __name__ == "__main__":
 
         logger.info(f"=== Xong {len(results)} anh — xem trong screenshots/ ===")
     else:
-        run(force=force, top_n=top_n, tickers=tickers)
+        run(force=force, top_n=top_n, tickers=tickers, mode=mode)

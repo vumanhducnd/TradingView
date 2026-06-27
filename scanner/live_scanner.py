@@ -199,6 +199,8 @@ def run_pre_session(force: bool = False) -> None:
 
     combined_block = "\n\n".join(b for b in [review_html, global_html] + ai_parts if b)
 
+    near_buy_per_style: dict[str, list[dict]] = {}   # {"long": [...], "short": [...]}
+
     for style, style_label, bot_style in [
         ("long",  "Dài hạn",  "long"),
         ("short", "Ngắn hạn", "short"),
@@ -228,6 +230,8 @@ def run_pre_session(force: bool = False) -> None:
         # Lấy near_buy/near_sell trước để truyền vào AI
         _, near_buy_tmp, near_sell_tmp = _build_pre_report(results, style_label, today_str)
 
+        near_buy_per_style[style] = near_buy_tmp   # giữ lại cho TV screenshot
+
         # AI nhận định trước phiên
         ai_text = ""
         try:
@@ -248,6 +252,23 @@ def run_pre_session(force: bool = False) -> None:
     if combined_block:
         for bot_style in ("long", "short"):
             send_message(combined_block, style=bot_style)
+
+    # ── TV Screenshot: top 5 mã gần điểm MUA — long/short, chụp chung nếu trùng mã ──
+    try:
+        from scanner.tv_screenshot import run_near_buy_dual
+
+        def _to_stocks(near_buy: list[dict]) -> list[tuple[str, str, float]]:
+            return [
+                (r["ticker"], r.get("exchange", ""), abs(float(r.get("dist_pct", 0.0))))
+                for r in near_buy[:5]
+            ]
+
+        top5_long  = _to_stocks(near_buy_per_style.get("long",  []))
+        top5_short = _to_stocks(near_buy_per_style.get("short", []))
+
+        run_near_buy_dual(top5_long, top5_short, force=True)
+    except Exception as e:
+        logger.warning(f"TV Screenshot thất bại (không chặn pre-session): {e}")
 
     logger.info("Pre-session xong")
 

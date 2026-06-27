@@ -1,8 +1,14 @@
-name: TradingView Screenshots (16:30 GMT+7)
+name: TradingView Screenshots (manual)
 
 on:
   workflow_dispatch:
     inputs:
+      mode:
+        description: 'near_buy = gần điểm mua (phiên sáng) | top = bias cao nhất'
+        required: false
+        default: 'near_buy'
+        type: choice
+        options: ['near_buy', 'top']
       force:
         description: 'Force chạy dù ngày nghỉ'
         required: false
@@ -52,8 +58,15 @@ jobs:
           GROQ_API_KEY:             ${{ secrets.GROQ_API_KEY }}
         run: |
           ARGS=""
-          if [ "${{ inputs.force }}" = "true" ]; then
-            ARGS="$ARGS --force"
+          # Schedule luôn force + near_buy; workflow_dispatch dùng inputs
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            ARGS="$ARGS --force --mode near_buy"
+          else
+            if [ "${{ inputs.force }}" = "true" ]; then
+              ARGS="$ARGS --force"
+            fi
+            MODE="${{ inputs.mode }}"
+            ARGS="$ARGS --mode ${MODE:-near_buy}"
           fi
           if [ -n "${{ inputs.tickers }}" ]; then
             ARGS="$ARGS --tickers ${{ inputs.tickers }}"
