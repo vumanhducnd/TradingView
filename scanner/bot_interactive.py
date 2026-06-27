@@ -972,7 +972,7 @@ def _cmd_tv_screenshot(token: str, chat_id: int | str, ticker: str) -> None:
         _ensure_cache_table()
 
         # Check cache
-        cached = _cache_get(ticker, today_ict)
+        cached = _cache_get(ticker)
         if cached:
             img_s, img_f, caption = cached
             _send_photo_group_to(token, chat_id, [img_s, img_f], caption)

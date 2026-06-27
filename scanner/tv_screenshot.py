@@ -51,28 +51,35 @@ def _ensure_cache_table() -> None:
                 )
             """)
             cur.execute(
-                f"DELETE FROM {_CACHE_TABLE} WHERE created_at < NOW() - INTERVAL '1 day'"
+                f"DELETE FROM {_CACHE_TABLE} WHERE created_at < NOW() - INTERVAL '7 days'"
             )
     except Exception as e:
         logger.warning(f"Cache table init failed: {e}")
 
 
-def _cache_get(ticker: str, cache_date: date) -> "tuple[bytes, bytes, str] | None":
-    """Return (img_seasonal, img_forecast, caption) nếu cache đầy đủ, else None."""
+def _cache_get(ticker: str) -> "tuple[bytes, bytes, str] | None":
+    """Return (img_seasonal, img_forecast, caption) từ cache gần nhất trong 7 ngày, else None."""
+    from collections import defaultdict
     from scanner.database import db_cursor
     try:
         with db_cursor(commit=False) as cur:
             cur.execute(
-                f"SELECT slug, img_bytes, caption FROM {_CACHE_TABLE} "
-                "WHERE ticker=%s AND cache_date=%s",
-                (ticker, cache_date),
+                f"SELECT cache_date, slug, img_bytes, caption FROM {_CACHE_TABLE} "
+                "WHERE ticker=%s AND created_at >= NOW() - INTERVAL '7 days' "
+                "ORDER BY cache_date DESC",
+                (ticker,),
             )
-            rows = {r["slug"]: r for r in cur.fetchall()}
-        img_s = bytes(rows["seasonals"]["img_bytes"]) if rows.get("seasonals") and rows["seasonals"]["img_bytes"] else None
-        img_f = bytes(rows["forecast-price-target"]["img_bytes"]) if rows.get("forecast-price-target") and rows["forecast-price-target"]["img_bytes"] else None
-        caption = (rows.get("_caption") or {}).get("caption")
-        if img_s and img_f and caption:
-            return img_s, img_f, caption
+            all_rows = cur.fetchall()
+        by_date: dict = defaultdict(dict)
+        for r in all_rows:
+            by_date[r["cache_date"]][r["slug"]] = r
+        for d in sorted(by_date.keys(), reverse=True):
+            slugs = by_date[d]
+            img_s = bytes(slugs["seasonals"]["img_bytes"]) if slugs.get("seasonals") and slugs["seasonals"]["img_bytes"] else None
+            img_f = bytes(slugs["forecast-price-target"]["img_bytes"]) if slugs.get("forecast-price-target") and slugs["forecast-price-target"]["img_bytes"] else None
+            caption = (slugs.get("_caption") or {}).get("caption")
+            if img_s and img_f and caption:
+                return img_s, img_f, caption
         return None
     except Exception:
         return None
@@ -155,7 +162,7 @@ def run(
     uncached: list[tuple[str, str, float]] = []
     for stock in stocks:
         t = stock[0]
-        cached = _cache_get(t, today_ict)
+        cached = _cache_get(t)
         if cached:
             logger.info(f"[CACHE HIT] {t}")
             hit.append((t, *cached))
@@ -287,7 +294,7 @@ def run_near_buy_dual(
     hit: list[tuple[str, bytes, bytes, str]] = []
     uncached_pairs: list[tuple[str, str]] = []
     for t, e in all_pairs:
-        cached = _cache_get(t, today_ict)
+        cached = _cache_get(t)
         if cached:
             logger.info(f"[CACHE HIT] {t}")
             hit.append((t, *cached))
