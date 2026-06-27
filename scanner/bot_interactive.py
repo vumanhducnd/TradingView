@@ -932,33 +932,60 @@ MENU = (
 
 # ─── Command handlers ─────────────────────────────────────────────────────────
 
-def _send_photo_to(token: str, chat_id: int | str, img_bytes: bytes, caption: str) -> None:
-    """Gửi ảnh PNG thẳng vào chat_id của user (không qua long/short bot)."""
+def _send_photo_group_to(
+    token: str, chat_id: int | str, images: list[bytes], caption: str
+) -> None:
+    """Gửi album ảnh (sendMediaGroup) thẳng vào chat_id. Caption đặt trên ảnh đầu tiên."""
+    import json as _json
+    media_json = []
+    files: dict = {}
+    for i, img in enumerate(images):
+        key = f"photo{i}"
+        item: dict = {"type": "photo", "media": f"attach://{key}"}
+        if i == 0 and caption:
+            item["caption"]    = caption[:1024]
+            item["parse_mode"] = "HTML"
+        media_json.append(item)
+        files[key] = (f"chart{i}.png", img, "image/png")
     try:
         requests.post(
-            f"https://api.telegram.org/bot{token}/sendPhoto",
-            data={"chat_id": chat_id, "caption": caption, "parse_mode": "HTML"},
-            files={"photo": ("chart.png", img_bytes, "image/png")},
-            timeout=30,
+            f"https://api.telegram.org/bot{token}/sendMediaGroup",
+            data={"chat_id": chat_id, "media": _json.dumps(media_json)},
+            files=files,
+            timeout=60,
             verify=False,
         )
     except Exception as e:
-        logger.warning(f"_send_photo_to failed (chat={chat_id}): {e}")
+        logger.warning(f"_send_photo_group_to failed (chat={chat_id}): {e}")
 
 
 def _cmd_tv_screenshot(token: str, chat_id: int | str, ticker: str) -> None:
-    """Chụp ảnh TradingView (seasonals + forecast) cho ticker và gửi vào chat."""
+    """Chụp ảnh TradingView (seasonals + forecast) cho ticker, gửi album 2 ảnh + 1 phân tích."""
     try:
-        from scanner.tv_screenshot import _scrape_all, _gen_caption, _exchange
-        stocks = [(ticker, _exchange(ticker))]
+        from scanner.tv_screenshot import (
+            _scrape_all, _gen_caption_pair, _gen_caption, _exchange,
+        )
+        stocks  = [(ticker, _exchange(ticker))]
         results = _scrape_all(stocks)
         if not results:
             _reply(token, chat_id, f"❌ Không chụp được ảnh cho <b>{ticker}</b>")
             return
-        for _, page_label, img in results:
-            caption = _gen_caption(ticker, page_label, img)
-            _send_photo_to(token, chat_id, img, caption)
-            time.sleep(0.5)
+
+        imgs = {
+            ("seasonals" if "Mùa vụ" in lbl else "forecast"): img
+            for _, lbl, img in results
+        }
+        img_s = imgs.get("seasonals")
+        img_f = imgs.get("forecast")
+
+        if img_s and img_f:
+            caption = _gen_caption_pair(ticker, img_s, img_f)
+            _send_photo_group_to(token, chat_id, [img_s, img_f], caption)
+        else:
+            # Fallback: thiếu 1 ảnh → gửi riêng từng cái
+            for _, page_label, img in results:
+                caption = _gen_caption(ticker, page_label, img)
+                _send_photo_to(token, chat_id, img, caption)
     except Exception as e:
         logger.error(f"_cmd_tv_screenshot [{ticker}]: {e}")
         _reply(token, chat_id, f"❌ Lỗi chụp ảnh TradingView: <code>{e}</code>")
