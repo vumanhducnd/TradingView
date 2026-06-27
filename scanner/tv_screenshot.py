@@ -438,11 +438,16 @@ _FOCUS: dict[str, str] = {
         "Nêu cụ thể tên năm, tháng và con số %."
     ),
     "forecast-price-target": (
-        "Ảnh là trang dự báo giá mục tiêu (price target) của analyst, "
-        "gồm biểu đồ giá hiện tại so với giá mục tiêu đồng thuận và phân bổ khuyến nghị "
-        "(mua/giữ/bán). "
-        "Viết 2-3 câu nhận xét: giá hiện tại đang thấp hơn hay cao hơn giá mục tiêu bao nhiêu %, "
-        "tỷ lệ analyst khuyến nghị mua là bao nhiêu, và đánh giá chung tiềm năng tăng giá."
+        "Ảnh gồm: (1) biểu đồ giá lịch sử 2 năm + dự báo 1 năm tới với vùng hình nón "
+        "(min/trung bình/max), (2) đồng hồ khuyến nghị analyst (Mua mạnh/Mua/Giữ/Bán), "
+        "(3) biểu đồ EPS và Doanh thu thực tế vs ước tính theo năm. "
+        "Hãy viết 3-4 câu phân tích tập trung vào: "
+        "(1) Xu hướng giá trong 2 năm qua đang tăng hay giảm, và vùng dự báo 1 năm tới cho thấy "
+        "kịch bản nào khả quan hơn (tăng tiếp hay đi ngang)? "
+        "(2) Tỷ lệ analyst đồng thuận Mua/Bán và mức độ tin cậy của khuyến nghị đó. "
+        "(3) EPS và Doanh thu thực tế so với ước tính — công ty có đang vượt kỳ vọng không? "
+        "Không đề cập đến con số giá tuyệt đối. "
+        "Cuối cùng thêm câu: 'Thông tin chỉ mang tính tham khảo, không phải khuyến nghị đầu tư.'"
     ),
 }
 
@@ -474,13 +479,16 @@ def _gen_caption(ticker: str, page_label: str, img_bytes: bytes) -> str:
                     },
                 ],
             }],
-            max_tokens=200,
+            max_tokens=300,
             temperature=0.4,
         )
         body    = resp.choices[0].message.content.strip()
         caption = f"{header}\n\n{body}"
         if len(caption) > 1024:
-            caption = caption[:1021] + "..."
+            # Ưu tiên giữ câu từ chối trách nhiệm ở cuối
+            disclaimer = "Thông tin chỉ mang tính tham khảo, không phải khuyến nghị đầu tư."
+            truncated  = caption[:980] + "...\n" + disclaimer
+            caption    = truncated
         return caption
     except Exception as e:
         logger.warning(f"Vision caption [{ticker}/{slug}]: {e}")
