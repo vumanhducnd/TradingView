@@ -99,8 +99,7 @@ def _get_top_stocks(top_n: int) -> list[tuple[str, str, float]]:
     cols_needed = (
         "ticker, long_trend, bias_norm, b_score, close, "
         "long_buy_signal, short_buy_signal, long_sell_signal, short_sell_signal, "
-        "short_trend, bull_vol, bull_macd, bull_rsi, bull_adx, "
-        "long_support, long_resistance, avg_turnover_20d"
+        "short_trend, bull_vol, bull_macd, bull_rsi, bull_adx, avg_turnover_20d"
     )
 
     try:
