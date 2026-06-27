@@ -2,8 +2,10 @@ services:
   - type: worker
     name: mdalpha-bot
     runtime: python
-    buildCommand: pip install -r requirements-bot.txt && playwright install chromium
-    startCommand: python run_bot.py
+    buildCommand: pip install -r requirements-bot.txt && PLAYWRIGHT_BROWSERS_PATH=/opt/render/project/src/.playwright playwright install chromium
+    startCommand: PLAYWRIGHT_BROWSERS_PATH=/opt/render/project/src/.playwright python run_bot.py
     envVars:
       - key: PYTHON_VERSION
         value: "3.12"
+      - key: PLAYWRIGHT_BROWSERS_PATH
+        value: /opt/render/project/src/.playwright
