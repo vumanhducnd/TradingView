@@ -456,43 +456,64 @@ def _gen_caption(ticker: str, page_label: str, img_bytes: bytes) -> str:
     today  = datetime.now(ICT).strftime("%d/%m/%Y")
     header = f"{page_label} <b>{ticker} — {today}</b>"
 
-    # Xác định page_slug từ page_label
-    slug = "seasonals" if "Mùa vụ" in page_label else "forecast-price-target"
+    slug  = "seasonals" if "Mùa vụ" in page_label else "forecast-price-target"
     focus = _FOCUS.get(slug, "Mô tả ngắn nội dung chính của ảnh.")
+    prompt = f"{focus} {_AI_STYLE}"
 
+    b64  = base64.b64encode(img_bytes).decode()
+    body = _vision_groq(b64, prompt) or _vision_openai(b64, prompt)
+
+    if not body:
+        logger.warning(f"Vision caption [{ticker}/{slug}]: cả Groq lẫn OpenAI đều thất bại")
+        return header
+
+    caption = f"{header}\n\n{body}"
+    if len(caption) > 1024:
+        disclaimer = "Thông tin chỉ mang tính tham khảo, không phải khuyến nghị đầu tư."
+        caption    = caption[:980] + "...\n" + disclaimer
+    return caption
+
+
+def _vision_groq(b64: str, prompt: str) -> str | None:
     try:
         from groq import Groq
         from scanner.config import GROQ_API_KEY
-        b64 = base64.b64encode(img_bytes).decode()
+        if not GROQ_API_KEY:
+            return None
         resp = Groq(api_key=GROQ_API_KEY).chat.completions.create(
             model="meta-llama/llama-4-scout-17b-16e-instruct",
-            messages=[{
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:image/png;base64,{b64}"},
-                    },
-                    {
-                        "type": "text",
-                        "text": f"{focus} {_AI_STYLE}",
-                    },
-                ],
-            }],
+            messages=[{"role": "user", "content": [
+                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
+                {"type": "text",      "text": prompt},
+            ]}],
             max_tokens=300,
             temperature=0.4,
         )
-        body    = resp.choices[0].message.content.strip()
-        caption = f"{header}\n\n{body}"
-        if len(caption) > 1024:
-            # Ưu tiên giữ câu từ chối trách nhiệm ở cuối
-            disclaimer = "Thông tin chỉ mang tính tham khảo, không phải khuyến nghị đầu tư."
-            truncated  = caption[:980] + "...\n" + disclaimer
-            caption    = truncated
-        return caption
+        return resp.choices[0].message.content.strip()
     except Exception as e:
-        logger.warning(f"Vision caption [{ticker}/{slug}]: {e}")
-        return header
+        logger.warning(f"Groq vision failed: {e} — thử OpenAI")
+        return None
+
+
+def _vision_openai(b64: str, prompt: str) -> str | None:
+    try:
+        from openai import OpenAI
+        from scanner.config import OPENAI_API_KEY
+        if not OPENAI_API_KEY:
+            return None
+        resp = OpenAI(api_key=OPENAI_API_KEY).chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": [
+                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}", "detail": "low"}},
+                {"type": "text",      "text": prompt},
+            ]}],
+            max_tokens=300,
+            temperature=0.4,
+        )
+        return resp.choices[0].message.content.strip()
+    except Exception as e:
+        logger.warning(f"OpenAI vision failed: {e}")
+        return None
 
 
 # ─── CLI ─────────────────────────────────────────────────────────────────────
