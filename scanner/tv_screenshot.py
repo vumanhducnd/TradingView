@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import base64
 import time
+from typing import Callable
 from datetime import date, datetime, timezone, timedelta
 
 from scanner.utils import logger
@@ -101,14 +102,49 @@ def run(
         send_message(header, style=g)
     time.sleep(1)
 
-    for ticker, page_label, img in results:
-        caption = _gen_caption(ticker, page_label, img)
-        for g in send_groups:
-            send_photo(img, caption, style=g)
-        logger.info(f"  Sent: {ticker}/{page_label} → nhóm {'/'.join(send_groups)}")
-        time.sleep(1)
-
+    _send_scraped(results, groups_for=lambda _t: send_groups)
     logger.info(f"=== Xong {len(results)} ảnh ===")
+
+
+def _send_scraped(
+    scraped: list[tuple[str, str, bytes]],
+    groups_for: "Callable[[str], list[str]]",
+) -> None:
+    """Group scraped results theo ticker → gửi album 2 ảnh + 1 caption tổng hợp."""
+    from collections import defaultdict
+    from scanner.telegram_bot import send_photo, send_photo_group
+
+    # Gom ảnh theo ticker, giữ thứ tự xuất hiện
+    by_ticker: dict[str, dict[str, bytes]] = defaultdict(dict)
+    order: list[str] = []
+    for ticker, page_label, img in scraped:
+        if ticker not in by_ticker:
+            order.append(ticker)
+        slug = "seasonals" if "Mùa vụ" in page_label else "forecast-price-target"
+        by_ticker[ticker][slug] = img
+
+    for ticker in order:
+        groups = groups_for(ticker)
+        if not groups:
+            continue
+        imgs  = by_ticker[ticker]
+        img_s = imgs.get("seasonals")
+        img_f = imgs.get("forecast-price-target")
+
+        if img_s and img_f:
+            caption = _gen_caption_pair(ticker, img_s, img_f)
+            for g in groups:
+                send_photo_group([img_s, img_f], caption, style=g)
+        else:
+            # Fallback: còn thiếu 1 ảnh → gửi từng cái riêng
+            for slug, img in imgs.items():
+                label   = "📅 Mùa vụ" if slug == "seasonals" else "🎯 Dự báo giá"
+                caption = _gen_caption(ticker, label, img)
+                for g in groups:
+                    send_photo(img, caption, style=g)
+
+        logger.info(f"  Sent: {ticker} (album) → nhóm {'+'.join(groups)}")
+        time.sleep(1)
 
 
 def run_near_buy_dual(
@@ -118,31 +154,29 @@ def run_near_buy_dual(
 ) -> None:
     """
     Chụp TradingView cho near_buy long + short.
-    Ticker chung cả 2 style → chụp 1 lần, gửi cả 2 bot.
-    Ticker riêng → chụp 1 lần, gửi đúng bot.
+    Ticker chung cả 2 style → chụp 1 lần, gửi cả 2 nhóm.
+    Ticker riêng → chụp 1 lần, gửi đúng nhóm.
     """
     from scanner.utils import is_trading_day
     if not force and not is_trading_day(date.today()):
         logger.info("Hôm nay không phải ngày giao dịch — bỏ qua")
         return
 
-    from scanner.telegram_bot import send_message, send_photo
+    from scanner.telegram_bot import send_message
 
-    # Phân loại: chung / chỉ long / chỉ short
     long_map  = {t: (e, s) for t, e, s in stocks_long}
     short_map = {t: (e, s) for t, e, s in stocks_short}
 
-    common      = sorted(set(long_map) & set(short_map))
-    only_long   = [t for t, _, _ in stocks_long  if t not in short_map]
-    only_short  = [t for t, _, _ in stocks_short if t not in long_map]
+    common     = sorted(set(long_map) & set(short_map))
+    only_long  = [t for t, _, _ in stocks_long  if t not in short_map]
+    only_short = [t for t, _, _ in stocks_short if t not in long_map]
 
-    # Tập tất cả ticker cần scrape (không trùng)
     all_pairs: list[tuple[str, str]] = []
     seen: set[str] = set()
     for group, src_map in [(common, long_map), (only_long, long_map), (only_short, short_map)]:
         for t in group:
             if t not in seen:
-                all_pairs.append((t, src_map[t][0]))   # (ticker, exchange)
+                all_pairs.append((t, src_map[t][0]))
                 seen.add(t)
 
     if not all_pairs:
@@ -153,7 +187,7 @@ def run_near_buy_dual(
         f"=== TV Screenshot dual: {len(all_pairs)} mã "
         f"(chung={len(common)}, chỉ_long={len(only_long)}, chỉ_short={len(only_short)}) ==="
     )
-    scraped = _scrape_all(all_pairs)   # Playwright chạy 1 lần
+    scraped = _scrape_all(all_pairs)
 
     today = datetime.now(ICT).strftime("%d/%m/%Y")
 
@@ -171,20 +205,14 @@ def run_near_buy_dual(
         send_message(_header(stocks_short, "short"), style="short")
     time.sleep(1)
 
-    for ticker, page_label, img in scraped:
-        caption = _gen_caption(ticker, page_label, img)
-        # Gửi đến nhóm Telegram tương ứng: long → nhóm long, short → nhóm short
-        in_long  = ticker in long_map
-        in_short = ticker in short_map
-        if in_long:
-            send_photo(img, caption, style="long")   # → TELEGRAM_CHAT_IDS_LONG
-        if in_short:
-            send_photo(img, caption, style="short")  # → TELEGRAM_CHAT_IDS_SHORT
-        dest = ("long+short" if (in_long and in_short) else "long" if in_long else "short")
-        logger.info(f"  Sent: {ticker}/{page_label} → nhóm {dest}")
-        time.sleep(1)
+    def _groups_for(ticker: str) -> list[str]:
+        gs = []
+        if ticker in long_map:  gs.append("long")
+        if ticker in short_map: gs.append("short")
+        return gs
 
-    logger.info(f"=== Xong {len(scraped)} ảnh (1 lần Playwright) ===")
+    _send_scraped(scraped, groups_for=_groups_for)
+    logger.info(f"=== Xong {len(scraped)//2} mã (1 lần Playwright) ===")
 
 
 # ─── Lấy top cổ phiếu từ DB ──────────────────────────────────────────────────
@@ -605,6 +633,84 @@ def _gen_caption(ticker: str, page_label: str, img_bytes: bytes) -> str:
         disclaimer = "Thông tin chỉ mang tính tham khảo, không phải khuyến nghị đầu tư."
         caption    = caption[:980] + "...\n" + disclaimer
     return caption
+
+
+_PROMPT_PAIR = (
+    "Có 2 ảnh phân tích cùng 1 cổ phiếu: "
+    "Ảnh 1 là biểu đồ mùa vụ (seasonal) — mỗi đường là 1 năm, trục X là 12 tháng, trục Y là % thay đổi lũy kế. "
+    "Ảnh 2 là dự báo giá 1 năm tới (hình nón min/trung bình/max) + đồng hồ khuyến nghị analyst + biểu đồ EPS/Doanh thu. "
+    "Hãy viết 3-4 câu tổng hợp: "
+    "(1) Mùa vụ tháng hiện tại có lợi không — các năm trước thường tăng hay giảm sau giai đoạn này? "
+    "(2) Analyst đồng thuận mua hay bán, vùng dự báo giá 1 năm tới theo hướng nào, EPS/doanh thu có đang vượt ước tính không? "
+    "(3) Kết luận ngắn: đây là thời điểm tốt để theo dõi mua hay cần chờ thêm tín hiệu? "
+    "Cuối cùng thêm câu: 'Thông tin chỉ mang tính tham khảo, không phải khuyến nghị đầu tư.' "
+    "Chỉ viết liên tục không gạch đầu dòng, không in đậm, văn phong bản tin chứng khoán."
+)
+
+
+def _gen_caption_pair(ticker: str, img_seasonal: bytes, img_forecast: bytes) -> str:
+    """Gửi cả 2 ảnh cho vision model, trả về 1 caption tổng hợp."""
+    today  = datetime.now(ICT).strftime("%d/%m/%Y")
+    header = f"📊 <b>{ticker} — {today}</b>"
+
+    b64_s = base64.b64encode(img_seasonal).decode()
+    b64_f = base64.b64encode(img_forecast).decode()
+
+    body = _vision_groq_pair(b64_s, b64_f, _PROMPT_PAIR) or _vision_openai_pair(b64_s, b64_f, _PROMPT_PAIR)
+
+    if not body:
+        logger.warning(f"Vision pair [{ticker}]: cả Groq lẫn OpenAI đều thất bại")
+        return header
+
+    caption = f"{header}\n\n{body}"
+    if len(caption) > 1024:
+        disclaimer = "Thông tin chỉ mang tính tham khảo, không phải khuyến nghị đầu tư."
+        caption    = caption[:980] + "...\n" + disclaimer
+    return caption
+
+
+def _vision_groq_pair(b64_s: str, b64_f: str, prompt: str) -> str | None:
+    try:
+        from groq import Groq
+        from scanner.config import GROQ_API_KEY
+        if not GROQ_API_KEY:
+            return None
+        resp = Groq(api_key=GROQ_API_KEY).chat.completions.create(
+            model="meta-llama/llama-4-scout-17b-16e-instruct",
+            messages=[{"role": "user", "content": [
+                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64_s}"}},
+                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64_f}"}},
+                {"type": "text",      "text": prompt},
+            ]}],
+            max_tokens=400,
+            temperature=0.4,
+        )
+        return resp.choices[0].message.content.strip()
+    except Exception as e:
+        logger.warning(f"Groq vision pair failed: {e} — thử OpenAI")
+        return None
+
+
+def _vision_openai_pair(b64_s: str, b64_f: str, prompt: str) -> str | None:
+    try:
+        from openai import OpenAI
+        from scanner.config import OPENAI_API_KEY
+        if not OPENAI_API_KEY:
+            return None
+        resp = OpenAI(api_key=OPENAI_API_KEY).chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": [
+                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64_s}", "detail": "low"}},
+                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64_f}", "detail": "low"}},
+                {"type": "text",      "text": prompt},
+            ]}],
+            max_tokens=400,
+            temperature=0.4,
+        )
+        return resp.choices[0].message.content.strip()
+    except Exception as e:
+        logger.warning(f"OpenAI vision pair failed: {e}")
+        return None
 
 
 def _vision_groq(b64: str, prompt: str) -> str | None:

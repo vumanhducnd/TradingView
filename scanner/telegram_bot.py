@@ -3,6 +3,7 @@ Telegram notification module.
 Uses requests (synchronous) — no asyncio needed for GitHub Actions.
 """
 
+import json
 import math
 import time
 
@@ -201,6 +202,47 @@ def send_photo(image_bytes: bytes, caption: str = "", style: str = "long") -> bo
                 time.sleep(0.5)
         except Exception as e:
             logger.warning(f"send_photo failed ({cid}): {e}")
+    return ok_any
+
+
+def send_photo_group(images: list[bytes], caption: str = "", style: str = "long") -> bool:
+    """Gửi album ảnh (sendMediaGroup) đến tất cả channel theo style.
+    Caption chỉ đặt trên ảnh đầu tiên, tối đa 1024 ký tự.
+    """
+    token, chat_ids = _chat_ids(style)
+    if not token or not chat_ids:
+        logger.warning("Telegram credentials not set — skipping send_photo_group")
+        return False
+    url = f"https://api.telegram.org/bot{token}/sendMediaGroup"
+
+    media_json = []
+    files: dict = {}
+    for i, img in enumerate(images):
+        key = f"photo{i}"
+        item: dict = {"type": "photo", "media": f"attach://{key}"}
+        if i == 0 and caption:
+            item["caption"]    = caption[:1024]
+            item["parse_mode"] = "HTML"
+        media_json.append(item)
+        files[key] = (f"chart{i}.png", img, "image/png")
+
+    ok_any = False
+    for cid in chat_ids:
+        try:
+            resp = requests.post(
+                url,
+                data={"chat_id": cid, "media": json.dumps(media_json)},
+                files=files,
+                timeout=60,
+                verify=False,
+            )
+            resp.raise_for_status()
+            ok_any = True
+            logger.info(f"[{style.upper()}] ✓ send_photo_group({len(images)} ảnh) → {cid}")
+            if len(chat_ids) > 1:
+                time.sleep(0.5)
+        except Exception as e:
+            logger.warning(f"send_photo_group failed ({cid}): {e}")
     return ok_any
 
 
