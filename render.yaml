@@ -1,0 +1,9 @@
+services:
+  - type: worker
+    name: mdalpha-bot
+    runtime: python
+    buildCommand: pip install -r requirements-bot.txt && playwright install chromium --with-deps
+    startCommand: python run_bot.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12"
