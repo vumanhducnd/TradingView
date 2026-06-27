@@ -1,0 +1,64 @@
+name: TradingView Screenshots (16:30 GMT+7)
+
+on:
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Force chạy dù ngày nghỉ'
+        required: false
+        default: 'true'
+        type: choice
+        options: ['true', 'false']
+      tickers:
+        description: 'Override tickers (vd: SSI,VIC,FPT) — để trống = auto top 5'
+        required: false
+        default: ''
+      top_n:
+        description: 'Số cổ phiếu top (mặc định 5)'
+        required: false
+        default: '5'
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  screenshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install Playwright browsers
+        run: playwright install chromium --with-deps
+
+      - name: Run TradingView screenshots
+        env:
+          TELEGRAM_BOT_TOKEN_LONG:  ${{ secrets.TELEGRAM_BOT_TOKEN_LONG }}
+          TELEGRAM_CHAT_ID_LONG:    ${{ secrets.TELEGRAM_CHAT_ID_LONG }}
+          TELEGRAM_BOT_TOKEN_SHORT: ${{ secrets.TELEGRAM_BOT_TOKEN_SHORT }}
+          TELEGRAM_CHAT_ID_SHORT:   ${{ secrets.TELEGRAM_CHAT_ID_SHORT }}
+          DATABASE_URL:             ${{ secrets.DATABASE_URL }}
+          GROQ_API_KEY:             ${{ secrets.GROQ_API_KEY }}
+        run: |
+          ARGS=""
+          if [ "${{ inputs.force }}" = "true" ]; then
+            ARGS="$ARGS --force"
+          fi
+          if [ -n "${{ inputs.tickers }}" ]; then
+            ARGS="$ARGS --tickers ${{ inputs.tickers }}"
+          fi
+          if [ -n "${{ inputs.top_n }}" ] && [ "${{ inputs.top_n }}" != "5" ]; then
+            ARGS="$ARGS --top ${{ inputs.top_n }}"
+          fi
+          python -m scanner.tv_screenshot $ARGS
