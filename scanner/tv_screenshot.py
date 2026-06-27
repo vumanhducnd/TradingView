@@ -50,6 +50,9 @@ def _ensure_cache_table() -> None:
                     PRIMARY KEY (ticker, cache_date, slug)
                 )
             """)
+            cur.execute(
+                f"DELETE FROM {_CACHE_TABLE} WHERE cache_date < CURRENT_DATE"
+            )
     except Exception as e:
         logger.warning(f"Cache table init failed: {e}")
 
