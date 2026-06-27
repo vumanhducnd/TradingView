@@ -10,6 +10,7 @@ Commands:
   /alert VHM 25.5    — đặt cảnh báo khi giá chạm 25.5
   /alerts            — xem cảnh báo đang theo dõi
   /delalert <id>     — xoá cảnh báo
+  /tv VHM            — chụp ảnh TradingView (mùa vụ + dự báo) + AI phân tích
 """
 
 import math
@@ -921,11 +922,47 @@ MENU = (
     "<code>/alerts</code>  —  xem tất cả cảnh báo\n"
     "<code>/delalert 3</code>  —  xoá cảnh báo #3\n"
     "\n"
+    "<b>📸 TradingView</b>\n"
+    "<code>/tv VHM</code>\n"
+    "  Chụp ảnh TradingView (mùa vụ + dự báo giá) và phân tích AI\n"
+    "\n"
     "Xem hướng dẫn giao dịch: /huongdan"
 )
 
 
 # ─── Command handlers ─────────────────────────────────────────────────────────
+
+def _send_photo_to(token: str, chat_id: int | str, img_bytes: bytes, caption: str) -> None:
+    """Gửi ảnh PNG thẳng vào chat_id của user (không qua long/short bot)."""
+    try:
+        requests.post(
+            f"https://api.telegram.org/bot{token}/sendPhoto",
+            data={"chat_id": chat_id, "caption": caption, "parse_mode": "HTML"},
+            files={"photo": ("chart.png", img_bytes, "image/png")},
+            timeout=30,
+            verify=False,
+        )
+    except Exception as e:
+        logger.warning(f"_send_photo_to failed (chat={chat_id}): {e}")
+
+
+def _cmd_tv_screenshot(token: str, chat_id: int | str, ticker: str) -> None:
+    """Chụp ảnh TradingView (seasonals + forecast) cho ticker và gửi vào chat."""
+    try:
+        from scanner.tv_screenshot import _scrape_all, _gen_caption, _exchange
+        stocks = [(ticker, _exchange(ticker))]
+        results = _scrape_all(stocks)
+        if not results:
+            _reply(token, chat_id, f"❌ Không chụp được ảnh cho <b>{ticker}</b>")
+            return
+        for _, page_label, img in results:
+            caption = _gen_caption(ticker, page_label, img)
+            _send_photo_to(token, chat_id, img, caption)
+            time.sleep(0.5)
+    except Exception as e:
+        logger.error(f"_cmd_tv_screenshot [{ticker}]: {e}")
+        _reply(token, chat_id, f"❌ Lỗi chụp ảnh TradingView: <code>{e}</code>")
+
 
 def _cmd_check(ticker: str, style: str = "short") -> str:
     ticker = ticker.upper()
@@ -1325,6 +1362,13 @@ def _dispatch(token: str, message: dict) -> None:
             else "Dùng: <code>/delalert &lt;id&gt;</code>"
         )
         _reply(token, chat_id, reply, _KB_BACK_NEW)
+    elif cmd == "/tv":
+        if len(parts) < 2:
+            _reply(token, chat_id, "Dùng: <code>/tv SSI</code>")
+        else:
+            ticker = parts[1].upper()
+            _reply(token, chat_id, f"⏳ Đang chụp ảnh TradingView cho <b>{ticker}</b>... (~20 giây)")
+            _cmd_tv_screenshot(token, chat_id, ticker)
     else:
         _send_main_menu(token, chat_id)
 
