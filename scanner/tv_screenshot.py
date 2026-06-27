@@ -425,10 +425,17 @@ def _scrape_page(
 
 _FOCUS: dict[str, str] = {
     "seasonals": (
-        "Ảnh là biểu đồ phân tích mùa vụ (seasonal) của cổ phiếu, "
-        "thể hiện % thay đổi giá trung bình theo từng tháng trong năm qua nhiều năm lịch sử. "
-        "Viết 2-3 câu nhận xét: tháng nào cổ phiếu thường tăng mạnh nhất, "
-        "tháng nào hay giảm, và liệu giai đoạn hiện tại có thuận lợi cho việc mua không."
+        "Ảnh là biểu đồ mùa vụ (seasonal) của cổ phiếu: mỗi đường là một năm riêng biệt "
+        "(màu sắc khác nhau, có nhãn năm + % tổng năm ở bên phải), trục X là 12 tháng, "
+        "trục Y là % thay đổi lũy kế từ đầu năm. Đường năm hiện tại (2026) chạy đến giữa "
+        "chừng vì năm chưa kết thúc. "
+        "Hãy viết 3-4 câu phân tích theo 3 góc: "
+        "(1) So sánh xu hướng các năm trước trong giai đoạn tháng hiện tại — các năm có hiệu suất tốt (đường cao) "
+        "thường làm gì sau tháng này? "
+        "(2) Đường năm 2026 hiện đang ở mức nào so với cùng kỳ các năm và có dấu hiệu sắp bứt phá lên không? "
+        "(3) Kết luận: tháng tới theo lịch sử mùa vụ thường là giai đoạn tăng hay giảm, "
+        "và xác suất cổ phiếu sắp đến điểm tăng là cao hay thấp. "
+        "Nêu cụ thể tên năm, tháng và con số %."
     ),
     "forecast-price-target": (
         "Ảnh là trang dự báo giá mục tiêu (price target) của analyst, "
