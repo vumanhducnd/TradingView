@@ -88,40 +88,30 @@ def run(force: bool = False, top_n: int = 5, tickers: list[str] | None = None) -
 # ─── Lấy top cổ phiếu từ DB ──────────────────────────────────────────────────
 
 def _get_top_stocks(top_n: int) -> list[tuple[str, str, float]]:
-    """Trả về list (ticker, exchange, super_score) top N cổ phiếu sắp đến điểm mua."""
-    import pandas as pd
+    """Top N mã long_trend=1, sort theo bias_norm — giống logic /top trong bot."""
     from scanner.database import db_cursor
-
-    cols_needed = (
-        "ticker, long_trend, bias_norm, b_score, close, "
-        "long_buy_signal, short_buy_signal, long_sell_signal, short_sell_signal, "
-        "short_trend, bull_vol, bull_macd, bull_rsi, bull_adx, avg_turnover_20d"
-    )
 
     try:
         with db_cursor() as cur:
-            cur.execute(f"SELECT {cols_needed} FROM scan_results WHERE long_trend IS NOT NULL")
+            cur.execute("""
+                SELECT ticker, bias_norm
+                FROM scan_results
+                WHERE long_trend = 1
+                ORDER BY bias_norm DESC
+                LIMIT %s
+            """, (top_n,))
             rows = cur.fetchall()
     except Exception as e:
         logger.error(f"DB query thất bại: {e}")
         return []
 
     if not rows:
-        logger.warning("scan_results rỗng hoặc chưa có dữ liệu long_trend")
-        return []
-
-    df = pd.DataFrame([dict(r) for r in rows])
-
-    from scanner.scanner import get_super_buy_stocks
-    top = get_super_buy_stocks(df, top_n=top_n)
-
-    if top.empty:
-        logger.warning("get_super_buy_stocks trả về rỗng — không có mã thỏa tiêu chí")
+        logger.warning("Không có mã nào long_trend=1 trong scan_results")
         return []
 
     return [
-        (row["ticker"], _exchange(row["ticker"]), float(row.get("super_score", 0.0)))
-        for _, row in top.iterrows()
+        (r["ticker"], _exchange(r["ticker"]), float(r.get("bias_norm", 0.0)))
+        for r in rows
     ]
 
 
