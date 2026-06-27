@@ -1367,7 +1367,7 @@ def _dispatch(token: str, message: dict) -> None:
             _reply(token, chat_id, "Dùng: <code>/tv SSI</code>")
         else:
             ticker = parts[1].upper()
-            _reply(token, chat_id, f"⏳ Đang chụp ảnh TradingView cho <b>{ticker}</b>... (~20 giây)")
+            _reply(token, chat_id, f"🔍 Đang phân tích <b>{ticker}</b>... (~20 giây)")
             _cmd_tv_screenshot(token, chat_id, ticker)
     else:
         _send_main_menu(token, chat_id)
