@@ -1148,29 +1148,38 @@ if barstate.islast and showVolLabel
     deltaTxt  = deltaSign + str.tostring(math.round(delta_vol_pct * 10) / 10) + "%"
 
     // === RISK MANAGEMENT ===
-    target20 = 20.0
-    target40 = 40.0
-    target80 = 80.0
-
     profitTxt = ""
-    price20 = signalPrice * 1.20
-    price40 = signalPrice * 1.40
-    price80 = signalPrice * 1.80
     if signalType == "VÀO TREND" and not na(signalPrice) and trend == 1
-        price20 := signalPrice * 1.20
-        price40 := signalPrice * 1.40
-        price80 := signalPrice * 1.80
-        if close >= price80
-            profitTxt := "🎯 Đã đạt T3 (+80%) tại " + f_price(price80) + "\n" +
-                         "👉 Xuất sắc! Cân nhắc chốt toàn bộ hoặc đặt trailing stop"
-        else if close >= price40
-            profitTxt := "🎯 Đã đạt T2 (+40%) tại " + f_price(price40) + "\n" +
-                         "👉 Lãi đẹp! Có thể chốt thêm 40%, gồng phần cuối đến T3: " + f_price(price80)
-        else if close >= price20
-            profitTxt := "🎯 Đã đạt T1 (+20%) tại " + f_price(price20) + "\n" +
-                         "👉 Gợi ý chốt 30%, để phần còn lại chạy đến T2: " + f_price(price40)
+        if not na(saved_tp1)
+            _pt1Pct = str.tostring(math.round((saved_tp1 - saved_ep) / saved_ep * 1000) / 10)
+            _pt2Pct = str.tostring(math.round((saved_tp2 - saved_ep) / saved_ep * 1000) / 10)
+            _pt3Pct = str.tostring(math.round((saved_tp3 - saved_ep) / saved_ep * 1000) / 10)
+            if close >= saved_tp3
+                profitTxt := "🎯 Đã đạt T3 (+" + _pt3Pct + "%) tại " + f_price(saved_tp3) + "\n" +
+                             "👉 Chốt thêm 40% — còn 10% gồng trailing stop"
+            else if close >= saved_tp2
+                profitTxt := "🎯 Đã đạt T2 (+" + _pt2Pct + "%) tại " + f_price(saved_tp2) + "\n" +
+                             "👉 Chốt thêm 30% — còn 50% → gồng đến T3: " + f_price(saved_tp3) + " (+" + _pt3Pct + "%)"
+            else if close >= saved_tp1
+                profitTxt := "🎯 Đã đạt T1 (+" + _pt1Pct + "%) tại " + f_price(saved_tp1) + "\n" +
+                             "👉 Chốt 20% — còn 80% → giữ đến T2: " + f_price(saved_tp2) + " (+" + _pt2Pct + "%)"
+            else
+                profitTxt := "🎯 T1 nhắm đến: " + f_price(saved_tp1) + " (+" + _pt1Pct + "%) → chốt 20% vị thế"
         else
-            profitTxt := "🎯 T1 nhắm đến: " + f_price(price20) + " — Có thể chốt 1/3 vị thế"              
+            price20 = signalPrice * 1.20
+            price40 = signalPrice * 1.40
+            price80 = signalPrice * 1.80
+            if close >= price80
+                profitTxt := "🎯 Đã đạt T3 (+80%) tại " + f_price(price80) + "\n" +
+                             "👉 Xuất sắc! Cân nhắc chốt toàn bộ hoặc đặt trailing stop"
+            else if close >= price40
+                profitTxt := "🎯 Đã đạt T2 (+40%) tại " + f_price(price40) + "\n" +
+                             "👉 Lãi đẹp! Có thể chốt thêm 40%, gồng phần cuối đến T3: " + f_price(price80)
+            else if close >= price20
+                profitTxt := "🎯 Đã đạt T1 (+20%) tại " + f_price(price20) + "\n" +
+                             "👉 Gợi ý chốt 30%, để phần còn lại chạy đến T2: " + f_price(price40)
+            else
+                profitTxt := "🎯 T1 nhắm đến: " + f_price(price20) + " — Có thể chốt 1/3 vị thế"
     
     recTxt = buySignal  ? "🚀 Tín hiệu bứt phá xác nhận \n    └  Thời điểm vào trend tốt" :
          sellSignal  ? "⚠️ Xu hướng đảo chiều \n    └  Nên thoát trend, bảo toàn vốn" :
