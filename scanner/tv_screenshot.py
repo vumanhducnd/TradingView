@@ -657,7 +657,7 @@ _PROMPT_PAIR = (
 def _gen_caption_pair(ticker: str, img_seasonal: bytes, img_forecast: bytes) -> str:
     """Gửi cả 2 ảnh cho vision model, trả về 1 caption tổng hợp."""
     today  = datetime.now(ICT).strftime("%d/%m/%Y")
-    header = f"📊 <b>{ticker} — {today}</b>"
+    header = f"<b>{ticker} — {today}</b>"
 
     b64_s = base64.b64encode(img_seasonal).decode()
     b64_f = base64.b64encode(img_forecast).decode()
