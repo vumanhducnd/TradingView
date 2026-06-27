@@ -51,7 +51,7 @@ def _ensure_cache_table() -> None:
                 )
             """)
             cur.execute(
-                f"DELETE FROM {_CACHE_TABLE} WHERE cache_date < CURRENT_DATE"
+                f"DELETE FROM {_CACHE_TABLE} WHERE created_at < NOW() - INTERVAL '1 day'"
             )
     except Exception as e:
         logger.warning(f"Cache table init failed: {e}")
