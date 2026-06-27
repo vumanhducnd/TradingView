@@ -962,9 +962,22 @@ def _send_photo_group_to(
 def _cmd_tv_screenshot(token: str, chat_id: int | str, ticker: str) -> None:
     """Chụp ảnh TradingView (seasonals + forecast) cho ticker, gửi album 2 ảnh + 1 phân tích."""
     try:
+        from datetime import date
         from scanner.tv_screenshot import (
             _scrape_all, _gen_caption_pair, _gen_caption, _exchange,
+            _ensure_cache_table, _cache_get, _cache_put, ICT,
         )
+        from datetime import datetime
+        today_ict = datetime.now(ICT).date()
+        _ensure_cache_table()
+
+        # Check cache
+        cached = _cache_get(ticker, today_ict)
+        if cached:
+            img_s, img_f, caption = cached
+            _send_photo_group_to(token, chat_id, [img_s, img_f], caption)
+            return
+
         stocks  = [(ticker, _exchange(ticker))]
         results = _scrape_all(stocks)
         if not results:
@@ -980,6 +993,7 @@ def _cmd_tv_screenshot(token: str, chat_id: int | str, ticker: str) -> None:
 
         if img_s and img_f:
             caption = _gen_caption_pair(ticker, img_s, img_f)
+            _cache_put(ticker, today_ict, img_s, img_f, caption)
             _send_photo_group_to(token, chat_id, [img_s, img_f], caption)
         else:
             # Fallback: thiếu 1 ảnh → gửi riêng từng cái
