@@ -30,6 +30,74 @@ TV_PAGES = [
 
 _exchange_cache: dict[str, str] = {}  # cache trong session
 
+# ─── Daily image/caption cache (PostgreSQL) ───────────────────────────────────
+
+_CACHE_TABLE = "tv_screenshot_cache"
+
+
+def _ensure_cache_table() -> None:
+    from scanner.database import db_cursor
+    try:
+        with db_cursor(commit=True) as cur:
+            cur.execute(f"""
+                CREATE TABLE IF NOT EXISTS {_CACHE_TABLE} (
+                    ticker     VARCHAR(20) NOT NULL,
+                    cache_date DATE        NOT NULL,
+                    slug       VARCHAR(50) NOT NULL,
+                    img_bytes  BYTEA,
+                    caption    TEXT,
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    PRIMARY KEY (ticker, cache_date, slug)
+                )
+            """)
+    except Exception as e:
+        logger.warning(f"Cache table init failed: {e}")
+
+
+def _cache_get(ticker: str, cache_date: date) -> "tuple[bytes, bytes, str] | None":
+    """Return (img_seasonal, img_forecast, caption) nếu cache đầy đủ, else None."""
+    from scanner.database import db_cursor
+    try:
+        with db_cursor(commit=False) as cur:
+            cur.execute(
+                f"SELECT slug, img_bytes, caption FROM {_CACHE_TABLE} "
+                "WHERE ticker=%s AND cache_date=%s",
+                (ticker, cache_date),
+            )
+            rows = {r["slug"]: r for r in cur.fetchall()}
+        img_s = bytes(rows["seasonals"]["img_bytes"]) if rows.get("seasonals") and rows["seasonals"]["img_bytes"] else None
+        img_f = bytes(rows["forecast-price-target"]["img_bytes"]) if rows.get("forecast-price-target") and rows["forecast-price-target"]["img_bytes"] else None
+        caption = (rows.get("_caption") or {}).get("caption")
+        if img_s and img_f and caption:
+            return img_s, img_f, caption
+        return None
+    except Exception:
+        return None
+
+
+def _cache_put(ticker: str, cache_date: date, img_s: bytes, img_f: bytes, caption: str) -> None:
+    from scanner.database import db_cursor
+    try:
+        with db_cursor(commit=True) as cur:
+            for slug, img in [("seasonals", img_s), ("forecast-price-target", img_f)]:
+                cur.execute(
+                    f"""INSERT INTO {_CACHE_TABLE} (ticker, cache_date, slug, img_bytes)
+                        VALUES (%s,%s,%s,%s)
+                        ON CONFLICT (ticker, cache_date, slug)
+                        DO UPDATE SET img_bytes=EXCLUDED.img_bytes, created_at=NOW()""",
+                    (ticker, cache_date, slug, img),
+                )
+            cur.execute(
+                f"""INSERT INTO {_CACHE_TABLE} (ticker, cache_date, slug, caption)
+                    VALUES (%s,%s,'_caption',%s)
+                    ON CONFLICT (ticker, cache_date, slug)
+                    DO UPDATE SET caption=EXCLUDED.caption, created_at=NOW()""",
+                (ticker, cache_date, caption),
+            )
+        logger.debug(f"Cache saved: {ticker} {cache_date}")
+    except Exception as e:
+        logger.warning(f"Cache put failed [{ticker}]: {e}")
+
 NEAR_BUY_THRESHOLD_PCT = 3.0  # % cách ST tối đa để coi là "gần điểm mua"
 _TK_MIN_TY             = 10.0  # thanh khoản tối thiểu (tỷ VND)
 
@@ -77,10 +145,21 @@ def run(
     tickers_str = ", ".join(t for t, _, _ in stocks)
     logger.info(f"=== TV Screenshot [{mode}][nhóm {'/'.join(send_groups)}]: {tickers_str} ===")
 
-    stock_pairs = [(t, e) for t, e, _ in stocks]
-    results     = _scrape_all(stock_pairs)
+    # Check daily cache
+    today_ict = datetime.now(ICT).date()
+    _ensure_cache_table()
+    hit: list[tuple[str, bytes, bytes, str]] = []   # (ticker, img_s, img_f, caption)
+    uncached: list[tuple[str, str, float]] = []
+    for stock in stocks:
+        t = stock[0]
+        cached = _cache_get(t, today_ict)
+        if cached:
+            logger.info(f"[CACHE HIT] {t}")
+            hit.append((t, *cached))
+        else:
+            uncached.append(stock)
 
-    from scanner.telegram_bot import send_message, send_photo
+    from scanner.telegram_bot import send_message, send_photo, send_photo_group
 
     today = datetime.now(ICT).strftime("%d/%m/%Y")
 
@@ -102,13 +181,27 @@ def run(
         send_message(header, style=g)
     time.sleep(1)
 
-    _send_scraped(results, groups_for=lambda _t: send_groups)
-    logger.info(f"=== Xong {len(results)} ảnh ===")
+    # Gửi từ cache
+    for t, img_s, img_f, caption in hit:
+        for g in send_groups:
+            send_photo_group([img_s, img_f], caption, style=g)
+        logger.info(f"  [CACHE] Sent: {t} → nhóm {'+'.join(send_groups)}")
+        time.sleep(1)
+
+    # Scrape + gửi mã chưa có cache
+    if uncached:
+        stock_pairs = [(t, e) for t, e, _ in uncached]
+        results     = _scrape_all(stock_pairs)
+        _send_scraped(results, groups_for=lambda _: send_groups, cache_date=today_ict)
+
+    logger.info(f"=== Xong (cache={len(hit)}, mới={len(uncached)}) ===")
 
 
 def _send_scraped(
     scraped: list[tuple[str, str, bytes]],
     groups_for: "Callable[[str], list[str]]",
+    *,
+    cache_date: "date | None" = None,
 ) -> None:
     """Group scraped results theo ticker → gửi album 2 ảnh + 1 caption tổng hợp."""
     from collections import defaultdict
@@ -133,6 +226,8 @@ def _send_scraped(
 
         if img_s and img_f:
             caption = _gen_caption_pair(ticker, img_s, img_f)
+            if cache_date:
+                _cache_put(ticker, cache_date, img_s, img_f, caption)
             for g in groups:
                 send_photo_group([img_s, img_f], caption, style=g)
         else:
@@ -183,11 +278,24 @@ def run_near_buy_dual(
         logger.info("TV Screenshot dual: không có mã nào — bỏ qua")
         return
 
+    # Check daily cache
+    today_ict = datetime.now(ICT).date()
+    _ensure_cache_table()
+    hit: list[tuple[str, bytes, bytes, str]] = []
+    uncached_pairs: list[tuple[str, str]] = []
+    for t, e in all_pairs:
+        cached = _cache_get(t, today_ict)
+        if cached:
+            logger.info(f"[CACHE HIT] {t}")
+            hit.append((t, *cached))
+        else:
+            uncached_pairs.append((t, e))
+
     logger.info(
         f"=== TV Screenshot dual: {len(all_pairs)} mã "
-        f"(chung={len(common)}, chỉ_long={len(only_long)}, chỉ_short={len(only_short)}) ==="
+        f"(chung={len(common)}, chỉ_long={len(only_long)}, chỉ_short={len(only_short)}) "
+        f"[cache={len(hit)}, mới={len(uncached_pairs)}] ==="
     )
-    scraped = _scrape_all(all_pairs)
 
     today = datetime.now(ICT).strftime("%d/%m/%Y")
 
@@ -211,8 +319,21 @@ def run_near_buy_dual(
         if ticker in short_map: gs.append("short")
         return gs
 
-    _send_scraped(scraped, groups_for=_groups_for)
-    logger.info(f"=== Xong {len(scraped)//2} mã (1 lần Playwright) ===")
+    # Gửi từ cache
+    from scanner.telegram_bot import send_photo_group
+    for t, img_s, img_f, caption in hit:
+        groups = _groups_for(t)
+        for g in groups:
+            send_photo_group([img_s, img_f], caption, style=g)
+        logger.info(f"  [CACHE] Sent: {t} → nhóm {'+'.join(groups)}")
+        time.sleep(1)
+
+    # Scrape + gửi mã chưa có cache
+    if uncached_pairs:
+        scraped = _scrape_all(uncached_pairs)
+        _send_scraped(scraped, groups_for=_groups_for, cache_date=today_ict)
+
+    logger.info(f"=== Xong {len(all_pairs)} mã (cache={len(hit)}, Playwright={len(uncached_pairs)}) ===")
 
 
 # ─── Lấy top cổ phiếu từ DB ──────────────────────────────────────────────────
@@ -597,10 +718,10 @@ _FOCUS: dict[str, str] = {
         "Chỉ phân tích CÁC ĐƯỜNG và nhãn bên phải, không đọc thanh kéo trên đầu. "
         "Hãy viết 3-4 câu phân tích tập trung vào 1-2 THÁNG TIẾP THEO từ điểm cuối đường 2026: "
         "(1) Nhìn vào đoạn 1-2 tháng ngay sau vị trí hiện tại trên trục X: "
-        "trong 5 năm gần nhất (đọc tên từ nhãn bên phải), "
-        "có bao nhiêu năm có đường đi LÊN trong đoạn 1-2 tháng tới đó? "
-        "Nêu tỉ lệ (X/5 năm tăng trong giai đoạn này), năm tăng mạnh nhất là năm nào và tăng bao nhiêu %, "
-        "năm giảm mạnh nhất là năm nào và giảm bao nhiêu %. "
+        "với 5 năm gần nhất (đọc tên từ nhãn bên phải), liệt kê RÕ RÀNG từng năm — "
+        "năm nào có đường đi LÊN và năm nào có đường đi XUỐNG trong đoạn 1-2 tháng tiếp theo đó. "
+        "Ví dụ: '2021, 2023 đi lên; 2022, 2024, 2025 đi xuống — tỉ lệ 2/5 năm tăng'. "
+        "Nêu năm tăng mạnh nhất và tăng bao nhiêu %, năm giảm mạnh nhất và giảm bao nhiêu %. "
         "(2) Đường 2026 đang ở mức % nào (nhãn bên phải), xu hướng gần đây đang lên hay xuống? "
         "(3) Kết luận: trong 1-2 tháng tới lịch sử nghiêng về tăng hay giảm, "
         "mức tăng/giảm trung bình kỳ vọng khoảng bao nhiêu %, và năm nào là kịch bản tốt nhất để tham chiếu. "
@@ -610,11 +731,13 @@ _FOCUS: dict[str, str] = {
         "Ảnh gồm: (1) biểu đồ giá lịch sử 2 năm + dự báo 1 năm tới với vùng hình nón "
         "(min/trung bình/max), (2) đồng hồ khuyến nghị analyst (Mua mạnh/Mua/Giữ/Bán), "
         "(3) biểu đồ EPS và Doanh thu thực tế vs ước tính theo năm. "
-        "Hãy viết 3-4 câu phân tích tập trung vào: "
-        "(1) Xu hướng giá trong 2 năm qua đang tăng hay giảm, và vùng dự báo 1 năm tới cho thấy "
-        "kịch bản nào khả quan hơn (tăng tiếp hay đi ngang)? "
-        "(2) Tỷ lệ analyst đồng thuận Mua/Bán và mức độ tin cậy của khuyến nghị đó. "
-        "(3) EPS và Doanh thu thực tế so với ước tính — công ty có đang vượt kỳ vọng không? "
+        "Hãy viết 3-4 câu phân tích dựa trực tiếp vào các chỉ số và dự báo trong ảnh: "
+        "(1) Dựa vào biểu đồ EPS trong ảnh: EPS thực tế gần nhất so với ước tính đang vượt hay dưới, "
+        "xu hướng EPS đang tăng hay giảm qua các quý/năm? "
+        "(2) Dựa vào biểu đồ Doanh thu trong ảnh: doanh thu thực tế gần nhất có vượt ước tính không, "
+        "và dự báo doanh thu các năm tới đang tăng hay giảm? "
+        "(3) Vùng dự báo giá 1 năm tới (hình nón min/trung bình/max) đang hướng lên hay đi ngang, "
+        "và đồng hồ khuyến nghị analyst đang ở mức nào (Mua mạnh/Mua/Giữ/Bán)? "
         "Không đề cập đến con số giá tuyệt đối. "
         "Cuối cùng thêm câu: 'Thông tin chỉ mang tính tham khảo, không phải khuyến nghị đầu tư.'"
     ),
@@ -651,13 +774,15 @@ _PROMPT_PAIR = (
     "Đường ngắn nhất (chưa đến tháng 12) là năm hiện tại 2026. "
     "Ảnh 2 là dự báo giá 1 năm tới (hình nón min/trung bình/max) + đồng hồ khuyến nghị analyst + biểu đồ EPS/Doanh thu. "
     "Hãy viết 3-4 câu tổng hợp tập trung vào 1-2 THÁNG TIẾP THEO: "
-    "(1) Nhìn ảnh mùa vụ tại điểm cuối đường 2026: trong 5 năm gần nhất (đọc tên từ nhãn bên phải), "
-    "có bao nhiêu năm có đường đi LÊN trong đoạn 1-2 tháng tiếp theo từ vị trí đó? "
-    "Nêu tỉ lệ (X/5 năm), năm tăng mạnh nhất trong giai đoạn này là năm nào và tăng bao nhiêu %. "
-    "(2) Analyst đồng thuận mua hay bán, EPS/doanh thu có đang vượt ước tính không, "
-    "và vùng dự báo giá 1 năm tới hướng lên hay đi ngang? "
+    "(1) Nhìn ảnh mùa vụ tại điểm cuối đường 2026: với 5 năm gần nhất (đọc tên từ nhãn bên phải), "
+    "liệt kê RÕ RÀNG năm nào đi LÊN và năm nào đi XUỐNG trong đoạn 1-2 tháng tiếp theo từ vị trí đó. "
+    "Ví dụ: '2021, 2023 đi lên; 2022, 2024, 2025 đi xuống — tỉ lệ 2/5 năm tăng'. "
+    "Nêu năm tăng mạnh nhất trong giai đoạn này là năm nào và tăng bao nhiêu %. "
+    "(2) Dựa vào biểu đồ EPS và Doanh thu trong ảnh 2: EPS thực tế gần nhất đang vượt hay dưới ước tính, "
+    "xu hướng EPS tăng hay giảm; doanh thu thực tế có vượt kỳ vọng không; "
+    "vùng dự báo giá 1 năm tới hướng lên hay đi ngang và đồng hồ analyst đang ở mức nào? "
     "(3) Kết luận: lịch sử mùa vụ từ tháng này ủng hộ tăng hay giảm, "
-    "kết hợp với khuyến nghị analyst, đây là thời điểm tốt để mua hay cần chờ? "
+    "kết hợp với chỉ số tài chính từ ảnh 2, đây là thời điểm tốt để mua hay cần chờ? "
     "Cuối cùng thêm câu: 'Thông tin chỉ mang tính tham khảo, không phải khuyến nghị đầu tư.' "
     "Chỉ viết liên tục không gạch đầu dòng, không in đậm, văn phong bản tin chứng khoán."
 )
