@@ -27,11 +27,7 @@ TV_PAGES = [
     ("forecast-price-target", "🎯 Dự báo giá"),
 ]
 
-# Cổ phiếu VN100 trên HNX (số ít) — còn lại mặc định HOSE
-_HNX_TICKERS = {
-    "SHB", "NVB", "VIX", "CEO", "PVI", "PGS", "BVS",
-    "HUT", "S99", "VCS", "SCI", "TNG", "MST",
-}
+_exchange_cache: dict[str, str] = {}  # cache trong session
 
 _AI_STYLE = (
     "Chỉ viết 2-3 câu liên tiếp, không chia đoạn, văn phong bản tin chứng khoán. "
@@ -130,7 +126,15 @@ def _get_top_stocks(top_n: int) -> list[tuple[str, str, float]]:
 
 
 def _exchange(ticker: str) -> str:
-    return "HNX" if ticker.upper() in _HNX_TICKERS else "HOSE"
+    """Tra sàn từ watchlist DB, cache trong session, fallback HOSE."""
+    t = ticker.upper()
+    if t not in _exchange_cache:
+        try:
+            from scanner.database import load_exchange_map
+            _exchange_cache.update(load_exchange_map([t]))
+        except Exception:
+            pass
+    return _exchange_cache.get(t, "HOSE") or "HOSE"
 
 
 def _tv_url(ticker: str, page_slug: str, exchange: str) -> str:
