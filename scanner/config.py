@@ -57,10 +57,17 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 
 _DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile"
-_DEFAULT_GROQ_VISION_MODEL = "llama-3.2-90b-vision-preview"
+_DEFAULT_GROQ_VISION_MODEL = "qwen/qwen3.6-27b"  # Use Qwen vision model by default for image captioning
+
+# Models we consider unsupported for use (text-only or blocked)
 _UNSUPPORTED_GROQ_MODELS = {
     "meta-llama/llama-4-scout-17b-16e-instruct",
     "llama-4-scout-17b-16e-instruct",
+}
+
+# Explicitly decommissioned Groq vision models that should be disabled
+_DECOMMISSIONED_GROQ_VISION_MODELS = {
+    "llama-3.2-90b-vision-preview",
 }
 
 
@@ -70,6 +77,9 @@ def _resolve_groq_model(env_name: str, default_model: str) -> str:
         return default_model
     if raw_value in _UNSUPPORTED_GROQ_MODELS:
         return default_model
+    # If the vision env points to a known decommissioned model, disable Groq vision
+    if env_name == "GROQ_VISION_MODEL" and raw_value in _DECOMMISSIONED_GROQ_VISION_MODELS:
+        return ""
     if env_name == "GROQ_VISION_MODEL" and raw_value in {_DEFAULT_GROQ_MODEL}:
         return _DEFAULT_GROQ_VISION_MODEL
     return raw_value
