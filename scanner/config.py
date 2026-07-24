@@ -56,6 +56,25 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 # Groq API key (miễn phí tại console.groq.com → 14,400 req/ngày)
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 
+_DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile"
+_UNSUPPORTED_GROQ_MODELS = {
+    "meta-llama/llama-4-scout-17b-16e-instruct",
+    "llama-4-scout-17b-16e-instruct",
+}
+
+
+def _resolve_groq_model(env_name: str, default_model: str) -> str:
+    raw_value = os.getenv(env_name, "").strip()
+    if not raw_value:
+        return default_model
+    if raw_value in _UNSUPPORTED_GROQ_MODELS:
+        return default_model
+    return raw_value
+
+
+GROQ_MODEL = _resolve_groq_model("GROQ_MODEL", _DEFAULT_GROQ_MODEL)
+GROQ_VISION_MODEL = _resolve_groq_model("GROQ_VISION_MODEL", GROQ_MODEL)
+
 # OpenAI API key (platform.openai.com → trả phí theo token)
 # Dùng làm fallback khi Groq hết quota (trước Gemini)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
