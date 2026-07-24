@@ -57,6 +57,7 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 
 _DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile"
+_DEFAULT_GROQ_VISION_MODEL = "llama-3.2-90b-vision-preview"
 _UNSUPPORTED_GROQ_MODELS = {
     "meta-llama/llama-4-scout-17b-16e-instruct",
     "llama-4-scout-17b-16e-instruct",
@@ -69,11 +70,13 @@ def _resolve_groq_model(env_name: str, default_model: str) -> str:
         return default_model
     if raw_value in _UNSUPPORTED_GROQ_MODELS:
         return default_model
+    if env_name == "GROQ_VISION_MODEL" and raw_value in {_DEFAULT_GROQ_MODEL}:
+        return _DEFAULT_GROQ_VISION_MODEL
     return raw_value
 
 
 GROQ_MODEL = _resolve_groq_model("GROQ_MODEL", _DEFAULT_GROQ_MODEL)
-GROQ_VISION_MODEL = _resolve_groq_model("GROQ_VISION_MODEL", GROQ_MODEL)
+GROQ_VISION_MODEL = _resolve_groq_model("GROQ_VISION_MODEL", _DEFAULT_GROQ_VISION_MODEL)
 
 # OpenAI API key (platform.openai.com → trả phí theo token)
 # Dùng làm fallback khi Groq hết quota (trước Gemini)
