@@ -75,6 +75,8 @@ def _resolve_groq_model(env_name: str, default_model: str) -> str:
     raw_value = os.getenv(env_name, "").strip()
     if not raw_value:
         return default_model
+    if env_name == "GROQ_VISION_MODEL" and raw_value in _UNSUPPORTED_GROQ_MODELS:
+        return ""
     if raw_value in _UNSUPPORTED_GROQ_MODELS:
         return default_model
     # If the vision env points to a known decommissioned model, disable Groq vision

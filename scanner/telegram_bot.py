@@ -3,8 +3,10 @@ Telegram notification module.
 Uses requests (synchronous) — no asyncio needed for GitHub Actions.
 """
 
+import html
 import json
 import math
+import re
 import time
 
 import requests
@@ -37,6 +39,30 @@ def _fmt(v, default="–") -> str:
     if v is None or (isinstance(v, float) and math.isnan(v)):
         return default
     return fmt_price(v)
+
+
+_ALLOWED_TELEGRAM_HTML_TAGS = {"b", "strong", "i", "em", "u", "code", "pre", "a"}
+_HTML_TAG_RE = re.compile(r"<(/?)([a-zA-Z0-9]+)([^<>]*)>")
+
+
+def _sanitize_telegram_text(text: str, parse_mode: str = "HTML") -> str:
+    """Escape unsafe HTML chars for Telegram while preserving a small allowlist of tags."""
+    if parse_mode != "HTML" or not text:
+        return text or ""
+
+    pieces: list[str] = []
+    last_index = 0
+    for match in _HTML_TAG_RE.finditer(text):
+        pieces.append(html.escape(text[last_index:match.start()], quote=False))
+        tag_name = match.group(2).lower()
+        if tag_name in _ALLOWED_TELEGRAM_HTML_TAGS:
+            pieces.append(match.group(0))
+        else:
+            pieces.append(html.escape(match.group(0), quote=False))
+        last_index = match.end()
+
+    pieces.append(html.escape(text[last_index:], quote=False))
+    return "".join(pieces)
 
 
 def _fmt_tk(row) -> str:
@@ -83,11 +109,12 @@ def _send_raw(text: str, token: str, chat_id: str, parse_mode: str = "HTML") -> 
         logger.warning("Telegram credentials not set — skipping")
         return False
     url = TELEGRAM_API.format(token=token)
+    safe_text = _sanitize_telegram_text(text, parse_mode=parse_mode)
     for attempt in range(3):
         try:
             resp = requests.post(
                 url,
-                json={"chat_id": chat_id, "text": text, "parse_mode": parse_mode,
+                json={"chat_id": chat_id, "text": safe_text, "parse_mode": parse_mode,
                       "link_preview_options": {"is_disabled": True}},
                 timeout=30,
                 verify=False,
@@ -156,13 +183,14 @@ def send_file(file_path: str, caption: str = "", style: str = "long") -> bool:
         return False
     url = f"https://api.telegram.org/bot{token}/sendDocument"
     fname = file_path.split("\\")[-1].split("/")[-1]
+    safe_caption = _sanitize_telegram_text(caption, parse_mode="HTML")
     ok_any = False
     for cid in chat_ids:
         try:
             with open(file_path, "rb") as f:
                 resp = requests.post(
                     url,
-                    data={"chat_id": cid, "caption": caption, "parse_mode": "HTML"},
+                    data={"chat_id": cid, "caption": safe_caption, "parse_mode": "HTML"},
                     files={"document": (fname, f)},
                     timeout=60,
                     verify=False,
@@ -185,12 +213,13 @@ def send_photo(image_bytes: bytes, caption: str = "", style: str = "long") -> bo
         logger.warning("Telegram credentials not set — skipping send_photo")
         return False
     url = f"https://api.telegram.org/bot{token}/sendPhoto"
+    safe_caption = _sanitize_telegram_text(caption, parse_mode="HTML")
     ok_any = False
     for cid in chat_ids:
         try:
             resp = requests.post(
                 url,
-                data={"chat_id": cid, "caption": caption, "parse_mode": "HTML"},
+                data={"chat_id": cid, "caption": safe_caption, "parse_mode": "HTML"},
                 files={"photo": ("chart.png", image_bytes, "image/png")},
                 timeout=60,
                 verify=False,
@@ -217,11 +246,12 @@ def send_photo_group(images: list[bytes], caption: str = "", style: str = "long"
 
     media_json = []
     files: dict = {}
+    safe_caption = _sanitize_telegram_text(caption, parse_mode="HTML")
     for i, img in enumerate(images):
         key = f"photo{i}"
         item: dict = {"type": "photo", "media": f"attach://{key}"}
-        if i == 0 and caption:
-            item["caption"]    = caption[:1024]
+        if i == 0 and safe_caption:
+            item["caption"]    = safe_caption[:1024]
             item["parse_mode"] = "HTML"
         media_json.append(item)
         files[key] = (f"chart{i}.png", img, "image/png")
