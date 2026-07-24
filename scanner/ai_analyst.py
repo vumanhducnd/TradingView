@@ -14,7 +14,7 @@ import pandas as pd
 
 from scanner.utils import logger
 
-_MODEL      = "openai/gpt-oss-120b"
+_MODEL      = "llama-3.3-70b-versatile"
 _BATCH_SIZE = 5      # 5 ma/call de co du token cho phan tich sau
 _RPM_DELAY  = 3.0    # giay giua cac call (30 RPM = 1 call/2s)
 
@@ -35,7 +35,7 @@ def _get_client():
     try:
         import httpx
         from groq import Groq
-        from scanner.config import GROQ_API_KEY
+        from scanner.config import GROQ_API_KEY, GROQ_MODEL
         if not GROQ_API_KEY:
             raise ValueError("GROQ_API_KEY chua set trong .env")
         return Groq(api_key=GROQ_API_KEY, http_client=httpx.Client(verify=False))
@@ -99,7 +99,7 @@ def _call_gemini(prompt: str, max_tokens: int = 2048) -> str:
 def _call(client, prompt: str, max_tokens: int = 2048, _retry: int = 0) -> str:
     try:
         resp = client.chat.completions.create(
-            model=_MODEL,
+            model=GROQ_MODEL if 'GROQ_MODEL' in globals() else _MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.35,
             max_tokens=max_tokens,

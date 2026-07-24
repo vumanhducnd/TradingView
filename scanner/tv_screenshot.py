@@ -818,11 +818,11 @@ def _gen_caption_pair(ticker: str, img_seasonal: bytes, img_forecast: bytes) -> 
 def _vision_groq_pair(b64_s: str, b64_f: str, prompt: str) -> str | None:
     try:
         from groq import Groq
-        from scanner.config import GROQ_API_KEY
+        from scanner.config import GROQ_API_KEY, GROQ_VISION_MODEL
         if not GROQ_API_KEY:
             return None
         resp = Groq(api_key=GROQ_API_KEY).chat.completions.create(
-            model="meta-llama/llama-4-scout-17b-16e-instruct",
+            model=GROQ_VISION_MODEL,
             messages=[{"role": "user", "content": [
                 {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64_s}"}},
                 {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64_f}"}},
@@ -862,11 +862,11 @@ def _vision_openai_pair(b64_s: str, b64_f: str, prompt: str) -> str | None:
 def _vision_groq(b64: str, prompt: str) -> str | None:
     try:
         from groq import Groq
-        from scanner.config import GROQ_API_KEY
+        from scanner.config import GROQ_API_KEY, GROQ_VISION_MODEL
         if not GROQ_API_KEY:
             return None
         resp = Groq(api_key=GROQ_API_KEY).chat.completions.create(
-            model="meta-llama/llama-4-scout-17b-16e-instruct",
+            model=GROQ_VISION_MODEL,
             messages=[{"role": "user", "content": [
                 {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
                 {"type": "text",      "text": prompt},

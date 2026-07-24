@@ -468,10 +468,10 @@ def _gen_caption(section: Section, img_bytes: bytes) -> str:
 
     try:
         from groq import Groq
-        from scanner.config import GROQ_API_KEY
+        from scanner.config import GROQ_API_KEY, GROQ_VISION_MODEL
         b64 = base64.b64encode(img_bytes).decode()
         resp = Groq(api_key=GROQ_API_KEY).chat.completions.create(
-            model="meta-llama/llama-4-scout-17b-16e-instruct",
+            model=GROQ_VISION_MODEL,
             messages=[{
                 "role": "user",
                 "content": [
