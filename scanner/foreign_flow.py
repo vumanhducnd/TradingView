@@ -9,6 +9,7 @@ Usage:
 from __future__ import annotations
 
 import base64
+import re
 import time
 from dataclasses import dataclass
 from datetime import date, datetime, timezone, timedelta
@@ -470,7 +471,8 @@ def _gen_caption(section: Section, img_bytes: bytes) -> str:
         from groq import Groq
         from scanner.config import GROQ_API_KEY, GROQ_VISION_MODEL
         b64 = base64.b64encode(img_bytes).decode()
-        resp = Groq(api_key=GROQ_API_KEY).chat.completions.create(
+        client = Groq(api_key=GROQ_API_KEY)
+        kwargs = dict(
             model=GROQ_VISION_MODEL,
             messages=[{
                 "role": "user",
@@ -485,10 +487,24 @@ def _gen_caption(section: Section, img_bytes: bytes) -> str:
                     },
                 ],
             }],
-            max_tokens=300,
+            max_tokens=1500,
             temperature=0.4,
         )
-        body    = resp.choices[0].message.content.strip()
+        try:
+            # Model có thể là reasoning model (vd Qwen3) — tắt hẳn chain-of-thought
+            # (reasoning_effort="none") để trả lời ngay, tránh nuốt hết token vào <think>
+            # rồi bị cắt giữa chừng. reasoning_format="hidden" phòng khi model vẫn suy luận.
+            # Một số model không hỗ trợ 2 tham số này.
+            resp = client.chat.completions.create(
+                **kwargs, reasoning_format="hidden", reasoning_effort="none",
+            )
+        except Exception:
+            resp = client.chat.completions.create(**kwargs)
+        body = resp.choices[0].message.content or ""
+        # Fallback phòng khi model vẫn lộ block <think> dù đã set reasoning_format
+        body = re.sub(r"<think>.*?</think>", "", body, flags=re.DOTALL | re.IGNORECASE).strip()
+        if not body:
+            raise ValueError("caption rỗng sau khi loại bỏ reasoning")
         caption = f"{header}\n\n{body}"
         if len(caption) > 1024:
             caption = caption[:1021] + "..."
