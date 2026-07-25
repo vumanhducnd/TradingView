@@ -14,6 +14,9 @@ indicator("ManhDucCapital-0973124824", overlay=true, format=format.price, precis
 // =========================================================
 showTable    = input.bool(true,   "Hiển thị bảng tín hiệu?",         group="Cài đặt chung")
 tableSize    = input.string("normal", "Cỡ chữ bảng",                 group="Cài đặt chung", options=["tiny","small","normal","large","huge"])
+tableTopGap  = input.int(12, "Khoảng cách bảng tín hiệu với mép trên (số dòng)", group="Cài đặt chung",
+     minval=0, maxval=15,
+     tooltip="Số dòng trống đẩy bảng tín hiệu góc phải xuống dưới, không dính sát mép trên chart. 0 = sát mép trên, tăng dần để đẩy xuống thêm")
 themeMode    = input.string("Light",  "Giao diện (Theme)",            group="Cài đặt chung", options=["Dark","Light"])
 showsignals  = input.bool(true,   "Hiển thị tín hiệu vào/hết trend?", group="Cài đặt chung")
 showSR       = input.bool(false,  "Hiển thị đường Hỗ trợ/Kháng cự?", group="Cài đặt chung")
@@ -30,6 +33,27 @@ nearThreshPct     = input.float(3.0,    "Ngưỡng gần đỉnh/đáy (%)",    
 maxCandleLabels   = input.int(1,        "Số nhãn vị nến tối đa",             group="Cài đặt chung",
      minval=1, maxval=3,
      tooltip="Chỉ giữ lại N nhãn vị nến gần nhất trên biểu đồ")
+
+// =========================================================
+// MÀU SẮC BẢNG TÍN HIỆU Vũ Mạnh Đức 0973124824
+// =========================================================
+clrTableTicker = input.color(color.new(#4a148c, 0), "Màu mã CK",                 group="Màu sắc bảng tín hiệu")
+clrTableReview = input.color(color.new(#A9720C, 0), "Màu khi xem lại lịch sử",   group="Màu sắc bảng tín hiệu")
+
+clrDateSigUp    = input.color(color.new(#1b5e20, 0), "Ngày/Giá tín hiệu — Tăng",   group="Màu sắc bảng tín hiệu", inline="dateSig")
+clrDateSigDown  = input.color(color.new(#880e4f, 0), "Giảm",                       group="Màu sắc bảng tín hiệu", inline="dateSig")
+
+clrDateNowUp    = input.color(color.new(#1b5e20, 0), "Ngày/Giá hiện tại — Tăng",   group="Màu sắc bảng tín hiệu", inline="dateNow")
+clrDateNowDown  = input.color(color.new(#880e4f, 0), "Giảm",                       group="Màu sắc bảng tín hiệu", inline="dateNow")
+
+clrLiqUp        = input.color(color.new(#4a148c, 0), "Thanh khoản — Tăng",         group="Màu sắc bảng tín hiệu", inline="liq")
+clrLiqDown      = input.color(color.new(#4a148c, 0), "Giảm",                       group="Màu sắc bảng tín hiệu", inline="liq")
+
+clrSRUp         = input.color(color.new(#2962ff, 0), "Hỗ trợ/Kháng cự — Tăng",     group="Màu sắc bảng tín hiệu", inline="sr")
+clrSRDown       = input.color(color.new(#2962ff, 0), "Giảm",                       group="Màu sắc bảng tín hiệu", inline="sr")
+
+clrStatusUp     = input.color(color.new(#1b5e20, 0), "Trạng thái — Tăng",          group="Màu sắc bảng tín hiệu", inline="status")
+clrStatusDown   = input.color(color.new(#c2185b, 0), "Giảm",                       group="Màu sắc bảng tín hiệu", inline="status")
 
 // =========================================================
 // CÀI ĐẶT TP / SL Vũ Mạnh Đức 0973124824
@@ -67,7 +91,7 @@ changeATR         = input.bool(true, "Thay đổi phương pháp tính ATR?",   
 // =========================================================
 // BOLLINGER BAND OPTION
 // =========================================================
-showBB   = input.bool(false,  "Hiển thị Bollinger Band", group="Bollinger Band",
+showBB   = input.bool(true,   "Hiển thị Bollinger Band", group="Bollinger Band",
      tooltip="Cách dùng Bollinger Band:\n1. Chạm band trên → xem xét bán\n2. Chạm band dưới → xem xét mua\n3. BB co hẹp → chuẩn bị breakout")
 bbLength = input.int(20,      "Chu kỳ BB",                group="Bollinger Band")
 bbMult   = input.float(2.0,   "Độ lệch chuẩn BB",         group="Bollinger Band")
@@ -373,11 +397,11 @@ if not na(_phRaw)
 if not na(_plRaw)
     lastPivotLow := _plRaw
 
-upPlot = plot(trend == 1 ? up : na, "Xu hướng tăng", color.green, 2, plot.style_linebr)
-dnPlot = plot(trend == 1 ? na : dn, "Xu hướng giảm", color.red,   2, plot.style_linebr)
+upPlot = plot(trend == 1 ? up : na, "Xu hướng tăng", na, 2, plot.style_linebr)
+dnPlot = plot(trend == 1 ? na : dn, "Xu hướng giảm", na, 2, plot.style_linebr)
 mPlot  = plot(ohlc4, "", display=display.none)
-fill(mPlot, upPlot, title="Tô màu xu hướng tăng", color=color.new(color.green, 50))
-fill(mPlot, dnPlot, title="Tô màu xu hướng giảm", color=color.new(color.red,   50))
+fill(mPlot, upPlot, title="Tô màu xu hướng tăng", color=na)
+fill(mPlot, dnPlot, title="Tô màu xu hướng giảm", color=na)
 plot(emaLine1, "EMA 1", color=color.new(#FF9800, 0), linewidth=2, display=display.none)
 plot(emaLine2, "EMA 2", color=color.new(#26C6DA, 0), linewidth=3, display=display.none)
 plot(emaLine3, "EMA 3", color=color.new(#9C27B0, 0), linewidth=4, display=display.none)
@@ -397,10 +421,10 @@ if sellSignal and showsignals
 // =========================================================
 bbBasis     = ta.sma(bbSrc, bbLength)
 bbDev       = bbMult * ta.stdev(bbSrc, bbLength)
-bbUpperPlot = plot(showBB ? bbBasis + bbDev : na, "BB Upper",  color = trend == 1 ? color.green : color.red)
-bbLowerPlot = plot(showBB ? bbBasis - bbDev : na, "BB Lower", color = trend == 1 ? color.green : color.red)
+bbUpperPlot = plot(showBB ? bbBasis + bbDev : na, "BB Upper", color = na)
+bbLowerPlot = plot(showBB ? bbBasis - bbDev : na, "BB Lower", color = na)
 plot(showBB ? bbBasis : na, "BB Middle", color = color.new(color.yellow,0))
-fill(bbUpperPlot, bbLowerPlot, title="BB Fill", color = trend == 1 ? color.new(color.green, 50) : color.new(color.red, 50),display=display.none)
+fill(bbUpperPlot, bbLowerPlot, title="BB Fill", color = trend == 1 ? color.new(color.green, 50) : color.new(color.red, 50))
 
 // =========================================================
 // THEO DÕI TÍN HIỆU HIỆN TẠI Vũ Mạnh Đức 0973124824
@@ -976,67 +1000,76 @@ if barstate.islast and showHistory and array.size(hist_buyDate) > 0
 // =========================================================
 // BẢNG TÍN HIỆU GÓC PHẢI Vũ Mạnh Đức 0973124824
 // =========================================================
-var table stbl = table.new(position.top_right, 2, 10,
-     bgcolor=T_BG_DRK, border_width=1, border_color=T_BRD, frame_width=2, frame_color=T_BRD)
+var table stbl = table.new(position.top_right, 3, 5,
+     bgcolor=na, border_width=0, frame_width=0)
+
+_ssLiqBil  = _ss_avgValue / 1000000000
+_ssLiqTxt  = (_ss_liquid ? "✅" : "❌") + " Thanh khoản: " + str.tostring(_ssLiqBil, "#.#") + " tỷ/ngày (cần ≥" + str.tostring(ssLiqThresh, "#") + " tỷ)"
+_ssTooltip = "TIÊU CHÍ SIÊU CỔ PHIẾU (cần ≥5/7) — " + str.tostring(superScore) + "/7\n" +
+     _ssLiqTxt                                                                        + "\n" +
+     "──────────────────────\n" +
+     (_ss1 ? "✅" : "❌") + " Giá > EMA200\n" +
+     (_ss2 ? "✅" : "❌") + " EMA200 đang tăng\n" +
+     (_ss3 ? "✅" : "❌") + " Gần/phá đỉnh 52 tuần (≥90%)\n" +
+     (_ss4 ? "✅" : "❌") + " EMA50 > EMA200 (Golden Align)\n" +
+     (_ss5 ? "✅" : "❌") + " Giá > EMA50\n" +
+     (_ss6 ? "✅" : "❌") + " ADX > 25 (xu hướng mạnh)\n" +
+     (_ss7 ? "✅" : "❌") + " Volume đang nở rộng"
 
 if showTable
-    srPrc  = trend == 1 ? up : dn
-    srClr  = trend == 1 ? T_GRN : T_RED
-    pnlR   = math.round(pnl * 100) / 100
-    pnlAbs = str.tostring(math.abs(pnlR)) + "%"
-    pnlTxt = signalType == "HẾT TREND" ? (pnlR >= 0 ? "-" + pnlAbs : "+" + pnlAbs) : (pnlR >= 0 ? "+" + pnlAbs : "-" + pnlAbs)
-    pnlLbl = signalType == "VÀO TREND" ? (pnlR >= 0 ? "ĐANG LÃI" : "ĐANG LỖ") : "TRÁNH LỖ"
-    pnlClr = signalType == "HẾT TREND" ? (pnlR >= 0 ? T_RED : T_GRN) : (pnlR >= 0 ? T_GRN : T_RED)
+    pnlR      = math.round(pnl * 100) / 100
+    pnlAbs    = str.tostring(math.abs(pnlR)) + "%"
+    pnlTxt    = signalType == "HẾT TREND" ? (pnlR >= 0 ? "-" + pnlAbs : "+" + pnlAbs) : (pnlR >= 0 ? "+" + pnlAbs : "-" + pnlAbs)
+    _sigTypeD = signalType == "VÀO TREND" ? "vào trend" : "hết trend"
+    srPrc     = trend == 1 ? up : dn
+    srLbl     = trend == 1 ? "Hỗ trợ" : "Kháng cự"
+    _liqDay    = close * volume / 1000000000
+    _liqDayTxt = "Thanh khoản: " + str.tostring(_liqDay, "#.#") + " tỷ"
 
-    _ssHdrBg = isSuperStock ? color.new(#B8860B, 0) : T_HDR
-    _ssHdrTc = isSuperStock ? color.new(#FFFFFF, 0) : T_WHT
-    table.cell(stbl, 0, 0, isSuperStock ? "💎 " + syminfo.ticker : syminfo.ticker,
-         text_color=_ssHdrTc, text_size=size.huge, text_halign=text.align_center, bgcolor=_ssHdrBg)
-    table.cell(stbl, 1, 0, "", bgcolor=_ssHdrBg)
-    table.merge_cells(stbl, 0, 0, 1, 0)
+    _clrDateSig = trend == 1 ? clrDateSigUp : clrDateSigDown
+    _clrDateNow = trend == 1 ? clrDateNowUp : clrDateNowDown
+    _clrLiq     = trend == 1 ? clrLiqUp     : clrLiqDown
+    _clrSR      = trend == 1 ? clrSRUp      : clrSRDown
+    _clrStatus  = trend == 1 ? clrStatusUp  : clrStatusDown
+    _ssHdrTc  = isSuperStock ? (isDark ? color.new(#FFD700, 0) : color.new(#B8860B, 0)) : clrTableTicker
 
-    table.cell(stbl, 0, 1, trend == 1 ? "▲ ĐANG TRONG TREND TĂNG" : "▼ NGOÀI TREND — CHỜ ĐỢI",
-         text_color=trend == 1 ? T_GRN : T_RED, text_size=tSize, text_halign=text.align_center, bgcolor=T_BG_LGT)
-    table.cell(stbl, 1, 1, "", bgcolor=T_BG_LGT)
-    table.merge_cells(stbl, 0, 1, 1, 1)
-    table.cell(stbl, 0, 3, "NGÀY " + signalType, text_color=T_LBL, text_size=tSize, text_halign=text.align_left,  bgcolor=T_BG_LGT)
-    table.cell(stbl, 1, 3, signalDate,            text_color=T_VAL, text_size=tSize, text_halign=text.align_right, bgcolor=T_BG_LGT)
+    // Hàng đệm — đẩy bảng xuống theo số dòng người dùng nhập, không sát viền trên
+    _gapTxt = ""
+    if tableTopGap > 0
+        for _i = 1 to tableTopGap
+            _gapTxt := _gapTxt + "\n"
+    table.cell(stbl, 0, 0, _gapTxt, bgcolor=na, text_size=size.tiny)
+    table.cell(stbl, 1, 0, _gapTxt, bgcolor=na, text_size=size.tiny)
+    table.cell(stbl, 2, 0, _gapTxt, bgcolor=na, text_size=size.tiny)
 
-    table.cell(stbl, 0, 4, "GIÁ " + signalType,  text_color=T_LBL, text_size=tSize, text_halign=text.align_left,  bgcolor=T_BG_DRK)
-    table.cell(stbl, 1, 4, f_price(signalPrice),  text_color=T_VAL, text_size=tSize, text_halign=text.align_right, bgcolor=T_BG_DRK)
+    // Cột 0 — mã CK, trải dài 3 hàng chi tiết
+    table.cell(stbl, 0, 1, syminfo.ticker,
+         text_color=_ssHdrTc, text_size=size.huge, text_halign=text.align_right, bgcolor=na, text_formatting=text.format_bold, tooltip=_ssTooltip)
+    table.cell(stbl, 0, 2, "", bgcolor=na)
+    table.cell(stbl, 0, 3, "", bgcolor=na)
+    table.merge_cells(stbl, 0, 1, 0, 3)
 
-    table.cell(stbl, 0, 5, trend == 1 ? "HỖ TRỢ" : "KHÁNG CỰ", text_color=T_LBL, text_size=tSize, text_halign=text.align_left,  bgcolor=T_BG_LGT)
-    table.cell(stbl, 1, 5, f_price(srPrc),                        text_color=srClr, text_size=tSize, text_halign=text.align_right, bgcolor=T_BG_LGT)
+    // Hàng 1 — ngày & giá tín hiệu
+    table.cell(stbl, 1, 1, "Ngày " + _sigTypeD + ": " + signalDate,          text_color=_clrDateSig, text_size=tSize, text_halign=text.align_left, bgcolor=na, text_formatting=text.format_bold)
+    table.cell(stbl, 2, 1, "Giá " + _sigTypeD + ": " + f_price(signalPrice), text_color=_clrDateSig, text_size=tSize, text_halign=text.align_left, bgcolor=na, text_formatting=text.format_bold)
 
-    table.cell(stbl, 0, 6, "GIỮ LỆNH",                           text_color=T_LBL, text_size=tSize, text_halign=text.align_left,  bgcolor=T_BG_DRK)
-    table.cell(stbl, 1, 6, str.tostring(signalCount) + " PHIÊN", text_color=T_VAL, text_size=tSize, text_halign=text.align_right, bgcolor=T_BG_DRK)
+    // Hàng 2 — ngày & giá hiện tại
+    table.cell(stbl, 1, 2, "Ngày hiện tại: " + f_today(),        text_color=_clrDateNow, text_size=tSize, text_halign=text.align_left, bgcolor=na, text_formatting=text.format_bold)
+    table.cell(stbl, 2, 2, "Giá hiện tại: " + f_price(close),    text_color=_clrDateNow, text_size=tSize, text_halign=text.align_left, bgcolor=na, text_formatting=text.format_bold)
 
-    table.cell(stbl, 0, 7, pnlLbl, text_color=T_LBL,  text_size=tSize, text_halign=text.align_left,  bgcolor=T_BG_LGT)
-    table.cell(stbl, 1, 7, pnlTxt, text_color=pnlClr, text_size=tSize, text_halign=text.align_right, bgcolor=T_BG_LGT)
+    // Hàng 3 — thanh khoản & hỗ trợ/kháng cự
+    table.cell(stbl, 1, 3, _liqDayTxt,                     text_color=_clrLiq, text_size=tSize, text_halign=text.align_left, bgcolor=na, text_formatting=text.format_bold)
+    table.cell(stbl, 2, 3, srLbl + ": " + f_price(srPrc), text_color=_clrSR, text_size=tSize, text_halign=text.align_left, bgcolor=na, text_formatting=text.format_bold)
 
-    _ssBadgeBg = isSuperStock ? color.new(#B8860B, 10) : (isDark ? color.new(#2a2a2a, 0) : color.new(#DDDDDD, 0))
-    _ssBadgeTc = isSuperStock ? color.new(#FFFFFF, 0) : color.new(#888888, 0)
-    _ssLiqBil    = _ss_avgValue / 1000000000
-    _ssLiqTxt    = (_ss_liquid ? "✅" : "❌") + " Thanh khoản: " + str.tostring(_ssLiqBil, "#.#") + " tỷ/ngày (cần ≥" + str.tostring(ssLiqThresh, "#") + " tỷ)"
-    _ssTooltip = "TIÊU CHÍ SIÊU CỔ PHIẾU (cần ≥5/7)\n" +
-         _ssLiqTxt                                                                        + "\n" +
-         "──────────────────────\n" +
-         (_ss1 ? "✅" : "❌") + " Giá > EMA200\n" +
-         (_ss2 ? "✅" : "❌") + " EMA200 đang tăng\n" +
-         (_ss3 ? "✅" : "❌") + " Gần/phá đỉnh 52 tuần (≥90%)\n" +
-         (_ss4 ? "✅" : "❌") + " EMA50 > EMA200 (Golden Align)\n" +
-         (_ss5 ? "✅" : "❌") + " Giá > EMA50\n" +
-         (_ss6 ? "✅" : "❌") + " ADX > 25 (xu hướng mạnh)\n" +
-         (_ss7 ? "✅" : "❌") + " Volume đang nở rộng"
-    _liqDay = close * volume / 1000000000
-    _liqDayTxt = str.tostring(_liqDay, "#.#") + " tỷ/ngày"
-    table.cell(stbl, 0, 8, "THANH KHOẢN", text_color=T_LBL, text_size=tSize, text_halign=text.align_left,  bgcolor=T_BG_DRK)
-    table.cell(stbl, 1, 8, _liqDayTxt,    text_color=T_VAL, text_size=tSize, text_halign=text.align_right, bgcolor=T_BG_DRK)
-
-    table.cell(stbl, 0, 9, isSuperStock ? "💎 SIÊU CỔ PHIẾU" : "◯ Cổ phiếu thường",
-         text_color=_ssBadgeTc, text_size=tSize, text_halign=text.align_left, bgcolor=_ssBadgeBg, tooltip=_ssTooltip)
-    table.cell(stbl, 1, 9, str.tostring(superScore) + "/7",
-         text_color=_ssBadgeTc, text_size=tSize, text_halign=text.align_right, bgcolor=_ssBadgeBg, tooltip=_ssTooltip)
+    // Hàng 4 — trạng thái, chỉ chiếm 2 cột phải, không lấn xuống dưới ticker
+    _statusTxt = (trend == 1 ? "▲ Đang trong trend tăng" : "▼ Đang trong trend giảm") +
+         "\n" + (trend == 1
+         ? "Nắm giữ " + str.tostring(signalCount) + " phiên, đã lãi " + pnlTxt
+         : "Đứng ngoài " + str.tostring(signalCount) + " phiên, tránh lỗ " + pnlTxt)
+    table.cell(stbl, 0, 4, "", bgcolor=na)
+    table.cell(stbl, 1, 4, _statusTxt, text_color=_clrStatus, text_size=tSize, text_halign=text.align_center, bgcolor=na, text_formatting=text.format_bold)
+    table.cell(stbl, 2, 4, "", bgcolor=na)
+    table.merge_cells(stbl, 1, 4, 2, 4)
 
 // =========================================================
 // CON TRỎ THỜI GIAN Vũ Mạnh Đức 0973124824
@@ -1064,37 +1097,42 @@ if barstate.islast and showTimeCursor
 
         // Ghi đè bảng tín hiệu góc phải với dữ liệu tại thời điểm con trỏ
         if showTable
-            _tc_pnlClr      = tc_type == "HẾT TREND" ? (_tc_pnlR >= 0 ? T_RED : T_GRN) : (_tc_pnlR >= 0 ? T_GRN : T_RED)
-            _tc_pnlLblShort = tc_type == "VÀO TREND" ? (_tc_pnlR >= 0 ? "ĐANG LÃI" : "ĐANG LỖ") : "TRÁNH LỖ"
-            _tc_srClr       = tc_trend == 1 ? T_GRN : T_RED
-            _tc_liqTxt      = str.tostring(tc_liqDay / 1000000000, "#.#") + " tỷ/ngày"
-            table.cell(stbl, 0, 0, "📅 " + syminfo.ticker,
-                 text_color=T_WHT, text_size=size.huge, text_halign=text.align_center, bgcolor=color.new(#FFC107, 0))
-            table.cell(stbl, 1, 0, "", bgcolor=color.new(#FFC107, 0))
-            table.merge_cells(stbl, 0, 0, 1, 0)
-            table.cell(stbl, 0, 1, tc_trend == 1 ? "▲ ĐANG TRONG TREND TĂNG" : "▼ NGOÀI TREND — CHỜ ĐỢI",
-                 text_color=tc_trend == 1 ? T_GRN : T_RED, text_size=tSize, text_halign=text.align_center, bgcolor=T_BG_LGT)
-            table.cell(stbl, 1, 1, "", bgcolor=T_BG_LGT)
-            table.merge_cells(stbl, 0, 1, 1, 1)
-            table.cell(stbl, 0, 2, "📅 XEM LẠI  " + str.format_time(cursorTime, "dd/MM/yyyy"),
-                 text_color=color.new(#FFC107, 0), text_size=tSize, text_halign=text.align_center, bgcolor=T_BG_LGT)
-            table.cell(stbl, 1, 2, "", bgcolor=T_BG_LGT)
-            table.merge_cells(stbl, 0, 2, 1, 2)
-            table.cell(stbl, 0, 3, "NGÀY " + tc_type,       text_color=T_LBL,      text_size=tSize, text_halign=text.align_left,  bgcolor=T_BG_LGT)
-            table.cell(stbl, 1, 3, tc_date,                  text_color=T_VAL,      text_size=tSize, text_halign=text.align_right, bgcolor=T_BG_LGT)
-            table.cell(stbl, 0, 4, "GIÁ " + tc_type,        text_color=T_LBL,      text_size=tSize, text_halign=text.align_left,  bgcolor=T_BG_DRK)
-            table.cell(stbl, 1, 4, f_price(tc_entryPrice),   text_color=T_VAL,      text_size=tSize, text_halign=text.align_right, bgcolor=T_BG_DRK)
-            table.cell(stbl, 0, 5, tc_trend == 1 ? "HỖ TRỢ" : "KHÁNG CỰ",
-                 text_color=T_LBL, text_size=tSize, text_halign=text.align_left,  bgcolor=T_BG_LGT)
-            table.cell(stbl, 1, 5, f_price(tc_srPrice),
-                 text_color=_tc_srClr, text_size=tSize, text_halign=text.align_right, bgcolor=T_BG_LGT)
-            table.cell(stbl, 0, 6, "GIỮ LỆNH",              text_color=T_LBL,      text_size=tSize, text_halign=text.align_left,  bgcolor=T_BG_DRK)
-            table.cell(stbl, 1, 6, str.tostring(tc_holdCount) + " PHIÊN",
-                 text_color=T_VAL, text_size=tSize, text_halign=text.align_right, bgcolor=T_BG_DRK)
-            table.cell(stbl, 0, 7, _tc_pnlLblShort,          text_color=T_LBL,      text_size=tSize, text_halign=text.align_left,  bgcolor=T_BG_LGT)
-            table.cell(stbl, 1, 7, _tc_pnlTxt,               text_color=_tc_pnlClr, text_size=tSize, text_halign=text.align_right, bgcolor=T_BG_LGT)
-            table.cell(stbl, 0, 8, "THANH KHOẢN",  text_color=T_LBL, text_size=tSize, text_halign=text.align_left,  bgcolor=T_BG_DRK)
-            table.cell(stbl, 1, 8, _tc_liqTxt,     text_color=T_VAL, text_size=tSize, text_halign=text.align_right, bgcolor=T_BG_DRK)
+            _tc_typeD       = tc_type == "VÀO TREND" ? "vào trend" : "hết trend"
+            _tc_srLbl       = tc_trend == 1 ? "Hỗ trợ" : "Kháng cự"
+            _tc_liqTxt      = "Thanh khoản: " + str.tostring(tc_liqDay / 1000000000, "#.#") + " tỷ"
+            _tc_clrDateSig  = tc_trend == 1 ? clrDateSigUp : clrDateSigDown
+            _tc_clrLiq      = tc_trend == 1 ? clrLiqUp     : clrLiqDown
+            _tc_clrSR       = tc_trend == 1 ? clrSRUp      : clrSRDown
+            _tc_clrStatus   = tc_trend == 1 ? clrStatusUp  : clrStatusDown
+
+            // Cột 0 — mã CK, trải dài 3 hàng chi tiết
+            table.cell(stbl, 0, 1, syminfo.ticker,
+                 text_color=clrTableTicker, text_size=size.huge, text_halign=text.align_right, bgcolor=na, text_formatting=text.format_bold, tooltip=_ssTooltip)
+            table.cell(stbl, 0, 2, "", bgcolor=na)
+            table.cell(stbl, 0, 3, "", bgcolor=na)
+            table.merge_cells(stbl, 0, 1, 0, 3)
+
+            // Hàng 1 — ngày & giá tín hiệu
+            table.cell(stbl, 1, 1, "Ngày " + _tc_typeD + ": " + tc_date,               text_color=_tc_clrDateSig, text_size=tSize, text_halign=text.align_left, bgcolor=na, text_formatting=text.format_bold)
+            table.cell(stbl, 2, 1, "Giá " + _tc_typeD + ": " + f_price(tc_entryPrice), text_color=_tc_clrDateSig, text_size=tSize, text_halign=text.align_left, bgcolor=na, text_formatting=text.format_bold)
+
+            // Hàng 2 — ngày & giá xem lại
+            table.cell(stbl, 1, 2, "Ngày xem lại: " + str.format_time(cursorTime, "dd/MM/yyyy"), text_color=clrTableReview, text_size=tSize, text_halign=text.align_left, bgcolor=na, text_formatting=text.format_bold)
+            table.cell(stbl, 2, 2, "Giá xem lại: " + f_price(tc_closeRef),                        text_color=clrTableReview, text_size=tSize, text_halign=text.align_left, bgcolor=na, text_formatting=text.format_bold)
+
+            // Hàng 3 — thanh khoản & hỗ trợ/kháng cự
+            table.cell(stbl, 1, 3, _tc_liqTxt,                             text_color=_tc_clrLiq, text_size=tSize, text_halign=text.align_left, bgcolor=na, text_formatting=text.format_bold)
+            table.cell(stbl, 2, 3, _tc_srLbl + ": " + f_price(tc_srPrice), text_color=_tc_clrSR, text_size=tSize, text_halign=text.align_left, bgcolor=na, text_formatting=text.format_bold)
+
+            // Hàng 4 — trạng thái, chiếm trọn chiều ngang
+            _tc_statusTxt = (tc_trend == 1 ? "▲ Đang trong trend tăng" : "▼ Đang trong trend giảm") +
+                 "\n" + (tc_trend == 1
+                 ? "Nắm giữ " + str.tostring(tc_holdCount) + " phiên, đã lãi " + _tc_pnlTxt
+                 : "Đứng ngoài " + str.tostring(tc_holdCount) + " phiên, tránh lỗ " + _tc_pnlTxt)
+            table.cell(stbl, 0, 4, "", bgcolor=na)
+            table.cell(stbl, 1, 4, _tc_statusTxt, text_color=_tc_clrStatus, text_size=tSize, text_halign=text.align_center, bgcolor=na, text_formatting=text.format_bold)
+            table.cell(stbl, 2, 4, "", bgcolor=na)
+            table.merge_cells(stbl, 1, 4, 2, 4)
 
 // =========================================================
 // =========================================================
