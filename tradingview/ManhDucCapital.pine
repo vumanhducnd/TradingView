@@ -15,7 +15,7 @@ indicator("ManhDucCapital-0973124824", overlay=true, format=format.price, precis
 showTable    = input.bool(true,   "Hiển thị bảng tín hiệu?",         group="Cài đặt chung")
 tableSize    = input.string("normal", "Cỡ chữ bảng",                 group="Cài đặt chung", options=["tiny","small","normal","large","huge"])
 tableTopGap  = input.int(12, "Khoảng cách bảng tín hiệu với mép trên (số dòng)", group="Cài đặt chung",
-     minval=0, maxval=15,
+     minval=0, maxval=20,
      tooltip="Số dòng trống đẩy bảng tín hiệu góc phải xuống dưới, không dính sát mép trên chart. 0 = sát mép trên, tăng dần để đẩy xuống thêm")
 themeMode    = input.string("Light",  "Giao diện (Theme)",            group="Cài đặt chung", options=["Dark","Light"])
 showsignals  = input.bool(true,   "Hiển thị tín hiệu vào/hết trend?", group="Cài đặt chung")
@@ -59,7 +59,7 @@ clrStatusDown   = input.color(color.new(#c2185b, 0), "Giảm",                  
 // CÀI ĐẶT TP / SL Vũ Mạnh Đức 0973124824
 // =========================================================
 showTPSL  = input.bool(true,   "Hiển thị đường TP/SL?",          group="TP / SL",
-     tooltip="Vẽ đường TP/SL khi vào trend, tự xóa khi hết trend.\n✅ Dùng khi thị trường biến động mạnh, cổ phiếu đang ở vùng giữa xu hướng.\n❌ Không dùng khi giá ở vùng đỉnh lịch sử hoặc đáy chưa xác nhận.")
+     tooltip="Vẽ đường TP/SL khi vào trend, tự xóa khi hết trend.\nKhi hết trend (giá giảm), vẽ thêm 3 mức mục tiêu giảm (G1/G2/G3) đối xứng để theo dõi giá có thể giảm tới đâu.\n✅ Dùng khi thị trường biến động mạnh, cổ phiếu đang ở vùng giữa xu hướng.\n❌ Không dùng khi giá ở vùng đỉnh lịch sử hoặc đáy chưa xác nhận.")
 slAtrMult = input.float(1.5,  "SL Buffer (×ATR)",               group="TP / SL", minval=0.3, maxval=5.0,  step=0.1,
      tooltip="SL đặt dưới Pivot Low một khoảng = slMult × ATR\nGiá trị lớn hơn = SL rộng hơn, ít bị quét hơn\nVí dụ: 1.5 × ATR dưới pivot low gần nhất")
 pivotLen  = input.int(10,     "Độ dài Pivot (bars)",             group="TP / SL", minval=3, maxval=50,
@@ -74,6 +74,8 @@ slVnBuf   = input.float(1.8,  "SL-HT — buffer % dưới SuperTrend HT", group=
      tooltip="Đường SL trailing theo đường hỗ trợ SuperTrend (up)\nSL-HT = up × (1 − buffer%)\nTự động đi lên theo giá, phù hợp thị trường VN chỉ mua một chiều\nVí dụ: 1.5% → SL đặt thấp hơn đường HT 1.5%")
 showTPHit = input.bool(true,  "Đánh dấu nến đạt TP?",               group="TP / SL",
      tooltip="Hiển thị nhãn 🎯 trên cây nến khi giá lần đầu chạm mỗi mức TP\nMỗi mức chỉ đánh dấu một lần, reset khi có tín hiệu mới")
+showTPSLDn = input.bool(false, "Hiển thị mục tiêu giảm khi hết trend?", group="TP / SL",
+     tooltip="Vẽ 3 mức mục tiêu giảm G1/G2/G3 khi có tín hiệu Hết trend, để xem giá có thể giảm tới đâu.\nTắt nếu chỉ muốn theo dõi TP/SL bên mua, không cần chiếu mục tiêu giảm.")
 
 // =========================================================
 // CT TÍN HIỆU
@@ -734,6 +736,127 @@ if barstate.islast and _tpslOn and not na(saved_ep)
     lbSLVN := label.new(bar_index + 2, _slvn,
          "🟠 SL : " + f_price(_slvn) + "   " + _slvnSign + _slvnPctStr + "% ",
          style=label.style_label_left, color=_slvnClr, textcolor=color.white, size=size.small)
+
+// =========================================================
+// TP / SL LINES — HẾT TREND, chiếu mục tiêu giảm Vũ Mạnh Đức 0973124824
+// =========================================================
+var line  lnEntryDn = na
+var line  lnT1Dn    = na
+var line  lnT2Dn    = na
+var line  lnT3Dn    = na
+var label lbEntryDn = na
+var label lbT1Dn    = na
+var label lbT2Dn    = na
+var label lbT3Dn    = na
+
+var float saved_ep_dn = na
+var float saved_t1_dn = na
+var float saved_t2_dn = na
+var float saved_t3_dn = na
+var bool  t1_hit_dn   = false
+var bool  t2_hit_dn   = false
+var bool  t3_hit_dn   = false
+var label lbT1HitDn   = na
+var label lbT2HitDn   = na
+var label lbT3HitDn   = na
+
+_tpslOnDn = showTPSL and showTPSLDn and signalType == "HẾT TREND" and not na(signalPrice) and trend == -1
+
+if buySignal
+    line.delete(lnEntryDn),  line.delete(lnT1Dn),  line.delete(lnT2Dn),  line.delete(lnT3Dn)
+    label.delete(lbEntryDn), label.delete(lbT1Dn), label.delete(lbT2Dn), label.delete(lbT3Dn)
+    saved_ep_dn := na
+    saved_t1_dn := na
+    saved_t2_dn := na
+    saved_t3_dn := na
+    t1_hit_dn := false,  t2_hit_dn := false,  t3_hit_dn := false
+    label.delete(lbT1HitDn), lbT1HitDn := na
+    label.delete(lbT2HitDn), lbT2HitDn := na
+    label.delete(lbT3HitDn), lbT3HitDn := na
+
+if sellSignal and showTPSL and showTPSLDn
+    _epD     = signalPrice
+    _slBaseD = not na(lastPivotHigh) ? lastPivotHigh : high
+    _slD     = math.max(_slBaseD + slAtrMult * atr, _epD + slAtrMult * atr)
+    _riskD   = math.max(_slD - _epD, atr * 0.1)
+    _t1D     = _epD - _riskD * tp1R
+    _t2D     = _epD - _riskD * tp2R
+    _t3D     = _epD - _riskD * tp3R
+    saved_ep_dn := _epD
+    saved_t1_dn := _t1D
+    saved_t2_dn := _t2D
+    saved_t3_dn := _t3D
+    t1_hit_dn := false,  t2_hit_dn := false,  t3_hit_dn := false
+    label.delete(lbT1HitDn), lbT1HitDn := na
+    label.delete(lbT2HitDn), lbT2HitDn := na
+    label.delete(lbT3HitDn), lbT3HitDn := na
+    line.delete(lnEntryDn)
+    lnEntryDn := line.new(bar_index, _epD, bar_index + 1, _epD, color=color.new(#FF5722, 0), width=1, style=line.style_dotted, extend=extend.right)
+    line.delete(lnT1Dn)
+    lnT1Dn   := line.new(bar_index, _t1D, bar_index + 1, _t1D, color=color.new(#FFAB91, 0), width=1, style=line.style_dashed, extend=extend.right)
+    line.delete(lnT2Dn)
+    lnT2Dn   := line.new(bar_index, _t2D, bar_index + 1, _t2D, color=color.new(#FF7043, 0), width=1, style=line.style_dashed, extend=extend.right)
+    line.delete(lnT3Dn)
+    lnT3Dn   := line.new(bar_index, _t3D, bar_index + 1, _t3D, color=color.new(#D84315, 0), width=1, style=line.style_dashed, extend=extend.right)
+
+// Đánh dấu cây nến lần đầu chạm mục tiêu giảm
+if not na(saved_t1_dn) and showTPSL and showTPSLDn and showTPHit and trend == -1
+    if not t1_hit_dn and low <= saved_t1_dn
+        t1_hit_dn := true
+        line.delete(lnT1Dn),  lnT1Dn  := na
+        label.delete(lbT1Dn), lbT1Dn  := na
+        label.delete(lbT1HitDn)
+        lbT1HitDn := label.new(bar_index, low,
+             "🔻 G1  -" + str.tostring(math.round((saved_ep_dn - saved_t1_dn) / saved_ep_dn * 1000) / 10) + "%",
+             style=label.style_label_up, color=color.new(#FFAB91, 0), textcolor=color.black, size=size.tiny)
+    if not t2_hit_dn and low <= saved_t2_dn
+        t2_hit_dn := true
+        line.delete(lnT2Dn),  lnT2Dn  := na
+        label.delete(lbT2Dn), lbT2Dn  := na
+        label.delete(lbT2HitDn)
+        lbT2HitDn := label.new(bar_index, low,
+             "🔻 G2  -" + str.tostring(math.round((saved_ep_dn - saved_t2_dn) / saved_ep_dn * 1000) / 10) + "%",
+             style=label.style_label_up, color=color.new(#FF7043, 0), textcolor=color.white, size=size.tiny)
+    if not t3_hit_dn and low <= saved_t3_dn
+        t3_hit_dn := true
+        line.delete(lnT3Dn),  lnT3Dn  := na
+        label.delete(lbT3Dn), lbT3Dn  := na
+        label.delete(lbT3HitDn)
+        lbT3HitDn := label.new(bar_index, low,
+             "🔻 G3  -" + str.tostring(math.round((saved_ep_dn - saved_t3_dn) / saved_ep_dn * 1000) / 10) + "%",
+             style=label.style_label_up, color=color.new(#D84315, 0), textcolor=color.white, size=size.tiny)
+
+if barstate.islast and _tpslOnDn and not na(saved_ep_dn)
+    _epD       = saved_ep_dn
+    _t1D       = saved_t1_dn
+    _t2D       = saved_t2_dn
+    _t3D       = saved_t3_dn
+    _t1PctStrD = str.tostring(math.round((_epD - _t1D) / _epD * 100 * 10) / 10)
+    _t2PctStrD = str.tostring(math.round((_epD - _t2D) / _epD * 100 * 10) / 10)
+    _t3PctStrD = str.tostring(math.round((_epD - _t3D) / _epD * 100 * 10) / 10)
+
+    label.delete(lbEntryDn)
+    lbEntryDn := label.new(bar_index + 2, _epD,
+         "📌 Bán:  " + f_price(_epD),
+         style=label.style_label_left, color=color.new(#FF5722, 0), textcolor=color.white, size=size.small)
+
+    if not t1_hit_dn
+        label.delete(lbT1Dn)
+        lbT1Dn := label.new(bar_index + 2, _t1D,
+             "🔻 G1:   " + f_price(_t1D) + "   -" + _t1PctStrD + "%",
+             style=label.style_label_left, color=color.new(#FFAB91, 0), textcolor=color.black, size=size.small)
+
+    if not t2_hit_dn
+        label.delete(lbT2Dn)
+        lbT2Dn := label.new(bar_index + 2, _t2D,
+             "🔻 G2:   " + f_price(_t2D) + "   -" + _t2PctStrD + "%",
+             style=label.style_label_left, color=color.new(#FF7043, 0), textcolor=color.white, size=size.small)
+
+    if not t3_hit_dn
+        label.delete(lbT3Dn)
+        lbT3Dn := label.new(bar_index + 2, _t3D,
+             "🔻 G3:   " + f_price(_t3D) + "   -" + _t3PctStrD + "%",
+             style=label.style_label_left, color=color.new(#D84315, 0), textcolor=color.white, size=size.small)
 
 // =========================================================
 // HỖ TRỢ / KHÁNG CỰ Vũ Mạnh Đức 0973124824
