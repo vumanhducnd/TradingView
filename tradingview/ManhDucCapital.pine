@@ -15,7 +15,7 @@ indicator("ManhDucCapital-0973124824", overlay=true, format=format.price, precis
 showTable    = input.bool(true,   "Hiển thị bảng tín hiệu?",         group="Cài đặt chung")
 tableSize    = input.string("normal", "Cỡ chữ bảng",                 group="Cài đặt chung", options=["tiny","small","normal","large","huge"])
 tableTopGap  = input.int(12, "Khoảng cách bảng tín hiệu với mép trên (số dòng)", group="Cài đặt chung",
-     minval=0, maxval=20,
+     minval=0, maxval=25,
      tooltip="Số dòng trống đẩy bảng tín hiệu góc phải xuống dưới, không dính sát mép trên chart. 0 = sát mép trên, tăng dần để đẩy xuống thêm")
 themeMode    = input.string("Light",  "Giao diện (Theme)",            group="Cài đặt chung", options=["Dark","Light"])
 showsignals  = input.bool(true,   "Hiển thị tín hiệu vào/hết trend?", group="Cài đặt chung")
