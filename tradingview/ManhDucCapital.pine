@@ -156,6 +156,7 @@ f_modeLabel(md) => md == "Lý tưởng nhất" ? "🏆 Lý tưởng nhất" : md
 f_round2(v)     => math.round(v * 100) / 100
 f_pct(v)        => f_sign(v) + str.tostring(f_round2(v)) + "%"
 f_today()       => f_pad(dayofmonth) + "/" + f_pad(month) + "/" + str.tostring(year)
+f_todayNow()    => f_pad(dayofmonth(timenow)) + "/" + f_pad(month(timenow)) + "/" + str.tostring(year(timenow))
 f_tsize(s)      => s == "tiny" ? size.tiny : s == "small" ? size.small : s == "normal" ? size.normal : s == "large" ? size.large : size.huge
 
 // =========================================================
@@ -1177,7 +1178,7 @@ if showTable
     table.cell(stbl, 2, 1, "Giá " + _sigTypeD + ": " + f_price(signalPrice), text_color=_clrDateSig, text_size=tSize, text_halign=text.align_left, bgcolor=na, text_formatting=text.format_bold)
 
     // Hàng 2 — ngày & giá hiện tại
-    table.cell(stbl, 1, 2, "Ngày hiện tại: " + f_today(),        text_color=_clrDateNow, text_size=tSize, text_halign=text.align_left, bgcolor=na, text_formatting=text.format_bold)
+    table.cell(stbl, 1, 2, "Ngày hiện tại: " + f_todayNow(),     text_color=_clrDateNow, text_size=tSize, text_halign=text.align_left, bgcolor=na, text_formatting=text.format_bold)
     table.cell(stbl, 2, 2, "Giá hiện tại: " + f_price(close),    text_color=_clrDateNow, text_size=tSize, text_halign=text.align_left, bgcolor=na, text_formatting=text.format_bold)
 
     // Hàng 3 — thanh khoản & hỗ trợ/kháng cự
