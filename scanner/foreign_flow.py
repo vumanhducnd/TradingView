@@ -502,7 +502,10 @@ def _gen_caption(section: Section, img_bytes: bytes) -> str:
             resp = client.chat.completions.create(**kwargs)
         body = resp.choices[0].message.content or ""
         # Fallback phòng khi model vẫn lộ block <think> dù đã set reasoning_format
-        body = re.sub(r"<think>.*?</think>", "", body, flags=re.DOTALL | re.IGNORECASE).strip()
+        body = re.sub(r"<think>.*?</think>", "", body, flags=re.DOTALL | re.IGNORECASE)
+        # Model bị cắt giữa chừng (hết max_tokens) → <think> mở nhưng không đóng:
+        # bỏ luôn phần còn lại thay vì để lộ reasoning thô
+        body = re.sub(r"<think>.*", "", body, flags=re.DOTALL | re.IGNORECASE).strip()
         if not body:
             raise ValueError("caption rỗng sau khi loại bỏ reasoning")
         caption = f"{header}\n\n{body}"
