@@ -13,6 +13,7 @@ Usage:
 from __future__ import annotations
 
 import base64
+import re
 import time
 from typing import Callable
 from datetime import date, datetime, timezone, timedelta
@@ -815,13 +816,22 @@ def _gen_caption_pair(ticker: str, img_seasonal: bytes, img_forecast: bytes) -> 
     return caption
 
 
+def _strip_reasoning(text: str) -> str:
+    """Bỏ block <think>...</think> (reasoning model). Nếu bị cắt giữa chừng do hết
+    max_tokens, <think> mở nhưng không đóng — bỏ luôn phần còn lại thay vì để lộ
+    reasoning thô ra caption Telegram."""
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r"<think>.*", "", text, flags=re.DOTALL | re.IGNORECASE)
+    return text.strip()
+
+
 def _vision_groq_pair(b64_s: str, b64_f: str, prompt: str) -> str | None:
     try:
         from groq import Groq
         from scanner.config import GROQ_API_KEY, GROQ_VISION_MODEL
         if not GROQ_API_KEY:
             return None
-        resp = Groq(api_key=GROQ_API_KEY).chat.completions.create(
+        kwargs = dict(
             model=GROQ_VISION_MODEL,
             messages=[{"role": "user", "content": [
                 {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64_s}"}},
@@ -831,7 +841,20 @@ def _vision_groq_pair(b64_s: str, b64_f: str, prompt: str) -> str | None:
             max_tokens=400,
             temperature=0.4,
         )
-        return resp.choices[0].message.content.strip()
+        client = Groq(api_key=GROQ_API_KEY)
+        try:
+            # Tắt hẳn chain-of-thought (model có thể là reasoning model vd Qwen3) để
+            # tránh nuốt hết token vào <think> rồi bị cắt giữa chừng. Một số model
+            # không hỗ trợ 2 tham số này.
+            resp = client.chat.completions.create(
+                **kwargs, reasoning_format="hidden", reasoning_effort="none",
+            )
+        except Exception:
+            resp = client.chat.completions.create(**kwargs)
+        body = _strip_reasoning(resp.choices[0].message.content or "")
+        if not body:
+            raise ValueError("caption rỗng sau khi loại bỏ reasoning")
+        return body
     except Exception as e:
         logger.warning(f"Groq vision pair failed: {e} — thử OpenAI")
         return None
@@ -865,7 +888,7 @@ def _vision_groq(b64: str, prompt: str) -> str | None:
         from scanner.config import GROQ_API_KEY, GROQ_VISION_MODEL
         if not GROQ_API_KEY:
             return None
-        resp = Groq(api_key=GROQ_API_KEY).chat.completions.create(
+        kwargs = dict(
             model=GROQ_VISION_MODEL,
             messages=[{"role": "user", "content": [
                 {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
@@ -874,7 +897,17 @@ def _vision_groq(b64: str, prompt: str) -> str | None:
             max_tokens=300,
             temperature=0.4,
         )
-        return resp.choices[0].message.content.strip()
+        client = Groq(api_key=GROQ_API_KEY)
+        try:
+            resp = client.chat.completions.create(
+                **kwargs, reasoning_format="hidden", reasoning_effort="none",
+            )
+        except Exception:
+            resp = client.chat.completions.create(**kwargs)
+        body = _strip_reasoning(resp.choices[0].message.content or "")
+        if not body:
+            raise ValueError("caption rỗng sau khi loại bỏ reasoning")
+        return body
     except Exception as e:
         logger.warning(f"Groq vision failed: {e} — thử OpenAI")
         return None
