@@ -22,34 +22,34 @@ from PIL import Image
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 from scanner.config import REPORTS_DIR
-from scanner.news_fetcher import fetch_category_news, fetch_war_news
+from scanner.news_fetcher import fetch_category_news, fetch_hot_topic_news
 from scanner.utils import logger
 
 TIKTOK_OUTPUT_DIR = REPORTS_DIR / "tiktok"
 
-# Mỗi story ứng với 1 category, theo đúng thứ tự xuất hiện trong bài đăng
-_STORY_CATEGORIES = ["stock", "domestic", "war_or_international"]
-
-
-def _pick_story(category: str) -> dict | None:
-    """Chọn tin đầu tiên có ảnh hợp lệ trong category (ưu tiên tin chiến tranh nếu có)."""
-    if category == "war_or_international":
-        pool = fetch_war_news(max_items=10) or fetch_category_news("international", max_items=10)
-    else:
-        pool = fetch_category_news(category, max_items=10)
-    for item in pool:
-        if item.get("image"):
-            return item
-    return pool[0] if pool else None
+# 1 tin chứng khoán (gắn với chủ đề kênh) + 2 tin "hot" (Trump/chiến sự/giá dầu/
+# Trung Quốc/Đài Loan/Iran-Israel/Mỹ...) để hook/caption viral hơn thay vì khô khan
+_STORY_PLAN = ["stock", "hot", "hot"]
 
 
 def gather_stories(n: int = 3) -> list[dict]:
-    """Chọn n tin, mỗi tin từ 1 category khác nhau (chứng khoán / trong nước / quốc tế-chiến tranh)."""
-    stories = []
-    seen_links = set()
-    for cat in _STORY_CATEGORIES[:n]:
-        story = _pick_story(cat)
-        if story and story["link"] not in seen_links:
+    """Chọn n tin theo _STORY_PLAN, ưu tiên tin có ảnh, không trùng link."""
+    stories: list[dict] = []
+    seen_links: set[str] = set()
+    hot_pool: list[dict] | None = None
+
+    for cat in _STORY_PLAN[:n]:
+        if cat == "hot":
+            if hot_pool is None:
+                hot_pool = fetch_hot_topic_news(max_items=20)
+                if not any(it.get("image") for it in hot_pool):
+                    hot_pool += fetch_category_news("international", max_items=15)
+            candidates = [s for s in hot_pool if s["link"] not in seen_links]
+        else:
+            candidates = [s for s in fetch_category_news(cat, max_items=10) if s["link"] not in seen_links]
+
+        story = next((s for s in candidates if s.get("image")), None) or (candidates[0] if candidates else None)
+        if story:
             story["category"] = cat
             stories.append(story)
             seen_links.add(story["link"])
@@ -90,19 +90,28 @@ def generate_hook_and_caption(stories: list[dict]) -> dict:
     )
 
     prompt = textwrap.dedent(f"""
-        Bạn là người biên tập nội dung TikTok về tài chính, chứng khoán, thời sự cho khán giả Việt Nam.
+        Bạn là biên tập nội dung TikTok viral về thời sự quốc tế - tài chính - chứng khoán cho
+        khán giả Việt Nam, phong cách như các kênh tin tức giật tít nhưng đúng sự thật.
         Ngày: {today}
 
-        TIN TỨC ĐÃ CHỌN (chứng khoán / trong nước / quốc tế-chiến tranh):
+        TIN ĐÃ CHỌN (chứng khoán + tin nóng quốc tế: Trump/chiến sự/giá dầu/Trung Quốc/
+        Đài Loan/Iran-Israel/Mỹ...):
         {news_block}
 
         Hãy viết nội dung cho 1 video TikTok tổng hợp các tin trên, theo đúng định dạng:
 
-        HOOK: [1 câu mở đầu cực gây chú ý, tò mò, dưới 15 từ, không markdown, không emoji]
-        CAPTION: [đoạn caption đầy đủ 3-4 câu tóm tắt các tin theo thứ tự, giọng gần gũi dễ hiểu,
-        kết thúc bằng 5-7 hashtag tiếng Việt liên quan chứng khoán/thời sự/tài chính, không markdown]
+        HOOK: [1 câu mở đầu SIÊU giật gân, gây sốc/tò mò ngay từ giây đầu, dưới 15 từ, văn phong
+        mạng xã hội, không markdown, không emoji]
+        CAPTION: [đoạn caption 3-4 câu, giọng dồn dập kiểu bản tin nóng, kết nối các tin với nhau
+        và với tác động tới túi tiền/thị trường chứng khoán Việt Nam nếu hợp lý, kết thúc bằng
+        6-8 hashtag tiếng Việt viral liên quan (chứng khoán, thời sự quốc tế, tên nhân vật/quốc gia
+        trong tin), không markdown]
 
-        Yêu cầu: tiếng Việt có dấu đầy đủ, không bịa thêm số liệu ngoài tin đã cho, không mở đầu bằng "Dưới đây là".
+        Yêu cầu bắt buộc:
+        - Tiếng Việt có dấu đầy đủ
+        - KHÔNG bịa thêm số liệu/sự kiện ngoài tin đã cho — chỉ được giật tít bằng cách diễn đạt,
+          không phóng đại sai sự thật
+        - Không mở đầu bằng "Dưới đây là"
     """).strip()
 
     from scanner.ai_analyst import _call, _get_client
