@@ -11,6 +11,7 @@ Commands:
   /alerts            — xem cảnh báo đang theo dõi
   /delalert <id>     — xoá cảnh báo
   /tv VHM            — chụp ảnh TradingView (mùa vụ + dự báo) + AI phân tích
+  /tiktok            — [admin] tạo hook/caption + 2-3 ảnh cho bài đăng TikTok
 """
 
 import math
@@ -1005,6 +1006,25 @@ def _cmd_tv_screenshot(token: str, chat_id: int | str, ticker: str) -> None:
         _reply(token, chat_id, f"❌ Lỗi chụp ảnh TradingView: <code>{e}</code>")
 
 
+def _cmd_tiktok_post(token: str, chat_id: int | str) -> None:
+    """Gom tin tức, tạo hook/caption bằng AI, tải ảnh, gửi thẳng vào chat (album + caption)."""
+    try:
+        from scanner.tiktok_content import create_tiktok_post
+        out_dir = create_tiktok_post()
+        hook    = (out_dir / "hook.txt").read_text(encoding="utf-8").strip()
+        caption = (out_dir / "caption.txt").read_text(encoding="utf-8").strip()
+        img_bytes = [p.read_bytes() for p in sorted(out_dir.glob("*.jpg"))]
+
+        text = f"<b>🎬 HOOK:</b> {hook}\n\n<b>📝 CAPTION:</b>\n{caption}"
+        if img_bytes:
+            _send_photo_group_to(token, chat_id, img_bytes, text)
+        else:
+            _reply(token, chat_id, text)
+    except Exception as e:
+        logger.error(f"_cmd_tiktok_post: {e}")
+        _reply(token, chat_id, f"❌ Lỗi tạo nội dung TikTok: <code>{e}</code>")
+
+
 def _cmd_check(ticker: str, style: str = "short") -> str:
     ticker = ticker.upper()
     df = _scan_df()
@@ -1410,6 +1430,9 @@ def _dispatch(token: str, message: dict) -> None:
             ticker = parts[1].upper()
             _reply(token, chat_id, f"🔍 Đang chụp và phân tích <b>{ticker}</b>... (~2 phút)")
             _cmd_tv_screenshot(token, chat_id, ticker)
+    elif cmd == "/tiktok" and _is_admin(cid_str):
+        _reply(token, chat_id, "📱 Đang gom tin và tạo nội dung TikTok... (~1 phút)")
+        _cmd_tiktok_post(token, chat_id)
     else:
         _send_main_menu(token, chat_id)
 

@@ -27,6 +27,7 @@ data/backtest/*.db
 
 # Reports & Data (file lớn, không push)
 reports/*.xlsx
+reports/tiktok/
 data/signals/*.csv
 data/backtest/*.csv
 
