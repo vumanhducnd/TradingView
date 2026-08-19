@@ -56,13 +56,25 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 # Groq API key (miễn phí tại console.groq.com → 14,400 req/ngày)
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 
-_DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile"
+# llama-3.3-70b-versatile bị Groq decommission 16/08/2026 — chuyển sang model
+# thay thế chính thức Groq khuyến nghị (xem console.groq.com/docs/deprecations)
+_DEFAULT_GROQ_MODEL = "openai/gpt-oss-120b"
 _DEFAULT_GROQ_VISION_MODEL = "qwen/qwen3.6-27b"  # Use Qwen vision model by default for image captioning
 
 # Models we consider unsupported for use (text-only or blocked)
 _UNSUPPORTED_GROQ_MODELS = {
     "meta-llama/llama-4-scout-17b-16e-instruct",
     "llama-4-scout-17b-16e-instruct",
+}
+
+# Explicitly decommissioned Groq text/chat models — nếu GROQ_MODEL trỏ vào đây
+# (env cũ chưa cập nhật), tự động redirect về default thay vì lỗi mọi request
+_DECOMMISSIONED_GROQ_MODELS = {
+    "llama-3.3-70b-versatile",
+    "llama-3.1-70b-versatile",
+    "llama-3.1-8b-instant",
+    "deepseek-r1-distill-llama-70b",
+    "mixtral-8x7b-32768",
 }
 
 # Explicitly decommissioned Groq vision models that should be disabled
@@ -78,6 +90,8 @@ def _resolve_groq_model(env_name: str, default_model: str) -> str:
     if env_name == "GROQ_VISION_MODEL" and raw_value in _UNSUPPORTED_GROQ_MODELS:
         return ""
     if raw_value in _UNSUPPORTED_GROQ_MODELS:
+        return default_model
+    if env_name == "GROQ_MODEL" and raw_value in _DECOMMISSIONED_GROQ_MODELS:
         return default_model
     # If the vision env points to a known decommissioned model, disable Groq vision
     if env_name == "GROQ_VISION_MODEL" and raw_value in _DECOMMISSIONED_GROQ_VISION_MODELS:

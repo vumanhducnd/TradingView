@@ -215,25 +215,20 @@ Yêu cầu:
 
 def _call_ai(prompt: str) -> str:
     try:
-        from scanner.ai_analyst import _get_client
+        from scanner.ai_analyst import _get_client, _call
         client = _get_client()
-        resp = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=500,
-            temperature=0.7,
-        )
-        return resp.choices[0].message.content.strip()
+        body = _call(client, prompt, max_tokens=500)
+        if body:
+            return body
     except Exception as e:
-        if "429" in str(e):
-            logger.warning("Groq 429 → fallback Gemini")
-            try:
-                from scanner.ai_analyst import _call_gemini
-                return _call_gemini(prompt, max_tokens=500)
-            except Exception as e2:
-                logger.warning(f"Gemini fallback failed: {e2}")
-        else:
-            logger.warning(f"AI midday failed: {e}")
+        logger.warning(f"AI midday failed: {e}")
+
+    logger.warning("AI midday: khong co ket qua tu Groq — fallback Gemini")
+    try:
+        from scanner.ai_analyst import _call_gemini
+        return _call_gemini(prompt, max_tokens=500)
+    except Exception as e2:
+        logger.warning(f"Gemini fallback failed: {e2}")
         return ""
 
 

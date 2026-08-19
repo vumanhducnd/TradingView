@@ -14,7 +14,6 @@ import pandas as pd
 
 from scanner.utils import logger
 
-_MODEL      = "llama-3.3-70b-versatile"
 _BATCH_SIZE = 5      # 5 ma/call de co du token cho phan tich sau
 _RPM_DELAY  = 3.0    # giay giua cac call (30 RPM = 1 call/2s)
 
@@ -97,14 +96,28 @@ def _call_gemini(prompt: str, max_tokens: int = 2048) -> str:
 
 
 def _call(client, prompt: str, max_tokens: int = 2048, _retry: int = 0) -> str:
+    from scanner.config import GROQ_MODEL
     try:
-        resp = client.chat.completions.create(
-            model=GROQ_MODEL if 'GROQ_MODEL' in globals() else _MODEL,
+        kwargs = dict(
+            model=GROQ_MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.35,
             max_tokens=max_tokens,
         )
-        return resp.choices[0].message.content.strip()
+        try:
+            # GROQ_MODEL mac dinh la reasoning model (gpt-oss) — tat chain-of-thought
+            # de tra loi ngay, tranh nuot het token vao reasoning roi bi cat giua chung
+            resp = client.chat.completions.create(
+                **kwargs, reasoning_format="hidden", reasoning_effort="none",
+            )
+        except Exception:
+            resp = client.chat.completions.create(**kwargs)
+        body = resp.choices[0].message.content or ""
+        body = re.sub(r"<think>.*?</think>", "", body, flags=re.DOTALL | re.IGNORECASE)
+        body = re.sub(r"<think>.*", "", body, flags=re.DOTALL | re.IGNORECASE).strip()
+        if not body:
+            raise ValueError("response rong sau khi loai bo reasoning")
+        return body
     except Exception as e:
         err = str(e)
         if "429" in err:
