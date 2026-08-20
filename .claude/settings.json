@@ -3,7 +3,9 @@
     "allow": [
       "Bash(python -c ' *)",
       "Bash(git commit -m ' *)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(.venv/Scripts/python -m py_compile scanner/ai_analyst.py scanner/live_scanner.py)",
+      "Bash(.venv/Scripts/python -m pytest tests/ -q)"
     ]
   }
 }

@@ -124,8 +124,7 @@ def _build_pre_report(results: list[dict], style_label: str, today_str: str,
     event_block = format_events_for_telegram(events)
     if event_block:
         lines.append(event_block)
-    if ai_text:
-        lines.append(f"\n{ai_text}")
+    lines.append(f"\n{ai_text if ai_text else 'Không thể tải phân tích AI lúc này.'}")
 
     if near_buy:
         lines.append(f"\n🚀 <b>Gần điểm MUA:</b>")

@@ -75,7 +75,9 @@ def _call_gemini(prompt: str, max_tokens: int = 2048) -> str:
             logger.warning("GEMINI_API_KEY chua set — het fallback")
             return ""
         client = genai.Client(api_key=GEMINI_API_KEY)
-        for model_name in ("gemini-2.0-flash", "gemini-1.5-flash"):
+        # gemini-2.0-flash / gemini-1.5-flash bi Google khai tu (404) — dung
+        # gemini-3.6-flash lam chinh, giu 2.0-flash lam du phong neu co thay doi
+        for model_name in ("gemini-3.6-flash", "gemini-2.0-flash"):
             try:
                 resp = client.models.generate_content(
                     model=model_name,
@@ -83,10 +85,17 @@ def _call_gemini(prompt: str, max_tokens: int = 2048) -> str:
                     config=types.GenerateContentConfig(
                         temperature=0.35,
                         max_output_tokens=max_tokens,
+                        # Model co the thinking mac dinh (vd gemini-3.6, khong cho
+                        # tat han bang thinking_budget=0 — 400 INVALID_ARGUMENT) —
+                        # ha xuong MINIMAL de con nhieu token cho cau tra loi hien thi
+                        thinking_config=types.ThinkingConfig(thinking_level=types.ThinkingLevel.MINIMAL),
                     ),
                 )
+                text = (resp.text or "").strip()
+                if not text:
+                    raise ValueError("response rong (co the het token vao thinking)")
                 logger.info(f"Gemini fallback OK [{model_name}]")
-                return resp.text.strip()
+                return text
             except Exception as e:
                 logger.warning(f"Gemini [{model_name}] loi: {e}")
         return ""
@@ -105,10 +114,11 @@ def _call(client, prompt: str, max_tokens: int = 2048, _retry: int = 0) -> str:
             max_tokens=max_tokens,
         )
         try:
-            # GROQ_MODEL mac dinh la reasoning model (gpt-oss) — tat chain-of-thought
-            # de tra loi ngay, tranh nuot het token vao reasoning roi bi cat giua chung
+            # GROQ_MODEL mac dinh la reasoning model (gpt-oss) — ha reasoning
+            # xuong thap nhat de tra loi nhanh, tranh nuot het token vao suy luan.
+            # gpt-oss chi nhan low/medium/high (khac "none" cua Qwen o vision model)
             resp = client.chat.completions.create(
-                **kwargs, reasoning_format="hidden", reasoning_effort="none",
+                **kwargs, reasoning_format="hidden", reasoning_effort="low",
             )
         except Exception:
             resp = client.chat.completions.create(**kwargs)
