@@ -11,7 +11,8 @@ Commands:
   /alerts            — xem cảnh báo đang theo dõi
   /delalert <id>     — xoá cảnh báo
   /tv VHM            — chụp ảnh TradingView (mùa vụ + dự báo) + AI phân tích
-  /tiktok            — [admin] tạo 5 bài đăng TikTok (hook+caption viral, mỗi bài 1 chủ đề)
+  /tiktok [style]    — [admin] tạo 5 bài đăng TikTok, mỗi bài random 1 kiểu nội dung
+                       (single/carousel/top/chart/recap), hoặc ép cứng 1 style cho cả batch
 """
 
 import math
@@ -433,13 +434,29 @@ def _is_rate_limited(chat_id: str, callback_id: str, token: str) -> bool:
     return False
 
 
+def _main_menu_text(cid: str) -> str:
+    text = (
+        f"👋 Chào mừng đến với <b>MDAlpha3 Bot</b>!\n"
+        f"Đang xem: <b>{_trend_label(cid)}</b>\n"
+        f"Chọn tính năng bạn muốn dùng:"
+    )
+    if _is_admin(cid):
+        from scanner.tiktok_content import POST_STYLES
+        style_lines = "\n".join(f"  • <code>{k}</code> {v}" for k, v in POST_STYLES.items())
+        text += (
+            "\n\n<b>👮 Lệnh admin</b>\n"
+            "<code>/tiktok</code> — tạo 5 bài TikTok, random 1 style/bài\n"
+            "<code>/tiktok &lt;style&gt;</code> — ép cứng 1 style cho cả batch:\n"
+            f"{style_lines}"
+        )
+    return text
+
+
 def _send_main_menu(token: str, chat_id: int | str) -> None:
     cid = str(chat_id)
     _reply(
         token, chat_id,
-        f"👋 Chào mừng đến với <b>MDAlpha3 Bot</b>!\n"
-        f"Đang xem: <b>{_trend_label(cid)}</b>\n"
-        f"Chọn tính năng bạn muốn dùng:",
+        _main_menu_text(cid),
         _kb_main(cid),
     )
 
@@ -547,26 +564,20 @@ def _handle_callback(token: str, cq: dict) -> None:
     if data == "main_menu":
         _user_state.pop(cid_str, None)
         _edit(token, chat_id, message_id,
-              f"👋 Chào mừng đến với <b>MDAlpha3 Bot</b>!\n"
-              f"Đang xem: <b>{_trend_label(cid_str)}</b>\n"
-              f"Chọn tính năng bạn muốn dùng:",
+              _main_menu_text(cid_str),
               _kb_main(cid_str))
 
     elif data == "main_menu_new":
         # Gửi tin menu mới — giữ nguyên tin trước (vd: guide)
         _user_state.pop(cid_str, None)
         _reply(token, chat_id,
-               f"👋 Chào mừng đến với <b>MDAlpha3 Bot</b>!\n"
-               f"Đang xem: <b>{_trend_label(cid_str)}</b>\n"
-               f"Chọn tính năng bạn muốn dùng:",
+               _main_menu_text(cid_str),
                _kb_main(cid_str))
 
     elif data in ("trend_short", "trend_long"):
         _user_trend[cid_str] = "short" if data == "trend_short" else "long"
         _edit(token, chat_id, message_id,
-              f"👋 Chào mừng đến với <b>MDAlpha3 Bot</b>!\n"
-              f"Đang xem: <b>{_trend_label(cid_str)}</b>\n"
-              f"Chọn tính năng bạn muốn dùng:",
+              _main_menu_text(cid_str),
               _kb_main(cid_str))
 
     elif data == "guide":
@@ -934,17 +945,25 @@ MENU = (
 # ─── Command handlers ─────────────────────────────────────────────────────────
 
 def _send_photo_group_to(
-    token: str, chat_id: int | str, images: list[bytes], caption: str
+    token: str, chat_id: int | str, images: list[bytes], captions: str | list[str]
 ) -> None:
-    """Gửi album ảnh (sendMediaGroup) thẳng vào chat_id. Caption đặt trên ảnh đầu tiên."""
+    """Gửi album ảnh (sendMediaGroup) thẳng vào chat_id.
+    Nếu `captions` là str: chỉ đặt trên ảnh đầu tiên (hành vi cũ).
+    Nếu là list: mỗi ảnh có caption riêng theo index (thiếu thì bỏ trống)."""
     import json as _json
+    if isinstance(captions, str):
+        cap_list = [captions] + [""] * (len(images) - 1)
+    else:
+        cap_list = list(captions) + [""] * max(0, len(images) - len(captions))
+
     media_json = []
     files: dict = {}
     for i, img in enumerate(images):
         key = f"photo{i}"
         item: dict = {"type": "photo", "media": f"attach://{key}"}
-        if i == 0 and caption:
-            item["caption"]    = caption[:1024]
+        cap = cap_list[i] if i < len(cap_list) else ""
+        if cap:
+            item["caption"]    = cap[:1024]
             item["parse_mode"] = "HTML"
         media_json.append(item)
         files[key] = (f"chart{i}.png", img, "image/png")
@@ -1006,26 +1025,39 @@ def _cmd_tv_screenshot(token: str, chat_id: int | str, ticker: str) -> None:
         _reply(token, chat_id, f"❌ Lỗi chụp ảnh TradingView: <code>{e}</code>")
 
 
-def _cmd_tiktok_post(token: str, chat_id: int | str) -> None:
-    """Gom tin tức, tạo 5 bài TikTok độc lập (mỗi bài 1 chủ đề trong ngày) bằng AI,
-    gửi lần lượt từng bài vào chat (ảnh + hook + caption)."""
+def _cmd_tiktok_post(token: str, chat_id: int | str, style: str | None = None) -> None:
+    """Gom tin tức/dữ liệu, tạo 5 bài TikTok độc lập bằng AI — mỗi bài random 1 kiểu
+    nội dung (POST_STYLES) trừ khi ép cứng qua `style`, gửi lần lượt từng bài vào chat
+    (ảnh + hook + caption, mỗi ảnh kèm caption riêng)."""
     try:
+        import json as _json
         from scanner.tiktok_content import create_tiktok_posts
-        out_dirs = create_tiktok_posts(n=5)
-        if not out_dirs:
-            _reply(token, chat_id, "❌ Không tạo được bài đăng TikTok nào hôm nay")
-            return
+        out_dirs = create_tiktok_posts(n=5, style=style)
 
         for i, out_dir in enumerate(out_dirs, 1):
-            hook    = (out_dir / "hook.txt").read_text(encoding="utf-8").strip()
-            caption = (out_dir / "caption.txt").read_text(encoding="utf-8").strip()
-            img_bytes = [p.read_bytes() for p in sorted(out_dir.glob("*.jpg"))]
+            meta = _json.loads((out_dir / "post_info.json").read_text(encoding="utf-8"))
+            style_label = meta.get("style_label", meta.get("style", ""))
+            hook, caption = meta["hook"], meta["caption"]
+            image_captions = meta.get("image_captions") or []
 
-            text = f"<b>🎬 Bài {i}/{len(out_dirs)} — HOOK:</b> {hook}\n\n<b>📝 CAPTION:</b>\n{caption}"
-            if img_bytes:
-                _send_photo_group_to(token, chat_id, img_bytes, text)
-            else:
-                _reply(token, chat_id, text)
+            img_paths = sorted(out_dir.glob("*.jpg"), key=lambda p: int(p.stem))
+            img_bytes = [p.read_bytes() for p in img_paths]
+
+            header = f"<b>🎬 Bài {i}/{len(out_dirs)} — {style_label}</b>\n<b>HOOK:</b> {hook}\n\n<b>📝 CAPTION:</b>\n{caption}"
+            if not img_bytes:
+                _reply(token, chat_id, header)
+                continue
+
+            # Ảnh đầu: header (style+hook+caption tổng) + caption riêng của ảnh đó
+            # Các ảnh sau: chỉ caption riêng của từng ảnh
+            captions = []
+            for idx in range(len(img_bytes)):
+                cap = image_captions[idx] if idx < len(image_captions) else ""
+                if idx == 0:
+                    captions.append(f"{header}\n\n<i>📷 {cap}</i>" if cap else header)
+                else:
+                    captions.append(f"<i>📷 {cap}</i>" if cap else "")
+            _send_photo_group_to(token, chat_id, img_bytes, captions)
     except Exception as e:
         logger.error(f"_cmd_tiktok_post: {e}")
         _reply(token, chat_id, f"❌ Lỗi tạo nội dung TikTok: <code>{e}</code>")
@@ -1437,8 +1469,17 @@ def _dispatch(token: str, message: dict) -> None:
             _reply(token, chat_id, f"🔍 Đang chụp và phân tích <b>{ticker}</b>... (~2 phút)")
             _cmd_tv_screenshot(token, chat_id, ticker)
     elif cmd == "/tiktok" and _is_admin(cid_str):
-        _reply(token, chat_id, "📱 Đang gom tin và tạo 5 bài TikTok (mỗi bài 1 chủ đề)... (~2-3 phút)")
-        _cmd_tiktok_post(token, chat_id)
+        from scanner.tiktok_content import POST_STYLES
+        style = parts[1].lower() if len(parts) >= 2 else None
+        if style and style not in POST_STYLES:
+            opts = ", ".join(f"<code>{k}</code> ({v})" for k, v in POST_STYLES.items())
+            _reply(token, chat_id,
+                   f"Style không hợp lệ.\nDùng: <code>/tiktok</code> (random mỗi bài) hoặc "
+                   f"<code>/tiktok &lt;style&gt;</code>.\nCác style: {opts}")
+        else:
+            label = POST_STYLES[style] if style else "🎲 random mỗi bài"
+            _reply(token, chat_id, f"📱 Đang tạo 5 bài TikTok — {label}... (~2-3 phút)")
+            _cmd_tiktok_post(token, chat_id, style=style)
     else:
         _send_main_menu(token, chat_id)
 

@@ -52,6 +52,7 @@ _HOT_KEYWORDS = [
 ]
 
 _IMG_RE = re.compile(r'<img[^>]+src="([^"]+)"', re.IGNORECASE)
+_SKIP_IMG_RE = re.compile(r"(logo|icon|avatar|sprite|blank\.gif|1x1|pixel\.)", re.IGNORECASE)
 
 
 def _extract_image(item: ET.Element, description_raw: str) -> str:
@@ -61,6 +62,33 @@ def _extract_image(item: ET.Element, description_raw: str) -> str:
         return enclosure.get("url").strip()
     m = _IMG_RE.search(description_raw)
     return m.group(1).strip() if m else ""
+
+
+def fetch_article_images(link: str, max_images: int = 3) -> list[str]:
+    """Scrape thêm ảnh minh họa trong nội dung bài báo gốc (ngoài ảnh đại diện RSS).
+    Dùng để có nhiều ảnh hơn cho 1 bài đăng — lấy theo thứ tự xuất hiện trong HTML,
+    bỏ qua logo/icon/avatar."""
+    if not link:
+        return []
+    try:
+        resp = requests.get(link, timeout=10, verify=False, headers={"User-Agent": "Mozilla/5.0"})
+        resp.raise_for_status()
+        html = resp.text
+    except Exception as e:
+        logger.warning(f"fetch_article_images failed [{link}]: {e}")
+        return []
+
+    urls: list[str] = []
+    seen: set[str] = set()
+    for m in _IMG_RE.finditer(html):
+        url = m.group(1).strip()
+        if not url.startswith("http") or url in seen or _SKIP_IMG_RE.search(url):
+            continue
+        seen.add(url)
+        urls.append(url)
+        if len(urls) >= max_images:
+            break
+    return urls
 
 
 def _parse_feed(source_name: str, url: str, limit: int) -> list[dict]:
