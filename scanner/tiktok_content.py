@@ -10,10 +10,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import random
 import re
 import textwrap
-from datetime import date
+from datetime import date, datetime
 from io import BytesIO
 from pathlib import Path
 
@@ -25,24 +26,59 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 from scanner.config import REPORTS_DIR
 from scanner.news_fetcher import fetch_article_images, fetch_category_news, fetch_hot_topic_news
-from scanner.utils import fmt_price, logger
+from scanner.utils import fmt_date, fmt_price, logger
 
 TIKTOK_OUTPUT_DIR = REPORTS_DIR / "tiktok"
+
+# Font hỗ trợ tiếng Việt (font mặc định của Pillow không có dấu) — bundle sẵn trong repo
+# thay vì phụ thuộc font hệ thống (server Linux thường không có font tiếng Việt cài sẵn).
+_FONT_DIR = Path(__file__).parent / "assets" / "fonts"
+_FONT_REGULAR = _FONT_DIR / "DejaVuSans.ttf"
+_FONT_BOLD = _FONT_DIR / "DejaVuSans-Bold.ttf"
+
+
+def _font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
+    return ImageFont.truetype(str(_FONT_BOLD if bold else _FONT_REGULAR), size)
+
+
+def _val(row, *names, default=None):
+    """Lấy giá trị đầu tiên không-NaN theo tên cột — fallback giữa dual mode
+    (long_/short_) và single mode, giống quy ước _val trong bot_interactive.py."""
+    for name in names:
+        v = row.get(name) if isinstance(row, dict) else (row[name] if name in row.index else None)
+        if v is not None and not (isinstance(v, float) and math.isnan(v)):
+            return v
+    return default
+
+
+def _to_date(v) -> date | None:
+    if not v:
+        return None
+    if isinstance(v, datetime):
+        return v.date()
+    if isinstance(v, date):
+        return v
+    try:
+        return datetime.strptime(str(v)[:10], "%Y-%m-%d").date()
+    except Exception:
+        return None
 
 # Số ảnh tối đa tải về cho mỗi bài "carousel" (ảnh đại diện RSS + ảnh trong nội dung bài báo)
 _IMAGES_PER_POST = 3
 
 # Các kiểu nội dung — mỗi bài trong batch random 1 kiểu (hoặc ép cứng qua tham số `style`)
 POST_STYLES: dict[str, str] = {
-    "single":   "📰 Tin đơn",
-    "carousel": "🖼 Carousel nhiều ảnh",
-    "top":      "🏆 Top mã vùng xanh",
-    "chart":    "📈 Chart TradingView",
-    "recap":    "📋 Recap nhiều tin",
+    "single":      "📰 Tin đơn",
+    "carousel":    "🖼 Carousel nhiều ảnh",
+    "top":         "🏆 Top mã vùng xanh",
+    "chart":       "📈 Chart TradingView",
+    "recap":       "📋 Recap nhiều tin",
+    "buy_signal":  "🟢 Tín hiệu MUA trong ngày",
+    "sell_signal": "🔴 Tín hiệu BÁN trong ngày",
 }
 
-# Style nào cần rút tin tức từ pool (và tốn bao nhiêu tin/bài) — "top"/"chart" lấy
-# dữ liệu từ scanner DB nên không tốn tin tức.
+# Style nào cần rút tin tức từ pool (và tốn bao nhiêu tin/bài) — "top"/"chart"/"buy_signal"/
+# "sell_signal" lấy dữ liệu từ scanner DB nên không tốn tin tức.
 _NEWS_STYLES_COST = {"single": 1, "carousel": 1, "recap": 3}
 
 # Mỗi bài đăng là 1 chủ đề riêng — thiên về tin "hot" (Trump/chiến sự/giá dầu/
@@ -249,36 +285,99 @@ def generate_recap_hook_caption(stories: list[dict]) -> dict:
     return {"hook": hook, "caption": caption, "image_captions": image_captions}
 
 
-def _draw_stock_card(path: Path, rank: int, ticker: str, price: float, bias: float, turnover_ty: float) -> Path:
-    """Vẽ 1 ảnh 'card' đơn giản cho 1 mã — chỉ dùng ký tự ASCII (mã CK/số liệu vốn đã
-    là Latin/số) để không phụ thuộc font hỗ trợ tiếng Việt. Caption tiếng Việt đầy đủ
-    được gửi riêng qua text caption của Telegram, không vẽ vào ảnh."""
+def _draw_info_card(path: Path, badge: str, ticker: str, accent: tuple[int, int, int],
+                     rows: list[tuple[str, str]], highlight_label: str | None = None) -> Path:
+    """Vẽ 1 ảnh 'card' thông tin tiếng Việt dùng chung cho style 'top'/'buy_signal'/
+    'sell_signal' — header màu accent + badge/mã CK, thân card là danh sách (nhãn, giá
+    trị). Dùng font DejaVu Sans bundle sẵn (scanner/assets/fonts) nên hiển thị đúng dấu
+    trên mọi server."""
     W, H = 720, 1280
-    bg = (11, 94, 46) if bias >= 55 else (110, 30, 30)
+    bg      = (17, 20, 28)
+    card_bg = (26, 30, 41)
+    muted   = (150, 158, 176)
+    divider = (45, 50, 64)
+
     img = Image.new("RGB", (W, H), bg)
     draw = ImageDraw.Draw(img)
-    f_rank  = ImageFont.load_default(size=64)
-    f_big   = ImageFont.load_default(size=130)
-    f_mid   = ImageFont.load_default(size=54)
 
-    draw.text((60, 80), f"#{rank}", font=f_rank, fill=(255, 255, 255))
-    draw.text((60, 460), ticker, font=f_big, fill=(255, 255, 255))
-    draw.text((60, 640), f"PRICE {fmt_price(price)}", font=f_mid, fill=(230, 230, 230))
-    draw.text((60, 720), f"BIAS {bias:.0f}/100", font=f_mid, fill=(230, 230, 230))
-    draw.text((60, 800), f"VOL {turnover_ty:.1f}B", font=f_mid, fill=(230, 230, 230))
-    img.save(path, "JPEG", quality=90)
+    draw.rectangle([0, 0, W, 220], fill=accent)
+    draw.text((48, 36), badge, font=_font(34, bold=True), fill=(255, 255, 255))
+    draw.text((48, 88), ticker, font=_font(110, bold=True), fill=(255, 255, 255))
+
+    draw.rounded_rectangle([32, 256, W - 32, H - 48], radius=24, fill=card_bg)
+
+    n = len(rows)
+    row_h = (H - 48 - 300) // n
+    y = 300
+    label_font = _font(32)
+    value_font = _font(50, bold=True)
+    for idx, (label, value) in enumerate(rows):
+        draw.text((64, y), label, font=label_font, fill=muted)
+        color = accent if label == highlight_label else (255, 255, 255)
+        draw.text((64, y + 42), value, font=value_font, fill=color)
+        if idx < n - 1:
+            draw.line([64, y + row_h - 24, W - 64, y + row_h - 24], fill=divider, width=2)
+        y += row_h
+
+    img.save(path, "JPEG", quality=92)
     return path
 
 
+def _draw_stock_card(path: Path, rank: int, s: dict) -> Path:
+    """Card style 'top': giá hiện tại, ngày mua, giá mua, số ngày giữ lệnh, lãi/lỗ,
+    thanh khoản — header màu theo lãi/lỗ."""
+    pnl = s.get("pnl")
+    accent = (34, 197, 94) if (pnl is None or pnl >= 0) else (239, 68, 68)
+    rows = [
+        ("Giá hiện tại", fmt_price(s["price"])),
+        ("Ngày mua",     s.get("buy_date") or "—"),
+        ("Giá mua",      fmt_price(s["buy_price"]) if s.get("buy_price") else "—"),
+        ("Giữ lệnh",     f"{s['hold_days']} ngày" if s.get("hold_days") is not None else "—"),
+        ("Lãi / lỗ",     f"{pnl:+.1f}%" if pnl is not None else "—"),
+        ("Thanh khoản",  f"{s['turnover_ty']:.1f} tỷ"),
+    ]
+    return _draw_info_card(path, f"TOP {rank}", s["ticker"], accent, rows, highlight_label="Lãi / lỗ")
+
+
+def _draw_signal_card(path: Path, rank: int, s: dict) -> Path:
+    """Card style 'buy_signal'/'sell_signal': giá tín hiệu, BiasNorm, hỗ trợ/kháng cự,
+    thanh khoản, ngày — header màu xanh (MUA) / đỏ (BÁN) theo loại tín hiệu."""
+    is_buy = s["signal_type"] == "MUA"
+    accent = (34, 197, 94) if is_buy else (239, 68, 68)
+    sr = (f"{fmt_price(s['support'])} / {fmt_price(s['resistance'])}"
+          if s.get("support") and s.get("resistance") else "—")
+    rows = [
+        ("Giá tín hiệu",      fmt_price(s["price"])),
+        ("BiasNorm",          f"{s['bias']:.0f}/100"),
+        ("Hỗ trợ / Kháng cự", sr),
+        ("Thanh khoản",       f"{s['turnover_ty']:.1f} tỷ"),
+        ("Ngày tín hiệu",     s["date_str"]),
+    ]
+    return _draw_info_card(path, f"#{rank} · TÍN HIỆU {s['signal_type']}", s["ticker"], accent, rows)
+
+
+def _stock_summary_line(i: int, s: dict) -> str:
+    """Dòng số liệu thật (không qua AI) — dùng làm ngữ cảnh cho AI và làm fallback
+    caption khi AI không trả về hoặc đổi sai mã CK."""
+    buy_info  = f", mua {s['buy_date']} @ {fmt_price(s['buy_price'])}" if s.get("buy_date") and s.get("buy_price") else ""
+    hold_info = f", giữ {s['hold_days']} ngày" if s.get("hold_days") is not None else ""
+    pnl_info  = f", lãi/lỗ {s['pnl']:+.1f}%" if s.get("pnl") is not None else ""
+    return (
+        f"{i}. {s['ticker']} — giá {fmt_price(s['price'])}{buy_info}{hold_info}{pnl_info}, "
+        f"thanh khoản {s['turnover_ty']:.1f} tỷ"
+    )
+
+
 def _build_top_stocks_post(out_dir: Path, n_stocks: int = 5) -> tuple[list[Path], dict]:
-    """Style 'top': lấy top N mã vùng xanh (BiasNorm/thanh khoản) từ scan_results —
-    không tốn tin tức, mỗi mã 1 ảnh card + 1 caption riêng bằng số liệu thật."""
+    """Style 'top': lấy top N mã vùng xanh (thanh khoản/BiasNorm) từ scan_results —
+    không tốn tin tức, mỗi mã 1 ảnh card tiếng Việt đầy đủ số liệu + 1 caption riêng."""
     from scanner.database import load_scan_results
     df = load_scan_results()
     if df.empty:
         raise RuntimeError("Chưa có dữ liệu scan để tạo bài Top mã")
 
     trend_col = "short_trend" if "short_trend" in df.columns else "trend"
+    p = "short_" if trend_col == "short_trend" else ""
     subset = df[df[trend_col] == 1] if trend_col in df.columns else df
     if subset.empty:
         raise RuntimeError("Không có mã nào trong vùng xanh để tạo bài Top mã")
@@ -290,17 +389,29 @@ def _build_top_stocks_post(out_dir: Path, n_stocks: int = 5) -> tuple[list[Path]
     image_paths: list[Path] = []
     stock_lines: list[str] = []
     stocks: list[dict] = []
-    for i, (_, row) in enumerate(top.iterrows(), 1):
-        ticker  = str(row["ticker"])
-        price   = float(row.get("close") or 0)
-        bias    = float(row.get("bias_norm") or 0)
-        tk_ty   = float(row.get("turnover") or 0) / 1e9
-        path = _draw_stock_card(out_dir / f"{i}.jpg", i, ticker, price, bias, tk_ty)
-        image_paths.append(path)
-        stocks.append({"ticker": ticker, "price": price, "bias": bias, "turnover_ty": tk_ty})
-        stock_lines.append(f"{i}. {ticker} — giá {fmt_price(price)}, BiasNorm {bias:.0f}/100, thanh khoản {tk_ty:.1f} tỷ")
+    today_date = date.today()
 
-    today = date.today().strftime("%d/%m/%Y")
+    for i, (_, row) in enumerate(top.iterrows(), 1):
+        buy_date_raw = _val(row, f"{p}last_signal_date", "last_signal_date")
+        buy_date     = _to_date(buy_date_raw)
+        buy_price    = _val(row, f"{p}last_signal_price", "last_signal_price")
+        pnl          = _val(row, f"{p}signal_pnl_pct", "signal_pnl_pct")
+
+        stock = {
+            "ticker":      str(row["ticker"]),
+            "price":       float(_val(row, "close") or 0),
+            "turnover_ty": float(_val(row, "turnover") or 0) / 1e9,
+            "buy_date":    fmt_date(buy_date_raw) if buy_date_raw else None,
+            "buy_price":   float(buy_price) if buy_price else None,
+            "hold_days":   (today_date - buy_date).days if buy_date else None,
+            "pnl":         float(pnl) if pnl is not None else None,
+        }
+        path = _draw_stock_card(out_dir / f"{i}.jpg", i, stock)
+        image_paths.append(path)
+        stocks.append(stock)
+        stock_lines.append(_stock_summary_line(i, stock))
+
+    today = today_date.strftime("%d/%m/%Y")
     n = len(stocks)
     img_spec = "\n".join(
         f"IMG{i}: [1 câu mô tả đúng mã #{i} bằng CHÍNH XÁC số liệu đã cho, không markdown]"
@@ -336,6 +447,105 @@ def _build_top_stocks_post(out_dir: Path, n_stocks: int = 5) -> tuple[list[Path]
     ]
     if not hook and not caption:
         hook = f"Top {n} mã vùng xanh mạnh nhất hôm nay"
+        caption = " | ".join(stock_lines)
+
+    return image_paths, {"hook": hook, "caption": caption, "image_captions": image_captions}
+
+
+def _signal_summary_line(i: int, s: dict) -> str:
+    """Dòng số liệu thật (không qua AI) — dùng làm ngữ cảnh cho AI và làm fallback
+    caption khi AI không trả về hoặc đổi sai mã CK."""
+    sr_info = (f", hỗ trợ {fmt_price(s['support'])} / kháng cự {fmt_price(s['resistance'])}"
+               if s.get("support") and s.get("resistance") else "")
+    return (
+        f"{i}. {s['ticker']} — tín hiệu {s['signal_type']} @ {fmt_price(s['price'])}, "
+        f"BiasNorm {s['bias']:.0f}/100{sr_info}, thanh khoản {s['turnover_ty']:.1f} tỷ"
+    )
+
+
+def _build_signal_post(out_dir: Path, signal_type: str, n_signals: int = 5) -> tuple[list[Path], dict]:
+    """Style 'buy_signal'/'sell_signal': lấy tối đa N mã vừa phát sinh ĐÚNG 1 loại tín
+    hiệu (MUA hoặc BÁN, không gộp) trong ngày hôm nay từ scan_results — không tốn tin
+    tức, mỗi mã 1 ảnh card + 1 caption riêng."""
+    from scanner.database import load_scan_results
+    df = load_scan_results()
+    if df.empty:
+        raise RuntimeError("Chưa có dữ liệu scan để tạo bài Tín hiệu")
+
+    date_col  = "short_last_signal_date"  if "short_last_signal_date"  in df.columns else "last_signal_date"
+    type_col  = "short_last_signal_type"  if "short_last_signal_type"  in df.columns else "last_signal_type"
+    price_col = "short_last_signal_price" if "short_last_signal_price" in df.columns else "last_signal_price"
+
+    today_date = date.today()
+    sig_dates  = df[date_col].apply(_to_date)
+    mask = (sig_dates == today_date) & (df[type_col] == signal_type)
+    todays = df[mask]
+    if todays.empty:
+        raise RuntimeError(f"Hôm nay chưa có tín hiệu {signal_type} nào phát sinh")
+
+    top = todays.nlargest(min(n_signals, len(todays)), "turnover") if "turnover" in todays.columns \
+          else todays.head(n_signals)
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    image_paths: list[Path] = []
+    stock_lines: list[str] = []
+    stocks: list[dict] = []
+    today_str = today_date.strftime("%d/%m/%Y")
+
+    for i, (_, row) in enumerate(top.iterrows(), 1):
+        support    = _val(row, "support")
+        resistance = _val(row, "resistance")
+        stock = {
+            "ticker":      str(row["ticker"]),
+            "signal_type": str(_val(row, type_col) or ""),
+            "price":       float(_val(row, price_col, "close") or 0),
+            "bias":        float(_val(row, "bias_norm") or 0),
+            "turnover_ty": float(_val(row, "turnover") or 0) / 1e9,
+            "support":     float(support) if support else None,
+            "resistance":  float(resistance) if resistance else None,
+            "date_str":    today_str,
+        }
+        path = _draw_signal_card(out_dir / f"{i}.jpg", i, stock)
+        image_paths.append(path)
+        stocks.append(stock)
+        stock_lines.append(_signal_summary_line(i, stock))
+
+    n = len(stocks)
+    img_spec = "\n".join(
+        f"IMG{i}: [1 câu mô tả đúng mã #{i} bằng CHÍNH XÁC số liệu đã cho, không markdown]"
+        for i in range(1, n + 1)
+    )
+    action_word = "mua vào" if signal_type == "MUA" else "chốt lời/cắt lỗ"
+    prompt = textwrap.dedent(f"""
+        Bạn là biên tập nội dung TikTok viral về chứng khoán Việt Nam.
+        Ngày: {today_str}
+
+        DANH SÁCH {n} MÃ VỪA CÓ TÍN HIỆU {signal_type} HÔM NAY (chỉ dùng đúng số liệu này,
+        không bịa thêm):
+        {chr(10).join(stock_lines)}
+
+        Viết nội dung video TikTok điểm tín hiệu {signal_type} trong ngày (nhà đầu tư nên
+        cân nhắc {action_word} các mã này), theo đúng định dạng:
+
+        HOOK: [1 câu mở đầu SIÊU giật gân về các tín hiệu {signal_type} hôm nay, dưới 15 từ,
+        không markdown, không emoji]
+        CAPTION: [đoạn giới thiệu các tín hiệu, 3-4 câu, kết thúc bằng 6-8 hashtag tiếng
+        Việt viral về chứng khoán, không markdown]
+        {img_spec}
+
+        Yêu cầu bắt buộc:
+        - Tiếng Việt có dấu đầy đủ
+        - KHÔNG bịa thêm số liệu ngoài danh sách đã cho
+        - Không mở đầu bằng "Dưới đây là"
+    """).strip()
+
+    hook, caption, image_captions = _call_ai_sections(prompt, n)
+    image_captions = [
+        cap if stocks[i]["ticker"] in cap else stock_lines[i]
+        for i, cap in enumerate(image_captions)
+    ]
+    if not hook and not caption:
+        hook = f"{n} mã vừa có tín hiệu {signal_type} hôm nay"
         caption = " | ".join(stock_lines)
 
     return image_paths, {"hook": hook, "caption": caption, "image_captions": image_captions}
@@ -439,6 +649,10 @@ def create_tiktok_posts(
                 image_paths, content = _build_top_stocks_post(out_dir)
             elif post_style == "chart":
                 image_paths, content = _build_chart_post(out_dir)
+            elif post_style == "buy_signal":
+                image_paths, content = _build_signal_post(out_dir, signal_type="MUA")
+            elif post_style == "sell_signal":
+                image_paths, content = _build_signal_post(out_dir, signal_type="BÁN")
             else:
                 raise ValueError(f"Style không hợp lệ: {post_style}")
         except Exception as e:

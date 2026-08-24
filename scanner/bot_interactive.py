@@ -164,9 +164,19 @@ def _kb_admin_menu(pending: int, active: int, blocked: int, trial: int = 0) -> d
             ],
             [{"text": "👥 Tất cả",                    "callback_data": "adm_list_all_0"}],
             [{"text": "📢 Quản lý Channels",          "callback_data": "admin_channels"}],
+            [{"text": "🎬 Tạo TikTok",                 "callback_data": "tiktok_menu"}],
             [{"text": "🔙 Menu chính",                 "callback_data": "main_menu"}],
         ]
     }
+
+
+def _kb_tiktok_styles() -> dict:
+    from scanner.tiktok_content import POST_STYLES
+    rows = [[{"text": "🎲 Ngẫu nhiên (mỗi bài 1 style)", "callback_data": "tiktok_run_random"}]]
+    for key, label in POST_STYLES.items():
+        rows.append([{"text": label, "callback_data": f"tiktok_run_{key}"}])
+    rows.append([{"text": "🔙 Admin Panel", "callback_data": "admin_panel"}])
+    return {"inline_keyboard": rows}
 
 
 def _kb_user_actions(target_id: str, current_status: str) -> dict:
@@ -658,6 +668,19 @@ def _handle_callback(token: str, cq: dict) -> None:
             f"⏳ Chờ duyệt: <b>{p}</b>  |  ✅ Active: <b>{a}</b>\n"
             f"⏱ Dùng thử: <b>{t}</b>  |  🚫 Chặn: <b>{b}</b>",
             _kb_admin_menu(p, a, b, t))
+
+    elif data == "tiktok_menu" and _is_admin(cid_str):
+        _edit(token, chat_id, message_id,
+            "🎬 <b>Tạo bài TikTok</b>\nChọn kiểu nội dung cho cả 5 bài:",
+            _kb_tiktok_styles())
+
+    elif data.startswith("tiktok_run_") and _is_admin(cid_str):
+        raw_style = data[len("tiktok_run_"):]
+        style = None if raw_style == "random" else raw_style
+        from scanner.tiktok_content import POST_STYLES
+        label = POST_STYLES.get(style, "🎲 random mỗi bài") if style else "🎲 random mỗi bài"
+        _reply(token, chat_id, f"📱 Đang tạo 5 bài TikTok — {label}... (~2-3 phút)")
+        _cmd_tiktok_post(token, chat_id, style=style)
 
     elif data.startswith("adm_list_") and _is_admin(cid_str):
         parts_d = data.split("_")
