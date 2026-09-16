@@ -762,10 +762,10 @@ def _gen_caption(ticker: str, page_label: str, img_bytes: bytes) -> str:
     prompt = f"{focus} {_AI_STYLE}"
 
     b64  = base64.b64encode(img_bytes).decode()
-    body = _vision_groq(b64, prompt) or _vision_openai(b64, prompt)
+    body = _vision_groq(b64, prompt) or _vision_gemini(b64, prompt) or _vision_openai(b64, prompt)
 
     if not body:
-        logger.warning(f"Vision caption [{ticker}/{slug}]: cả Groq lẫn OpenAI đều thất bại")
+        logger.warning(f"Vision caption [{ticker}/{slug}]: cả Groq, Gemini lẫn OpenAI đều thất bại")
         return header
 
     caption = f"{header}\n\n{body}"
@@ -803,10 +803,14 @@ def _gen_caption_pair(ticker: str, img_seasonal: bytes, img_forecast: bytes) -> 
     b64_s = base64.b64encode(img_seasonal).decode()
     b64_f = base64.b64encode(img_forecast).decode()
 
-    body = _vision_groq_pair(b64_s, b64_f, _PROMPT_PAIR) or _vision_openai_pair(b64_s, b64_f, _PROMPT_PAIR)
+    body = (
+        _vision_groq_pair(b64_s, b64_f, _PROMPT_PAIR)
+        or _vision_gemini_pair(b64_s, b64_f, _PROMPT_PAIR)
+        or _vision_openai_pair(b64_s, b64_f, _PROMPT_PAIR)
+    )
 
     if not body:
-        logger.warning(f"Vision pair [{ticker}]: cả Groq lẫn OpenAI đều thất bại")
+        logger.warning(f"Vision pair [{ticker}]: cả Groq, Gemini lẫn OpenAI đều thất bại")
         return header
 
     caption = f"{header}\n\n{body}"
@@ -814,6 +818,29 @@ def _gen_caption_pair(ticker: str, img_seasonal: bytes, img_forecast: bytes) -> 
         disclaimer = "Thông tin chỉ mang tính tham khảo, không phải khuyến nghị đầu tư."
         caption    = caption[:980] + "...\n" + disclaimer
     return caption
+
+
+def _groq_chat_with_retry(client, kwargs: dict):
+    """Gọi Groq chat completion; nếu dính rate limit theo phút (429 OTPM — dễ
+    gặp khi gửi liên tiếp nhiều ảnh trong 1 phiên report) thì đợi rồi thử lại
+    1 lần thay vì rớt thẳng sang OpenAI (trả phí) ngay lập tức."""
+    from groq import RateLimitError
+
+    def _call(**extra):
+        return client.chat.completions.create(**kwargs, **extra)
+
+    try:
+        return _call(reasoning_format="hidden", reasoning_effort="none")
+    except RateLimitError:
+        time.sleep(20)
+        return _call(reasoning_format="hidden", reasoning_effort="none")
+    except Exception:
+        pass
+    try:
+        return _call()
+    except RateLimitError:
+        time.sleep(20)
+        return _call()
 
 
 def _strip_reasoning(text: str) -> str:
@@ -842,21 +869,47 @@ def _vision_groq_pair(b64_s: str, b64_f: str, prompt: str) -> str | None:
             temperature=0.4,
         )
         client = Groq(api_key=GROQ_API_KEY)
-        try:
-            # Tắt hẳn chain-of-thought (model có thể là reasoning model vd Qwen3) để
-            # tránh nuốt hết token vào <think> rồi bị cắt giữa chừng. Một số model
-            # không hỗ trợ 2 tham số này.
-            resp = client.chat.completions.create(
-                **kwargs, reasoning_format="hidden", reasoning_effort="none",
-            )
-        except Exception:
-            resp = client.chat.completions.create(**kwargs)
+        resp = _groq_chat_with_retry(client, kwargs)
         body = _strip_reasoning(resp.choices[0].message.content or "")
         if not body:
             raise ValueError("caption rỗng sau khi loại bỏ reasoning")
         return body
     except Exception as e:
         logger.warning(f"Groq vision pair failed: {e} — thử OpenAI")
+        return None
+
+
+def _vision_gemini_pair(b64_s: str, b64_f: str, prompt: str) -> str | None:
+    """Fallback free thứ 2 (sau Groq, trước OpenAI trả phí): Gemini flash hỗ trợ ảnh."""
+    try:
+        from google import genai
+        from google.genai import types
+        from scanner.config import GEMINI_API_KEY
+        if not GEMINI_API_KEY:
+            return None
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        img_s = types.Part.from_bytes(data=base64.b64decode(b64_s), mime_type="image/png")
+        img_f = types.Part.from_bytes(data=base64.b64decode(b64_f), mime_type="image/png")
+        # gemini-2.0-flash dự phòng nếu gemini-3.6-flash lỗi (xem ai_analyst._call_gemini)
+        for model_name in ("gemini-3.6-flash", "gemini-2.0-flash"):
+            try:
+                resp = client.models.generate_content(
+                    model=model_name,
+                    contents=[img_s, img_f, prompt],
+                    config=types.GenerateContentConfig(
+                        temperature=0.4,
+                        max_output_tokens=400,
+                        thinking_config=types.ThinkingConfig(thinking_level=types.ThinkingLevel.MINIMAL),
+                    ),
+                )
+                text = (resp.text or "").strip()
+                if text:
+                    return text
+            except Exception as e:
+                logger.warning(f"Gemini vision pair [{model_name}] failed: {e}")
+        return None
+    except Exception as e:
+        logger.warning(f"Gemini vision pair failed: {e} — thử OpenAI")
         return None
 
 
@@ -898,18 +951,45 @@ def _vision_groq(b64: str, prompt: str) -> str | None:
             temperature=0.4,
         )
         client = Groq(api_key=GROQ_API_KEY)
-        try:
-            resp = client.chat.completions.create(
-                **kwargs, reasoning_format="hidden", reasoning_effort="none",
-            )
-        except Exception:
-            resp = client.chat.completions.create(**kwargs)
+        resp = _groq_chat_with_retry(client, kwargs)
         body = _strip_reasoning(resp.choices[0].message.content or "")
         if not body:
             raise ValueError("caption rỗng sau khi loại bỏ reasoning")
         return body
     except Exception as e:
         logger.warning(f"Groq vision failed: {e} — thử OpenAI")
+        return None
+
+
+def _vision_gemini(b64: str, prompt: str) -> str | None:
+    """Fallback free thứ 2 (sau Groq, trước OpenAI trả phí): Gemini flash hỗ trợ ảnh."""
+    try:
+        from google import genai
+        from google.genai import types
+        from scanner.config import GEMINI_API_KEY
+        if not GEMINI_API_KEY:
+            return None
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        img_part = types.Part.from_bytes(data=base64.b64decode(b64), mime_type="image/png")
+        for model_name in ("gemini-3.6-flash", "gemini-2.0-flash"):
+            try:
+                resp = client.models.generate_content(
+                    model=model_name,
+                    contents=[img_part, prompt],
+                    config=types.GenerateContentConfig(
+                        temperature=0.4,
+                        max_output_tokens=300,
+                        thinking_config=types.ThinkingConfig(thinking_level=types.ThinkingLevel.MINIMAL),
+                    ),
+                )
+                text = (resp.text or "").strip()
+                if text:
+                    return text
+            except Exception as e:
+                logger.warning(f"Gemini vision [{model_name}] failed: {e}")
+        return None
+    except Exception as e:
+        logger.warning(f"Gemini vision failed: {e} — thử OpenAI")
         return None
 
 
