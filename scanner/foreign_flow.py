@@ -472,6 +472,28 @@ def _strip_reasoning(text: str) -> str:
     return text.strip()
 
 
+def _groq_chat_with_retry(client, kwargs: dict):
+    """Gọi Groq chat completion; nếu dính rate limit theo phút (429 OTPM) thì
+    đợi rồi thử lại 1 lần thay vì rớt thẳng sang fallback ngay lập tức."""
+    from groq import RateLimitError
+
+    def _call(**extra):
+        return client.chat.completions.create(**kwargs, **extra)
+
+    try:
+        return _call(reasoning_format="hidden", reasoning_effort="none")
+    except RateLimitError:
+        time.sleep(20)
+        return _call(reasoning_format="hidden", reasoning_effort="none")
+    except Exception:
+        pass
+    try:
+        return _call()
+    except RateLimitError:
+        time.sleep(20)
+        return _call()
+
+
 def _vision_groq(section: Section, img_bytes: bytes) -> str | None:
     try:
         from groq import Groq
@@ -495,27 +517,52 @@ def _vision_groq(section: Section, img_bytes: bytes) -> str | None:
                     },
                 ],
             }],
-            # Ảnh dashboard nhiều chi tiết → cần budget lớn để reasoning model
-            # (vd Qwen3) không bị cắt giữa chừng trước khi ra câu trả lời hiển thị
-            max_tokens=3000,
+            # Prompt yêu cầu chỉ 3-4 câu ngắn — 900 token là dư dả. Không để cao hơn:
+            # tài khoản Groq hiện giới hạn 1000 output-tokens/phút (OTPM) cho model này,
+            # và Groq tính giới hạn theo max_tokens yêu cầu (không phải token thực dùng)
+            # nên max_tokens=3000 cũ luôn bị 429 100% các lần gọi, không phải lỗi tạm thời.
+            max_tokens=900,
             temperature=0.4,
         )
-        try:
-            # Model có thể là reasoning model (vd Qwen3) — tắt hẳn chain-of-thought
-            # (reasoning_effort="none") để trả lời ngay, tránh nuốt hết token vào <think>
-            # rồi bị cắt giữa chừng. reasoning_format="hidden" phòng khi model vẫn suy luận.
-            # Một số model không hỗ trợ 2 tham số này.
-            resp = client.chat.completions.create(
-                **kwargs, reasoning_format="hidden", reasoning_effort="none",
-            )
-        except Exception:
-            resp = client.chat.completions.create(**kwargs)
+        resp = _groq_chat_with_retry(client, kwargs)
         body = _strip_reasoning(resp.choices[0].message.content or "")
         if not body:
             raise ValueError("caption rỗng sau khi loại bỏ reasoning")
         return body
     except Exception as e:
-        logger.warning(f"Groq vision caption [{section.tab}]: {e} — thử OpenAI")
+        logger.warning(f"Groq vision caption [{section.tab}]: {e} — thử Gemini")
+        return None
+
+
+def _vision_gemini(section: Section, img_bytes: bytes) -> str | None:
+    """Fallback free thứ 2 (sau Groq, trước OpenAI trả phí): Gemini flash hỗ trợ ảnh."""
+    try:
+        from google import genai
+        from google.genai import types
+        from scanner.config import GEMINI_API_KEY
+        if not GEMINI_API_KEY:
+            return None
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        img_part = types.Part.from_bytes(data=img_bytes, mime_type="image/png")
+        for model_name in ("gemini-3.6-flash", "gemini-2.0-flash"):
+            try:
+                resp = client.models.generate_content(
+                    model=model_name,
+                    contents=[img_part, build_prompt(section)],
+                    config=types.GenerateContentConfig(
+                        temperature=0.4,
+                        max_output_tokens=900,
+                        thinking_config=types.ThinkingConfig(thinking_level=types.ThinkingLevel.MINIMAL),
+                    ),
+                )
+                text = (resp.text or "").strip()
+                if text:
+                    return text
+            except Exception as e:
+                logger.warning(f"Gemini vision caption [{section.tab}/{model_name}]: {e}")
+        return None
+    except Exception as e:
+        logger.warning(f"Gemini vision caption [{section.tab}]: {e} — thử OpenAI")
         return None
 
 
@@ -548,7 +595,11 @@ def _gen_caption(section: Section, img_bytes: bytes) -> str:
     today  = datetime.now(ICT).strftime("%d/%m/%Y")
     header = f"{section.icon} <b>{section.tab} — {today}</b>"
 
-    body = _vision_groq(section, img_bytes) or _vision_openai(section, img_bytes)
+    body = (
+        _vision_groq(section, img_bytes)
+        or _vision_gemini(section, img_bytes)
+        or _vision_openai(section, img_bytes)
+    )
     if not body:
         return header
 
