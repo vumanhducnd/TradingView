@@ -14,7 +14,9 @@ def test_groq_model_config_uses_vision_default(monkeypatch):
     config = importlib.import_module("scanner.config")
     importlib.reload(config)
     # Default vision model should now be Qwen per request
-    assert config.GROQ_VISION_MODEL == "qwen/qwen3.6-27b"
+    # qwen3.6-27b tra 404 "model not found" tren tai khoan Groq hien tai;
+    # qwen3.8-27b la model image+text thuc su kha dung (input_modalities: text, image)
+    assert config.GROQ_VISION_MODEL == "qwen/qwen3.8-27b"
 
 
 def test_groq_model_config_falls_back_for_unsupported_model(monkeypatch):

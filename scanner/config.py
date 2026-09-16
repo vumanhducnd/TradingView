@@ -59,7 +59,7 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 # llama-3.3-70b-versatile bị Groq decommission 16/08/2026 — chuyển sang model
 # thay thế chính thức Groq khuyến nghị (xem console.groq.com/docs/deprecations)
 _DEFAULT_GROQ_MODEL = "openai/gpt-oss-120b"
-_DEFAULT_GROQ_VISION_MODEL = "qwen/qwen3.6-27b"  # Use Qwen vision model by default for image captioning
+_DEFAULT_GROQ_VISION_MODEL = "qwen/qwen3.8-27b"  # Qwen vision model — qwen3.6-27b 404 "model not found" trên tài khoản hiện tại, qwen3.8-27b mới là model image+text thực sự khả dụng (kiểm tra qua /openai/v1/models)
 
 # Models we consider unsupported for use (text-only or blocked)
 _UNSUPPORTED_GROQ_MODELS = {
