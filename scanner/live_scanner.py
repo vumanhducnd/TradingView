@@ -3,7 +3,7 @@ Live scanner — chạy trong phiên giao dịch (9:00–15:15 ICT).
 
 Modes:
   pre       — 7:00 ICT: báo cáo sáng dùng data DB hôm qua (1 lần, thoát)
-  session   — 9:00–15:15 ICT: loop 3 phút, price_board batch, upsert DB, Slack flip alert
+  session   — 9:00–15:15 ICT: loop 3 phút, bulk equity quote, upsert DB, Slack flip alert
   morning   — 9:00–12:00 ICT: loop cũ (giữ tương thích)
   afternoon — 12:00–15:15 ICT: loop cũ (giữ tương thích)
 
@@ -21,7 +21,8 @@ from typing import Optional
 
 import pandas as pd
 import scanner.utils  # noqa: patch SSL trước
-from scanner.data_fetcher import _set_api_key, _snap_to_tick, load_all_from_db
+from scanner.config import configure_vnstock
+from scanner.data_fetcher import _snap_to_tick, load_all_from_db, normalize_equity_quotes
 from scanner.database import bulk_upsert_today, get_top300_thanh_khoan, get_vn100_watchlist, load_all_ohlcv_bulk, load_ohlcv, upsert_ohlcv
 from scanner.indicators import calc_bias_norm, calc_supertrend, calc_supertrend_next, get_supertrend_state
 from scanner.telegram_bot import send_message, send_to_user
@@ -146,7 +147,6 @@ def run_pre_session(force: bool = False) -> None:
     """Báo cáo 7:00 ICT: tính ST riêng dài hạn & ngắn hạn, gửi 2 bot."""
     if not force and not _wait_until_ict(7, 0, abort_after_hour=8, abort_after_minute=30):
         return
-    _set_api_key()
     logger.info("=== Pre-session scan (7:00 ICT) ===")
 
     tickers = get_top300_thanh_khoan(n=300)
@@ -279,7 +279,6 @@ def run_realtime(mode: str, interval: int = SCAN_INTERVAL_SEC) -> None:
     Loop quét ST real-time trong phiên.
     Mỗi vòng: fetch bar hôm nay (O/H/L/C/V) → ghép vào lịch sử → tính lại ST.
     """
-    _set_api_key()
     until_h, until_m = MODE_UNTIL[mode]
     logger.info(f"=== Live Scanner [{mode.upper()}] START — đến {until_h:02d}:{until_m:02d} ICT ===")
 
@@ -362,60 +361,29 @@ def run_realtime(mode: str, interval: int = SCAN_INTERVAL_SEC) -> None:
 
 def _fetch_all_today_bars(tickers: list[str]) -> dict[str, dict]:
     """
-    Fetch bar hôm nay cho tất cả tickers bằng price_board (1 API call).
-    Fallback sang per-ticker nếu price_board thất bại.
+    Fetch bar hôm nay cho tất cả tickers bằng bulk equity quote.
+    Fallback sang per-ticker nếu quote thất bại.
     """
-    result = _fetch_via_price_board(tickers)
+    result = _fetch_via_equity_quote(tickers)
     if result:
-        logger.info(f"  price_board: {len(result)}/{len(tickers)} mã")
+        logger.info(f"  equity quote: {len(result)}/{len(tickers)} mã")
         return result
 
-    logger.warning("price_board thất bại, fallback per-ticker...")
+    logger.warning("equity quote thất bại, fallback per-ticker...")
     return _fetch_via_history(tickers)
 
 
-def _fetch_via_price_board(tickers: list[str]) -> dict[str, dict]:
+def _fetch_via_equity_quote(tickers: list[str]) -> dict[str, dict]:
     """
     1 API call trả về session O/H/L/C/V cho toàn bộ danh sách.
-    price_board trả về MultiIndex columns — flatten rồi map về chuẩn.
+    Chuẩn hóa cột quote về schema OHLCV của scanner.
     """
+    vnstock = configure_vnstock("market.equity.quote")
     try:
-        from vnstock import Trading
-        t = Trading(source="VCI")
-        df = t.price_board(symbols_list=tickers)
+        df = vnstock.Market().equity.quote(tickers)
         if df is None or df.empty:
             return {}
-
-        # Flatten MultiIndex: ('match', 'highest') → 'match.highest'
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = [
-                f"{a}.{b}".lower().strip() if b and str(b) != "nan" else str(a).lower().strip()
-                for a, b in df.columns
-            ]
-        else:
-            df.columns = [str(c).lower().strip() for c in df.columns]
-
-        # Map tên cột price_board → chuẩn OHLCV
-        FIELD_MAP = {
-            "ticker": ["listing.symbol"],
-            "open":   ["match.open_price"],
-            "high":   ["match.highest"],
-            "low":    ["match.lowest"],
-            "close":  ["match.match_price"],
-            "volume": ["match.accumulated_volume"],
-        }
-        col_map: dict[str, str] = {}
-        for target, candidates in FIELD_MAP.items():
-            for c in candidates:
-                if c in df.columns:
-                    col_map[c] = target
-                    break
-
-        df = df.rename(columns=col_map)
-        required = {"ticker", "open", "high", "low", "close", "volume"}
-        if not required.issubset(df.columns):
-            logger.warning(f"price_board thiếu cột: {required - set(df.columns)}")
-            return {}
+        df = normalize_equity_quotes(df)
 
         result: dict[str, dict] = {}
         no_hl = 0
@@ -431,7 +399,7 @@ def _fetch_via_price_board(tickers: list[str]) -> dict[str, dict]:
                     continue
                 if high == low == close:
                     no_hl += 1          # chưa có H/L thực (ATO hoặc 1 lệnh đầu)
-                # price_board trả về VND thực (41500), DB lưu VND/1000 (41.5) — raw, không snap
+                # DB stores VND/1000; keep quote values raw without tick snapping.
                 result[ticker] = {
                     "open":   (float(row["open"] or 0) or close) / 1000,
                     "high":   high  / 1000,
@@ -442,43 +410,40 @@ def _fetch_via_price_board(tickers: list[str]) -> dict[str, dict]:
             except (TypeError, ValueError):
                 continue
         if no_hl:
-            logger.debug(f"price_board: {no_hl} mã H=L=C (chưa có session H/L)")
+            logger.debug(f"equity quote: {no_hl} mã H=L=C (chưa có session H/L)")
         return result
     except Exception as e:
-        logger.debug(f"price_board error: {e}")
+        logger.warning(f"equity quote failed: {e}")
         return {}
 
 
 def _fetch_via_history(tickers: list[str]) -> dict[str, dict]:
-    """Fallback: per-ticker Quote.history() với delay 1s/req."""
+    """Fallback: per-ticker OHLCV fetch with the configured source."""
     today = date.today().strftime("%Y-%m-%d")
     result: dict[str, dict] = {}
+    vnstock = configure_vnstock("market.equity.ohlcv")
     for ticker in tickers:
         try:
-            from vnstock.api.quote import Quote
-            for source in ["VCI", "TCBS"]:
-                try:
-                    df = Quote(symbol=ticker, source=source).history(
-                        start=today, end=today, interval="1D"
-                    )
-                    if df is None or df.empty:
-                        continue
-                    df.columns = [c.lower() for c in df.columns]
-                    row = df.iloc[-1]
-                    close = float(row.get("close", row.get("c", 0)))
-                    if close > 0:
-                        result[ticker] = {
-                            "open":   _snap_to_tick(float(row.get("open",   close))),
-                            "high":   _snap_to_tick(float(row.get("high",   close))),
-                            "low":    _snap_to_tick(float(row.get("low",    close))),
-                            "close":  _snap_to_tick(close),
-                            "volume": float(row.get("volume", 0)),
-                        }
-                        break
-                except Exception:
-                    continue
-        except Exception:
-            pass
+            df = vnstock.Market().equity(ticker).ohlcv(
+                start=today,
+                end=today,
+                interval="1D",
+            )
+            if df is None or df.empty:
+                continue
+            df.columns = [str(c).lower() for c in df.columns]
+            row = df.iloc[-1]
+            close = float(row.get("close", 0))
+            if close > 0:
+                result[ticker] = {
+                    "open":   _snap_to_tick(float(row.get("open", close))),
+                    "high":   _snap_to_tick(float(row.get("high", close))),
+                    "low":    _snap_to_tick(float(row.get("low", close))),
+                    "close":  _snap_to_tick(close),
+                    "volume": float(row.get("volume", 0)),
+                }
+        except Exception as e:
+            logger.warning(f"{ticker}: OHLCV fallback failed: {e}")
         time.sleep(FETCH_DELAY_LIVE)
     return result
 
@@ -643,12 +608,11 @@ def run_session(interval: int = 180, session: str = "full") -> None:
     session: 'morning' (9:00-11:30) | 'afternoon' (13:00-14:45) | 'full' (cả ngày)
     """
     label = {"morning": "Sáng (9:00-11:30)", "afternoon": "Chiều (13:00-14:45)", "full": "Cả ngày"}.get(session, session)
-    _set_api_key()
     logger.info(f"=== Session Scanner [{label}] START ===")
 
     from scanner.database import get_watchlist, _ensure_signals_schema
     _ensure_signals_schema()   # đảm bảo các cột mới (signal_price, signal_st, is_fakeout) tồn tại
-    all_tickers  = get_watchlist()                  # toàn bộ để fetch price_board (1 API call)
+    all_tickers  = get_watchlist()                  # toàn bộ để fetch equity quote (1 API call)
     top300       = get_top300_thanh_khoan(n=300)    # top 300 để tính ST + alert + upsert DB
     top300_set   = set(top300)
     if not top300:
@@ -738,8 +702,8 @@ def run_session(interval: int = 180, session: str = "full") -> None:
         logger.info(f"[{now.strftime('%H:%M')}] Scan #{scan_count}{' [ATC - no signal]' if is_atc else ''}...")
 
         # ── Fetch toàn bộ watchlist (1 API call) ──
-        today_bars = _fetch_via_price_board(all_tickers)
-        logger.info(f"  price_board: {len(today_bars)}/{len(all_tickers)} bars")
+        today_bars = _fetch_via_equity_quote(all_tickers)
+        logger.info(f"  equity quote: {len(today_bars)}/{len(all_tickers)} bars")
 
         # ── Bulk upsert chỉ top 300 (cuối phiên run_scan_only upsert toàn bộ) ──
         bars_to_upsert = {t: v for t, v in today_bars.items() if t in top300_set}
@@ -941,7 +905,6 @@ def _run_session_once() -> None:
     logger.info("[TEST] SESSION SCANNER — 1 CYCLE")
     logger.info("=" * 55)
 
-    _set_api_key()
     from scanner.database import get_watchlist
 
     # ── Bước 1: Watchlist ─────────────────────────────────
@@ -976,12 +939,12 @@ def _run_session_once() -> None:
     bear = sum(1 for s in st_states.values() if s["trend"] == -1)
     logger.info(f"[3/5] Init ST: {st_ok} OK / {st_fail} fail | Tang={bull} Giam={bear} ({_time.time()-t3:.1f}s)")
 
-    # ── Bước 4: Fetch price_board + Upsert DB ─────────────
+    # ── Bước 4: Fetch bulk equity quote + Upsert DB ───────
     t4 = _time.time()
-    logger.info(f"[4/5] price_board fetch {len(all_tickers)} ma...")
-    today_bars = _fetch_via_price_board(all_tickers)
+    logger.info(f"[4/5] equity quote fetch {len(all_tickers)} ma...")
+    today_bars = _fetch_via_equity_quote(all_tickers)
     t4b = _time.time()
-    logger.info(f"[4/5] price_board: {len(today_bars)}/{len(all_tickers)} bars ({t4b-t4:.1f}s)")
+    logger.info(f"[4/5] equity quote: {len(today_bars)}/{len(all_tickers)} bars ({t4b-t4:.1f}s)")
 
     n_upsert = bulk_upsert_today(today_bars, date.today())
     logger.info(f"[4/5] Upsert DB: {n_upsert} rows bulk (1 query) ({_time.time()-t4b:.1f}s)")

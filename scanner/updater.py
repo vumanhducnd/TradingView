@@ -10,7 +10,7 @@ import sys
 import time
 from datetime import date, timedelta
 
-from scanner.config import FETCH_DELAY, LOOKBACK_DAYS
+from scanner.config import FETCH_DELAY, LOOKBACK_DAYS, configure_vnstock
 from scanner.database import (
     get_all_last_dates,
     get_watchlist,
@@ -24,8 +24,8 @@ from scanner.utils import is_trading_day, logger
 def update_daily(force: bool = False) -> bool:
     """
     Fetch dữ liệu mới nhất cho tất cả ticker trong watchlist.
-    Dùng price_board bulk (1 API call) thay vì per-ticker.
-    Fallback sang per-ticker nếu price_board thất bại.
+    Dùng bulk equity quote (1 API call) thay vì per-ticker.
+    Fallback sang per-ticker nếu quote thất bại.
     Returns True nếu có ít nhất 1 ticker cập nhật thành công.
     """
     today = date.today()
@@ -49,20 +49,20 @@ def update_daily(force: bool = False) -> bool:
     logger.info(f"Daily update: {len(need_update)}/{len(tickers)} ticker cần cập nhật ngày {today}")
 
     # ── Thử bulk trước (1 API call) ──────────────────────────────────────────
-    from scanner.live_scanner import _fetch_via_price_board
+    from scanner.live_scanner import _fetch_via_equity_quote
     from scanner.database import bulk_upsert_today
 
-    bars = _fetch_via_price_board(need_update)
+    bars = _fetch_via_equity_quote(need_update)
     if bars:
         n = bulk_upsert_today(bars, today)
         logger.info(f"Bulk update OK: {n} rows, {len(bars)}/{len(need_update)} ticker")
         failed = [t for t in need_update if t not in bars]
         if failed:
-            logger.warning(f"price_board thiếu {len(failed)} ticker: {failed[:10]}...")
+            logger.warning(f"equity quote thiếu {len(failed)} ticker: {failed[:10]}...")
         return True
 
     # ── Fallback per-ticker ───────────────────────────────────────────────────
-    logger.warning("price_board thất bại, fallback per-ticker...")
+    logger.warning("equity quote thất bại, fallback per-ticker...")
     ok, failed = 0, []
 
     for i, ticker in enumerate(need_update, 1):
@@ -176,18 +176,18 @@ def run_scan_only() -> None:
                 logger.info(f"=== Xong (cache): {buy_n} MUA, {sell_n} BAN ===")
                 return
 
-    # ── Bước 0: Fetch giá cuối ngày cho tất cả mã (price_board) ──────────────
-    logger.info("Buoc 0/4: Fetch gia cuoi ngay tat ca ma qua price_board...")
+    # ── Bước 0: Fetch giá cuối ngày qua bulk equity quote ───────────────────
+    logger.info("Buoc 0/4: Fetch gia cuoi ngay tat ca ma qua equity quote...")
     try:
         from scanner.database import get_watchlist, bulk_upsert_today
-        from scanner.live_scanner import _fetch_via_price_board
+        from scanner.live_scanner import _fetch_via_equity_quote
         all_tickers = get_watchlist()
-        today_bars = _fetch_via_price_board(all_tickers)
+        today_bars = _fetch_via_equity_quote(all_tickers)
         if today_bars:
             n_upsert = bulk_upsert_today(today_bars, date.today())
             logger.info(f"  Upsert gia cuoi ngay: {n_upsert}/{len(all_tickers)} ma")
         else:
-            logger.warning("  price_board khong lay duoc gia — dung data DB hien co")
+            logger.warning("  equity quote khong lay duoc gia — dung data DB hien co")
     except Exception as e:
         logger.warning(f"  Fetch gia cuoi ngay that bai: {e}")
 
@@ -336,10 +336,9 @@ def run_scan_only() -> None:
 
 def _fetch_latest(ticker: str, start: date, end: date):
     """Fetch OHLCV từ vnstock API (chỉ vài bar gần nhất)."""
+    vnstock = configure_vnstock("market.equity.ohlcv")
     try:
-        from vnstock.api.quote import Quote
-        q = Quote(symbol=ticker, source="VCI")
-        df = q.history(
+        df = vnstock.Market().equity(ticker).ohlcv(
             start=start.strftime("%Y-%m-%d"),
             end=end.strftime("%Y-%m-%d"),
             interval="1D",
@@ -348,21 +347,7 @@ def _fetch_latest(ticker: str, start: date, end: date):
             from scanner.data_fetcher import _normalize_columns
             return _normalize_columns(df)
     except Exception as e:
-        logger.debug(f"{ticker} VCI: {e}")
-        # Fallback TCBS
-        try:
-            from vnstock.api.quote import Quote
-            q = Quote(symbol=ticker, source="TCBS")
-            df = q.history(
-                start=start.strftime("%Y-%m-%d"),
-                end=end.strftime("%Y-%m-%d"),
-                interval="1D",
-            )
-            if df is not None and not df.empty:
-                from scanner.data_fetcher import _normalize_columns
-                return _normalize_columns(df)
-        except Exception as e2:
-            logger.debug(f"{ticker} TCBS: {e2}")
+        logger.warning(f"{ticker}: vnstock OHLCV failed: {e}")
     return None
 
 

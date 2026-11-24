@@ -88,17 +88,16 @@ def _get_all_tickers() -> list[tuple[str, str]]:
 
 def _fetch_exchange_tickers_with_info(exchange: str) -> list[str]:
     """
-    Lấy danh sách ticker cổ phiếu từ 1 sàn dùng symbols_by_group.
+    Lấy danh sách ticker cổ phiếu từ danh mục niêm yết theo sàn.
     Lọc bỏ trái phiếu/chứng quyền (chỉ giữ mã 2-4 chữ cái).
     """
     import re
     stock_pattern = re.compile(r'^[A-Z]{2,4}$')
+    from scanner.config import configure_vnstock
 
+    vnstock = configure_vnstock("reference.equity.list")
     try:
-        from vnstock.api.listing import Listing
-        import pandas as pd
-        listing = Listing(source="KBS")
-        result = listing.symbols_by_group(exchange)  # HOSE / HNX / UPCOM
+        result = vnstock.Reference().equity.list(exchange=exchange)
 
         # Xử lý cả Series lẫn DataFrame
         if isinstance(result, pd.Series):
@@ -111,25 +110,25 @@ def _fetch_exchange_tickers_with_info(exchange: str) -> list[str]:
 
         valid = [t for t in tickers if stock_pattern.match(t)]
         if valid:
-            logger.debug(f"  {exchange} KBS: {len(tickers)} raw → {len(valid)} valid")
+            logger.debug(f"  {exchange}: {len(tickers)} raw → {len(valid)} valid")
             return valid
     except Exception as e:
-        logger.debug(f"{exchange} KBS symbols_by_group failed: {e}")
+        logger.warning(f"{exchange} reference list failed: {e}")
 
     return []
 
 
 def _fetch_industry_map(tickers: list[str]) -> dict[str, str]:
     """
-    Fetch ngành ICB cho tất cả tickers từ vnstock Listing.
+    Fetch ngành ICB cho tất cả tickers từ Vnstock Reference.
     Gọi 1 lần khi build watchlist hàng tuần.
     Returns {ticker: industry_name}.
     """
+    from scanner.config import configure_vnstock
+
+    vnstock = configure_vnstock("reference.industry.sectors")
     try:
-        from vnstock.api.listing import Listing
-        import pandas as pd
-        listing = Listing(source="KBS")
-        df = listing.symbols_by_industries()
+        df = vnstock.Reference().industry.sectors()
         if df is None or df.empty:
             raise ValueError("empty response")
 

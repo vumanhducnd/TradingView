@@ -293,26 +293,17 @@ def _fetch_market_context() -> str:
     """Lấy dữ liệu thị trường thực từ internet: VNINDEX, VN30, tin tức."""
     lines = []
     try:
-        from vnstock import Trading
-        t = Trading(source="VCI")
-        df = t.price_board(symbols_list=["VNINDEX", "VN30", "HNX"])
+        from scanner.data_fetcher import fetch_index_quotes
+        df = fetch_index_quotes(["VNINDEX", "VN30", "HNX"])
         if df is not None and not df.empty:
-            if isinstance(df.columns, __import__("pandas").MultiIndex):
-                df.columns = [f"{a}.{b}".lower() for a, b in df.columns]
-            for col_t in ["listing.symbol", "symbol"]:
-                if col_t in df.columns:
-                    ticker_col = col_t
-                    break
-            else:
-                ticker_col = df.columns[0]
             for _, row in df.iterrows():
-                sym = str(row.get(ticker_col, "")).strip()
-                close = row.get("match.match_price") or row.get("match.close_price", 0)
-                chg = row.get("match.price_change_ratio", 0)
+                sym = str(row.get("symbol", "")).strip()
+                close = row.get("close_price", 0)
+                chg = row.get("percent_change", 0)
                 if sym and close:
                     lines.append(f"{sym}: {float(close):,.0f} ({float(chg or 0):+.2f}%)")
     except Exception as e:
-        logger.debug(f"fetch_market_context index: {e}")
+        logger.warning(f"fetch_market_context index failed: {e}")
 
     try:
         from scanner.news_fetcher import fetch_hot_news

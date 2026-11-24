@@ -3,13 +3,12 @@ Sync OHLCV ngày mới nhất cho tất cả ticker trong DB.
 Chạy: python sync_ohlcv.py
 
 Chiến lược 2 bước:
-  Bước 1 — price_board batch: 1 API call lấy toàn bộ ticker (~0.5s)
+  Bước 1 — equity quote batch: 1 API call lấy toàn bộ ticker (~0.5s)
             → upsert ngay các mã có data hôm nay
-  Bước 2 — fallback Quote.history(): chỉ cho mã bị miss hoặc cần backfill
+  Bước 2 — fallback OHLCV: chỉ cho mã bị miss hoặc cần backfill
             (mã mới, mã bị lỗi bước 1, mã thiếu nhiều ngày)
 """
 
-import os
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, timedelta
@@ -17,64 +16,41 @@ from datetime import date, timedelta
 from dotenv import load_dotenv
 load_dotenv()
 
-from scanner.config import LOOKBACK_DAYS
+from scanner.config import FETCH_DELAY, LOOKBACK_DAYS, MAX_WORKERS, configure_vnstock
+from scanner.data_fetcher import _normalize_columns, normalize_equity_quotes
 
 import pandas as pd
 
 from scanner.database import get_all_last_dates, get_watchlist, upsert_ohlcv
 from scanner.utils import logger
 
-HAS_KEY         = bool(os.getenv("VNSTOCK_API_KEY", "").strip())
-FALLBACK_WORKERS = 2   if HAS_KEY else 1
-FALLBACK_DELAY   = 1.5 if HAS_KEY else 3.5
+FALLBACK_WORKERS = MAX_WORKERS
+FALLBACK_DELAY   = FETCH_DELAY
 RATE_LIMIT_WAIT  = 65
 
 
-# ─── Bước 1: price_board batch ────────────────────────────────────────────────
+# ─── Bước 1: equity quote batch ──────────────────────────────────────────────
 
-def sync_via_price_board(tickers: list[str], today: date) -> set[str]:
+def sync_via_equity_quote(tickers: list[str], today: date) -> set[str]:
     """
-    Fetch toàn bộ tickers bằng 1 lần gọi price_board.
+    Fetch toàn bộ tickers bằng 1 lần gọi equity quote.
     Trả về set ticker đã upsert thành công.
     """
-    logger.info(f"Buoc 1: price_board batch ({len(tickers)} tickers)...")
+    logger.info(f"Buoc 1: equity quote batch ({len(tickers)} tickers)...")
     t0 = time.time()
+    vnstock = configure_vnstock("market.equity.quote")
 
     try:
-        from scanner.data_fetcher import _set_api_key
-        _set_api_key()
-        from vnstock import Trading
-        df = Trading(source="VCI").price_board(symbols_list=tickers)
+        df = vnstock.Market().equity.quote(tickers)
     except Exception as e:
-        logger.warning(f"  price_board that bai: {e}")
+        logger.warning(f"  equity quote that bai: {e}")
         return set()
 
     if df is None or df.empty:
-        logger.warning("  price_board tra ve rong")
+        logger.warning("  equity quote tra ve rong")
         return set()
 
-    # Flatten MultiIndex columns
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = [
-            f"{a}.{b}".lower() if b and str(b) != "nan" else str(a).lower()
-            for a, b in df.columns
-        ]
-    else:
-        df.columns = [str(c).lower().strip() for c in df.columns]
-
-    df = df.rename(columns={
-        "listing.symbol":           "ticker",
-        "match.open_price":         "open",
-        "match.highest":            "high",
-        "match.lowest":             "low",
-        "match.match_price":        "close",
-        "match.accumulated_volume": "volume",
-    })
-
-    required = {"ticker", "open", "high", "low", "close", "volume"}
-    if not required.issubset(df.columns):
-        logger.warning(f"  price_board thieu cot: {required - set(df.columns)}")
-        return set()
+    df = normalize_equity_quotes(df)
 
     elapsed_fetch = time.time() - t0
     logger.info(f"  Fetch xong: {elapsed_fetch:.2f}s | {len(df)} rows")
@@ -98,7 +74,7 @@ def sync_via_price_board(tickers: list[str], today: date) -> set[str]:
                 skipped += 1
                 continue
 
-            # price_board trả về VND thực (41500), DB lưu VND/1000 (41.5)
+            # Giữ quy đổi hiện tại cho đến khi đối chiếu đơn vị trên nguồn được chọn.
             bar_df = pd.DataFrame([{
                 "open":   (float(row["open"] or 0) or close) / 1000,
                 "high":   high   / 1000,
@@ -125,28 +101,22 @@ def sync_via_price_board(tickers: list[str], today: date) -> set[str]:
 
 def fetch_history(ticker: str, start: date, end: date, retry: int = 0):
     """Fetch lịch sử OHLCV từng ticker (dùng cho backfill hoặc miss từ bước 1)."""
+    vnstock = configure_vnstock("market.equity.ohlcv")
+    from vnstock.errors import RateLimitError
+
     try:
-        from vnstock.api.quote import Quote
-        from scanner.data_fetcher import _normalize_columns
-        for source in ("VCI", "TCBS"):
-            try:
-                df = Quote(symbol=ticker, source=source).history(
-                    start=start.strftime("%Y-%m-%d"),
-                    end=end.strftime("%Y-%m-%d"),
-                    interval="1D",
-                )
-                if df is not None and not df.empty:
-                    return _normalize_columns(df)
-            except Exception as e:
-                if any(k in str(e).lower() for k in ("rate limit", "429", "too many")):
-                    if retry < 2:
-                        logger.warning(f"{ticker}: rate limit, cho {RATE_LIMIT_WAIT}s...")
-                        time.sleep(RATE_LIMIT_WAIT)
-                        return fetch_history(ticker, start, end, retry + 1)
-                continue
-    except Exception:
-        pass
-    return None
+        df = vnstock.Market().equity(ticker).ohlcv(
+            start=start.strftime("%Y-%m-%d"),
+            end=end.strftime("%Y-%m-%d"),
+            interval="1D",
+        )
+        return _normalize_columns(df) if df is not None and not df.empty else None
+    except RateLimitError:
+        if retry >= 2:
+            raise
+        logger.warning(f"{ticker}: rate limit, cho {RATE_LIMIT_WAIT}s...")
+        time.sleep(RATE_LIMIT_WAIT)
+        return fetch_history(ticker, start, end, retry + 1)
 
 
 def sync_fallback(need: list[tuple], label: str = "fallback") -> tuple[int, list]:
@@ -195,13 +165,9 @@ def sync_fallback(need: list[tuple], label: str = "fallback") -> tuple[int, list
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 def sync(tickers_override: list[str] | None = None):
-    from scanner.data_fetcher import _set_api_key
-    _set_api_key()
-
     t0    = time.time()
     today = date.today()
     logger.info(f"=== Bat dau sync OHLCV ({today}) ===")
-    logger.info(f"API key: {'co' if HAS_KEY else 'khong'}")
 
     tickers    = tickers_override or get_watchlist()
     last_dates = get_all_last_dates()
@@ -239,15 +205,15 @@ def sync(tickers_override: list[str] | None = None):
     total_ok = 0
     all_failed: list[str] = []
 
-    # ── Bước 1: price_board cho mã chỉ cần hôm nay ──
+    # ── Bước 1: quote cho mã chỉ cần hôm nay ──
     if need_today:
-        synced = sync_via_price_board(need_today, today)
+        synced = sync_via_equity_quote(need_today, today)
         total_ok += len(synced)
-        # Mã không lấy được từ price_board → đẩy sang fallback
+        # Mã không lấy được từ quote → đẩy sang fallback
         missed = [(t, today, today) for t in need_today if t not in synced]
         if missed:
-            logger.info(f"  price_board miss {len(missed)} tickers → fallback")
-            ok2, failed2 = sync_fallback(missed, label="miss tu price_board")
+            logger.info(f"  equity quote miss {len(missed)} tickers → fallback")
+            ok2, failed2 = sync_fallback(missed, label="miss tu equity quote")
             total_ok   += ok2
             all_failed += failed2
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import pandas as pd
 
+from scanner.config import configure_vnstock
 from scanner.utils import logger
 
 _MARKET_FALLBACK = {
@@ -16,38 +17,45 @@ _MARKET_FALLBACK = {
 
 def fetch_company_overviews(tickers: list[str]) -> dict[str, dict]:
     """
-    Bulk fetch foreign ownership via Trading.price_board() — 1 API call cho tất cả tickers.
-    Tính: foreign_pct, foreign_max_pct từ current_room / total_room / listed_share.
+    Fetch foreign room and listed-share totals for the existing ownership ratios.
     """
     if not tickers:
         return {}
-    try:
-        from vnstock.api.trading import Trading
-        t = Trading(symbol=tickers[0], source="VCI")
-        df = t.price_board(symbols_list=tickers)
-        if df is None or df.empty:
-            return {}
-
-        df.columns = ["_".join(c).strip("_") for c in df.columns]
-
-        results: dict[str, dict] = {}
-        for _, row in df.iterrows():
-            sym          = str(row.get("listing_symbol", "")).upper()
-            listed       = float(row.get("listing_listed_share") or 0)
-            total_room   = float(row.get("match_total_room")     or 0)
-            current_room = float(row.get("match_current_room")   or 0)
-            if not sym or listed <= 0:
-                continue
-            used_foreign    = max(total_room - current_room, 0)
-            results[sym] = {
-                "foreign_pct":     round(used_foreign / listed * 100, 2),
-                "foreign_max_pct": round(total_room   / listed * 100, 2),
-            }
-        logger.info(f"fetch_company_overviews (bulk): {len(results)}/{len(tickers)} OK")
-        return results
-    except Exception as e:
-        logger.warning(f"fetch_company_overviews bulk failed — {e}")
+    market = configure_vnstock("market.equity.foreign_room")
+    reference = configure_vnstock("reference.equity.list")
+    rooms = market.Market().equity.foreign_room(symbols=tickers)
+    listed = reference.Reference().equity.list()
+    if rooms is None or rooms.empty or listed is None or listed.empty:
         return {}
+
+    required_rooms = {"symbol", "foreign_room", "foreign_room_total"}
+    required_listed = {"symbol", "listed_shares"}
+    if not required_rooms.issubset(rooms.columns):
+        raise ValueError(f"foreign_room response missing columns: {required_rooms - set(rooms.columns)}")
+    if not required_listed.issubset(listed.columns):
+        raise ValueError(f"equity list response missing columns: {required_listed - set(listed.columns)}")
+
+    listed_by_symbol = listed.set_index("symbol")["listed_shares"]
+    results: dict[str, dict] = {}
+    for _, row in rooms.iterrows():
+        sym = str(row["symbol"]).upper()
+        shares = listed_by_symbol.get(sym)
+        if pd.isna(shares) or float(shares) <= 0:
+            continue
+        total_value = row["foreign_room_total"]
+        current_value = row["foreign_room"]
+        if pd.isna(total_value) or pd.isna(current_value):
+            continue
+        total_room = float(total_value)
+        current_room = float(current_value)
+        owned = row.get("foreign_owned_volume")
+        used_foreign = float(owned) if pd.notna(owned) else max(total_room - current_room, 0)
+        results[sym] = {
+            "foreign_pct": round(used_foreign / float(shares) * 100, 2),
+            "foreign_max_pct": round(total_room / float(shares) * 100, 2),
+        }
+    logger.info(f"fetch_company_overviews (foreign_room): {len(results)}/{len(tickers)} OK")
+    return results
 
 
 def fetch_market_investor_count() -> dict:
@@ -80,10 +88,10 @@ def fetch_market_investor_count() -> dict:
 def build_company_data(results: pd.DataFrame, signals: dict) -> dict:
     """
     Fetch all company data needed for Excel report.
-    Overviews: bulk price_board cho tất cả tickers (1 API call).
+    Overviews: fetch bulk equity quote/foreign-room data for all tickers.
     """
     all_tickers: list[str] = results["ticker"].tolist() if "ticker" in results.columns else []
-    logger.info(f"Fetching company data: bulk price_board ({len(all_tickers)} tickers)")
+    logger.info(f"Fetching company data: equity quote/foreign room ({len(all_tickers)} tickers)")
     overviews = fetch_company_overviews(all_tickers)
     market    = fetch_market_investor_count()
     return {"overviews": overviews, "market": market}

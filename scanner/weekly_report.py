@@ -10,7 +10,7 @@ Luồng:
 from __future__ import annotations
 
 import textwrap
-from datetime import date
+from datetime import date, timedelta
 
 import scanner.config  # noqa: F401 — load_dotenv trước DB
 from scanner.database import db_cursor
@@ -41,8 +41,12 @@ def _get_week_dates() -> tuple[date, date]:
 def _fetch_vnindex_weekly(week_start: date) -> str:
     """Lấy hiệu suất tuần của VNINDEX qua vnstock API."""
     try:
-        from scanner.data_fetcher import fetch_ohlcv
-        df = fetch_ohlcv("VNINDEX", days=10)
+        from scanner.data_fetcher import fetch_index_ohlcv
+        df = fetch_index_ohlcv(
+            "VNINDEX",
+            start=(week_start - timedelta(days=2)).isoformat(),
+            end=date.today().isoformat(),
+        )
         if df is None or df.empty:
             return ""
         import pandas as pd

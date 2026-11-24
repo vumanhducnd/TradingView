@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from types import ModuleType
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -44,11 +45,41 @@ BIAS_WEAK_THR = 30
 
 # Data fetch
 LOOKBACK_DAYS = 400
-MAX_WORKERS = 1      # 1 worker để tránh rate limit (tăng lên 3 nếu có API key)
-FETCH_DELAY = 3.5    # giây chờ giữa mỗi request (guest: 20/phút → cần >3s, community: 60/phút → 1s)
+MAX_WORKERS = 1
+FETCH_DELAY = 3.5
 
-# vnstock API key (đăng ký miễn phí tại vnstocks.com/login → 60 req/phút)
-VNSTOCK_API_KEY = os.getenv("VNSTOCK_API_KEY", "")
+# Source identifiers are configuration, not credentials. The connector reads
+# each source's key from the user's keyring or source-specific environment vars.
+VNSTOCK_SOURCE = os.getenv("VNSTOCK_SOURCE", "").strip()
+VNSTOCK_ROUTE_SOURCE_ENVS = {
+    "market.equity.ohlcv": "VNSTOCK_SOURCE_EQUITY_OHLCV",
+    "market.equity.quote": "VNSTOCK_SOURCE_EQUITY_QUOTE",
+    "market.equity.foreign_room": "VNSTOCK_SOURCE_FOREIGN_ROOM",
+    "market.index.quote": "VNSTOCK_SOURCE_INDEX_QUOTE",
+    "market.index.ohlcv": "VNSTOCK_SOURCE_INDEX_OHLCV",
+    "reference.index.members": "VNSTOCK_SOURCE_INDEX_MEMBERS",
+    "reference.equity.list": "VNSTOCK_SOURCE_EQUITY_LIST",
+    "reference.industry.sectors": "VNSTOCK_SOURCE_INDUSTRY_SECTORS",
+}
+
+
+def configure_vnstock(route: str) -> ModuleType:
+    env_name = VNSTOCK_ROUTE_SOURCE_ENVS.get(route)
+    if env_name is None:
+        raise ValueError(f"Unsupported vnstock route configuration: {route}")
+
+    source = os.getenv(env_name, "").strip() or VNSTOCK_SOURCE
+    if not source:
+        raise RuntimeError(
+            f"Vnstock source is not configured for {route}. "
+            f"Set VNSTOCK_SOURCE or {env_name} after choosing a source."
+        )
+
+    import vnstock
+
+    vnstock.compat.use("v5")
+    vnstock.sources.use(source, route=route)
+    return vnstock
 
 # Google Gemini API key (miễn phí tại aistudio.google.com → 1500 req/ngày)
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")

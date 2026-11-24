@@ -3,18 +3,8 @@ import pandas as pd
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, timedelta
 
-from scanner.config import FETCH_DELAY, LOOKBACK_DAYS, MAX_WORKERS, VNSTOCK_API_KEY, WATCHLIST_FILE
+from scanner.config import FETCH_DELAY, LOOKBACK_DAYS, MAX_WORKERS, WATCHLIST_FILE, configure_vnstock
 from scanner.utils import logger
-
-
-def _set_api_key() -> None:
-    """Set vnstock API key if provided in .env."""
-    if VNSTOCK_API_KEY:
-        try:
-            import vnstock
-            vnstock.api_key = VNSTOCK_API_KEY
-        except Exception:
-            pass
 
 
 def get_vn100_tickers() -> list[str]:
@@ -62,29 +52,21 @@ def refresh_watchlist() -> list[str]:
 
 
 def fetch_ohlcv(ticker: str, days: int = LOOKBACK_DAYS) -> pd.DataFrame | None:
-    """Fetch OHLCV data for one ticker via vnstock.api (new API)."""
+    """Fetch OHLCV using the centrally configured gen6 source."""
     end = date.today().strftime("%Y-%m-%d")
     start = (date.today() - timedelta(days=days)).strftime("%Y-%m-%d")
+    vnstock = configure_vnstock("market.equity.ohlcv")
 
-    # New API (vnstock >= 0.3.x after 31/08/2025 deprecation)
     try:
-        from vnstock.api.quote import Quote
-        q = Quote(symbol=ticker, source="VCI")
-        df = q.history(start=start, end=end, interval="1D")
+        df = vnstock.Market().equity(ticker).ohlcv(
+            start=start,
+            end=end,
+            interval="1D",
+        )
         if df is not None and not df.empty:
             return _normalize_columns(df)
     except Exception as e:
-        logger.debug(f"{ticker}: VCI source failed — {e}")
-
-    # Fallback: TCBS source
-    try:
-        from vnstock.api.quote import Quote
-        q = Quote(symbol=ticker, source="TCBS")
-        df = q.history(start=start, end=end, interval="1D")
-        if df is not None and not df.empty:
-            return _normalize_columns(df)
-    except Exception as e:
-        logger.debug(f"{ticker}: TCBS source failed — {e}")
+        logger.warning(f"{ticker}: vnstock OHLCV failed: {e}")
 
     return None
 
@@ -119,50 +101,79 @@ def fetch_all_tickers(
 
 
 def _fetch_from_api() -> list[str]:
-    """Try to get VN100 component list from vnstock new API."""
-    # Method A: VCI source — symbols by group VN100
+    """Fetch VN100 members, falling back to the configured source's HOSE list."""
+    reference = configure_vnstock("reference.index.members")
     try:
-        from vnstock.api.listing import Listing
-        listing = Listing(source="VCI")
-        df = listing.symbols_by_group("VN100")
+        df = reference.Reference().index("VN100").members()
         if df is not None and not df.empty:
             col = _find_ticker_col(df)
             tickers = df[col].str.upper().tolist()
-            if len(tickers) >= 50:
-                logger.info(f"VN100 from VCI: {len(tickers)} tickers")
+            if tickers:
+                logger.info(f"VN100 members: {len(tickers)} tickers")
                 return tickers
     except Exception as e:
-        logger.debug(f"VCI VN100 group failed: {e}")
+        logger.warning(f"VN100 members route failed: {e}")
 
-    # Method B: VCI source — all HOSE symbols, take top 100
+    reference = configure_vnstock("reference.equity.list")
     try:
-        from vnstock.api.listing import Listing
-        listing = Listing(source="VCI")
-        df = listing.symbols_by_exchange(exchange="HOSE")
+        df = reference.Reference().equity.list(exchange="HOSE")
         if df is not None and not df.empty:
             col = _find_ticker_col(df)
             tickers = df[col].str.upper().tolist()[:100]
-            if len(tickers) >= 50:
-                logger.info(f"HOSE top-100 from VCI: {len(tickers)} tickers")
+            if tickers:
+                logger.info(f"HOSE fallback list: {len(tickers)} tickers")
                 return tickers
     except Exception as e:
-        logger.debug(f"VCI HOSE listing failed: {e}")
-
-    # Method C: TCBS source fallback
-    try:
-        from vnstock.api.listing import Listing
-        listing = Listing(source="TCBS")
-        df = listing.symbols_by_exchange(exchange="HOSE")
-        if df is not None and not df.empty:
-            col = _find_ticker_col(df)
-            tickers = df[col].str.upper().tolist()[:100]
-            if len(tickers) >= 50:
-                logger.info(f"HOSE top-100 from TCBS: {len(tickers)} tickers")
-                return tickers
-    except Exception as e:
-        logger.debug(f"TCBS HOSE listing failed: {e}")
+        logger.warning(f"HOSE reference list failed: {e}")
 
     return []
+
+
+def fetch_index_quotes(symbols: list[str]) -> pd.DataFrame:
+    """Fetch current quotes for index symbols using the configured index route."""
+    vnstock = configure_vnstock("market.index.quote")
+    frames = [
+        frame
+        for symbol in symbols
+        if not (frame := vnstock.Market().index(symbol).quote()).empty
+    ]
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+
+def fetch_index_ohlcv(
+    symbol: str,
+    start: str,
+    end: str | None = None,
+) -> pd.DataFrame:
+    """Fetch index bars without treating an index symbol as an equity ticker."""
+    vnstock = configure_vnstock("market.index.ohlcv")
+    df = vnstock.Market().index(symbol).ohlcv(start=start, end=end, interval="1D")
+    return _normalize_columns(df) if df is not None and not df.empty else pd.DataFrame()
+
+
+def normalize_equity_quotes(df: pd.DataFrame) -> pd.DataFrame:
+    if isinstance(df.columns, pd.MultiIndex):
+        df = df.copy()
+        df.columns = [
+            f"{a}.{b}".lower().strip() if b and str(b) != "nan" else str(a).lower().strip()
+            for a, b in df.columns
+        ]
+    else:
+        df = df.rename(columns={column: str(column).lower().strip() for column in df.columns})
+
+    df = df.rename(columns={
+        "symbol": "ticker",
+        "open_price": "open",
+        "high_price": "high",
+        "low_price": "low",
+        "close_price": "close",
+        "total_volume": "volume",
+    })
+    required = ["ticker", "open", "high", "low", "close", "volume"]
+    missing = [column for column in required if column not in df.columns]
+    if missing:
+        raise ValueError(f"equity quote response missing columns: {missing}")
+    return df[required]
 
 
 def _load_watchlist_csv() -> list[str]:

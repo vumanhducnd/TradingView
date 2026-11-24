@@ -36,3 +36,6 @@ data/backtest/*.csv
 
 # Test files tạm
 test_one.py
+
+# Vnstock migration audit data and outputs
+vnstock-migration/

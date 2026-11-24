@@ -132,18 +132,18 @@ Tín hiệu xác nhận sau **đóng cửa** thanh nến ngày.
 ### Yêu cầu
 - Python 3.12+
 - PostgreSQL (hoặc dùng Neon serverless miễn phí)
-- vnstock API key (miễn phí tại vnstocks.com)
+- Open API key tại nguồn dữ liệu do bạn chọn
 - Groq API key (miễn phí tại console.groq.com)
 
 ### Bước 1: Cài dependencies
-```bash
-pip install -r requirements.txt
+```powershell
+& "$HOME\.venv_6x\Scripts\python.exe" -m pip install --extra-index-url https://vnstocks.com/api/packages -r requirements.txt
 ```
 
 ### Bước 2: Tạo file `.env`
 ```env
 DATABASE_URL=postgresql://user:pass@host/dbname
-VNSTOCK_API_KEY=your_key
+VNSTOCK_SOURCE=<nguồn do bạn chọn>
 GROQ_API_KEY=your_key
 TELEGRAM_BOT_TOKEN_LONG=your_token
 TELEGRAM_CHAT_ID_LONG=your_chat_id
@@ -151,22 +151,24 @@ TELEGRAM_BOT_TOKEN_SHORT=your_token   # có thể dùng chung với LONG
 TELEGRAM_CHAT_ID_SHORT=your_chat_id
 ```
 
+`VNSTOCK_SOURCE` là tên nguồn, không phải khóa. Chọn nguồn và đăng ký Open API key tại [trang hướng dẫn chính thức](https://vnstocks.com/docs/vnstock/v6/cai-dat#đăng-ký-khoá-ở-nguồn), rồi tự lưu bằng `& "$HOME\.venv_6x\Scripts\vnstock.exe" keys set <nguồn>` trong PowerShell. Với nguồn cần phiên/OTP, tự chạy thêm `vnstock auth <nguồn>`. Không ghi khóa nguồn vào `.env`. Nếu một nguồn không đọc được route cần thiết, có thể cấu hình riêng `VNSTOCK_SOURCE_EQUITY_OHLCV`, `VNSTOCK_SOURCE_EQUITY_QUOTE`, `VNSTOCK_SOURCE_FOREIGN_ROOM`, `VNSTOCK_SOURCE_INDEX_QUOTE`, `VNSTOCK_SOURCE_INDEX_OHLCV`, `VNSTOCK_SOURCE_INDEX_MEMBERS`, `VNSTOCK_SOURCE_EQUITY_LIST` hoặc `VNSTOCK_SOURCE_INDUSTRY_SECTORS`.
+
 ### Bước 3: Khởi tạo DB và watchlist
-```bash
-python -m scanner.crawler --init-watchlist   # lấy top 100 VN-Index
-python -m scanner.updater --fetch-only       # fetch OHLCV lịch sử (~400 ngày)
+```powershell
+& "$HOME\.venv_6x\Scripts\python.exe" -m scanner.crawler --init-watchlist
+& "$HOME\.venv_6x\Scripts\python.exe" -m scanner.updater --fetch-only
 ```
 
 ### Bước 4: Chạy scan
-```bash
+```powershell
 # Scan 1 lần (cuối phiên)
-python -m scanner.updater --scan-only --force
+& "$HOME\.venv_6x\Scripts\python.exe" -m scanner.updater --scan-only --force
 
 # Scan liên tục trong phiên sáng
-python -m scanner.live_scanner --mode session --session morning
+& "$HOME\.venv_6x\Scripts\python.exe" -m scanner.live_scanner --mode session --session morning
 
 # Scan liên tục trong phiên chiều
-python -m scanner.live_scanner --mode session --session afternoon
+& "$HOME\.venv_6x\Scripts\python.exe" -m scanner.live_scanner --mode session --session afternoon
 ```
 
 ---
@@ -178,14 +180,15 @@ Cần thêm các secrets sau vào repository Settings → Secrets:
 | Secret | Mô tả |
 |---|---|
 | `DATABASE_URL` | PostgreSQL connection string |
-| `VNSTOCK_API_KEY` | API key vnstock |
 | `GROQ_API_KEY` | API key Groq (AI) |
 | `TELEGRAM_BOT_TOKEN_LONG` | Bot token dài hạn |
 | `TELEGRAM_CHAT_ID_LONG` | Chat ID dài hạn (có thể nhiều ID cách nhau dấu phẩy) |
 | `TELEGRAM_BOT_TOKEN_SHORT` | Bot token ngắn hạn |
 | `TELEGRAM_CHAT_ID_SHORT` | Chat ID ngắn hạn |
 
-Workflows được trigger qua `workflow_dispatch` (thủ công hoặc từ cron-job.org).
+Đặt tên nguồn không bí mật trong repository variable `VNSTOCK_SOURCE`. Khóa nguồn khác khóa tài khoản Vnstock; biến `VNSTOCK_API_KEY` của bản cũ không được vnstock gen 6 đọc. Tài khoản (nếu cần) đăng nhập bằng CLI trong terminal riêng. Vì nguồn chưa được chọn, workflow chưa khai báo biến secret cho khóa nguồn; sau khi chọn nguồn, thêm đúng tên biến môi trường mà tài liệu nguồn yêu cầu vào các workflow tương ứng. Không commit khóa vào repository. Các source override theo route ở trên có thể đặt thành repository variables nếu cần.
+
+Workflows được trigger qua `workflow_dispatch` (thủ công hoặc từ cron-job.org). Sau khi chọn nguồn, đặt tên nguồn trong `VNSTOCK_SOURCE` hoặc các repository variables theo route. Khóa nguồn phải được thêm dưới secret name của nguồn do tài liệu chính thức chỉ định; không dùng `VNSTOCK_API_KEY` cho khóa nguồn.
 
 ---
 

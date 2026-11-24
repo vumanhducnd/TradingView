@@ -308,7 +308,6 @@ def fetch_yesterday_review() -> tuple[str, str]:
     Lấy chỉ số VNINDEX/VN30/HNX + tin tức trong nước.
     Trả về (html_data, plain_ctx) — không chứa AI inline.
     """
-    import pandas as _pd
     from scanner.utils import logger
 
     html_lines: list[str] = []
@@ -316,21 +315,14 @@ def fetch_yesterday_review() -> tuple[str, str]:
 
     # ── Chỉ số index ──────────────────────────────────────────────────────────
     try:
-        from vnstock import Trading
-        t = Trading(source="VCI")
-        df = t.price_board(symbols_list=["VNINDEX", "VN30", "HNX"])
+        from scanner.data_fetcher import fetch_index_quotes
+        df = fetch_index_quotes(["VNINDEX", "VN30", "HNX"])
         if df is not None and not df.empty:
-            if isinstance(df.columns, _pd.MultiIndex):
-                df.columns = [f"{a}.{b}".lower() for a, b in df.columns]
-            ticker_col = next(
-                (c for c in ["listing.symbol", "symbol"] if c in df.columns),
-                df.columns[0],
-            )
             index_lines_html: list[str] = []
             for _, row in df.iterrows():
-                sym   = str(row.get(ticker_col, "")).strip()
-                close = row.get("match.match_price") or row.get("match.close_price", 0)
-                chg   = float(row.get("match.price_change_ratio", 0) or 0)
+                sym   = str(row.get("symbol", "")).strip()
+                close = row.get("close_price", 0)
+                chg   = float(row.get("percent_change", 0) or 0)
                 if not sym or not close:
                     continue
                 arrow = "▲" if chg >= 0 else "▼"
@@ -341,7 +333,7 @@ def fetch_yesterday_review() -> tuple[str, str]:
                 html_lines.append("📊 <b>Thị trường hôm qua:</b>")
                 html_lines.extend(index_lines_html)
     except Exception as e:
-        logger.debug(f"fetch_yesterday_review index: {e}")
+        logger.warning(f"fetch_yesterday_review index failed: {e}")
 
     # ── Tin tức trong nước ────────────────────────────────────────────────────
     try:
