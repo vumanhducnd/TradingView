@@ -28,6 +28,8 @@ jobs:
         env:
           DATABASE_URL:    ${{ secrets.DATABASE_URL }}
           VNSTOCK_SOURCE:  ${{ vars.VNSTOCK_SOURCE }}
+          DNSE_API_KEY:    ${{ secrets.DNSE_API_KEY }}
+          DNSE_API_SECRET: ${{ secrets.DNSE_API_SECRET }}
           VNSTOCK_SOURCE_EQUITY_OHLCV: ${{ vars.VNSTOCK_SOURCE_EQUITY_OHLCV }}
           VNSTOCK_SOURCE_EQUITY_QUOTE: ${{ vars.VNSTOCK_SOURCE_EQUITY_QUOTE }}
           VNSTOCK_SOURCE_FOREIGN_ROOM: ${{ vars.VNSTOCK_SOURCE_FOREIGN_ROOM }}

@@ -143,7 +143,7 @@ Tín hiệu xác nhận sau **đóng cửa** thanh nến ngày.
 ### Bước 2: Tạo file `.env`
 ```env
 DATABASE_URL=postgresql://user:pass@host/dbname
-VNSTOCK_SOURCE=<nguồn do bạn chọn>
+VNSTOCK_SOURCE=dnse
 GROQ_API_KEY=your_key
 TELEGRAM_BOT_TOKEN_LONG=your_token
 TELEGRAM_CHAT_ID_LONG=your_chat_id
@@ -180,13 +180,15 @@ Cần thêm các secrets sau vào repository Settings → Secrets:
 | Secret | Mô tả |
 |---|---|
 | `DATABASE_URL` | PostgreSQL connection string |
+| `DNSE_API_KEY` | DNSE source API key (only if a DNSE route is used) |
+| `DNSE_API_SECRET` | DNSE source API secret (only if a DNSE route is used) |
 | `GROQ_API_KEY` | API key Groq (AI) |
 | `TELEGRAM_BOT_TOKEN_LONG` | Bot token dài hạn |
 | `TELEGRAM_CHAT_ID_LONG` | Chat ID dài hạn (có thể nhiều ID cách nhau dấu phẩy) |
 | `TELEGRAM_BOT_TOKEN_SHORT` | Bot token ngắn hạn |
 | `TELEGRAM_CHAT_ID_SHORT` | Chat ID ngắn hạn |
 
-Đặt tên nguồn không bí mật trong repository variable `VNSTOCK_SOURCE`. Khóa nguồn khác khóa tài khoản Vnstock; biến `VNSTOCK_API_KEY` của bản cũ không được vnstock gen 6 đọc. Tài khoản (nếu cần) đăng nhập bằng CLI trong terminal riêng. Vì nguồn chưa được chọn, workflow chưa khai báo biến secret cho khóa nguồn; sau khi chọn nguồn, thêm đúng tên biến môi trường mà tài liệu nguồn yêu cầu vào các workflow tương ứng. Không commit khóa vào repository. Các source override theo route ở trên có thể đặt thành repository variables nếu cần.
+Đặt tên nguồn không bí mật trong repository variable `VNSTOCK_SOURCE` (watchlist đang chọn `dnse`). Khóa nguồn khác khóa tài khoản Vnstock; biến `VNSTOCK_API_KEY` của bản cũ không được vnstock gen 6 đọc. Tài khoản (nếu cần) đăng nhập bằng CLI trong terminal riêng. Các workflow chuyển tiếp `DNSE_API_KEY` và `DNSE_API_SECRET` từ GitHub Secrets; chỉ thêm giá trị do DNSE cấp trực tiếp trong Settings → Secrets and variables → Actions. Không commit khóa vào repository. Không phải route nào của dự án cũng hỗ trợ DNSE; đặt source override theo route và credentials riêng cho route đó khi cần.
 
 Workflows được trigger qua `workflow_dispatch` (thủ công hoặc từ cron-job.org). Sau khi chọn nguồn, đặt tên nguồn trong `VNSTOCK_SOURCE` hoặc các repository variables theo route. Khóa nguồn phải được thêm dưới secret name của nguồn do tài liệu chính thức chỉ định; không dùng `VNSTOCK_API_KEY` cho khóa nguồn.
 
