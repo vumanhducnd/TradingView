@@ -5,7 +5,7 @@ This project uses the Python library `vnstock` generation 6 (with `vnstock-oapi`
 
 - Environment: `~/.venv` (Windows `$HOME\.venv`) unless noted here. Run code and commands with `~/.venv/bin/python` and `~/.venv/bin/vnstock`. Do not install vnstock into another Python.
 - At the start of a session: run `vnstock onboard` and follow it; `vnstock doctor` when something fails.
-- Every data call names a source: `Market("<nguồn>").equity("FPT").ohlcv(start=...)`, or `vnstock.sources.use(...)` once. The user's source is: dnse (set once via VNSTOCK_SOURCE in scanner/config.py; no quote-board or VN100 source yet).
+- Every data call names a source: `Market("<nguồn>").equity("FPT").ohlcv(start=...)`, or `vnstock.sources.use(...)` once. The user's source is: dnse, used only when DATA_PROVIDER=vnstock (scanner/config.py). Default DATA_PROVIDER=legacy calls VCI/KBS internal endpoints directly via scanner/legacy_sources.py (not vnstock, not an official API). All data calls go through scanner/vnstock_sources.py.
 - Keys: the user stores source keys with `vnstock keys set <nguồn>` and logs in with `vnstock login`, in their own terminal. Never ask for a key in chat, never put one in code or print it. `vnstock keys` shows which sources have one.
 - Look functions up before writing them: `vnstock tools`, `vnstock doc Market.equity.ohlcv`.
 - Ratios: compute with `vnstock_quant.fa`; `ratio()`, `Insights`, `Analytics`, `Macro` are not in this release.

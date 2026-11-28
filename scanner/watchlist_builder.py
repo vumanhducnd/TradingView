@@ -95,11 +95,9 @@ def _fetch_exchange_tickers_with_info(exchange: str) -> list[str]:
     stock_pattern = re.compile(r'^[A-Z]{2,4}$')
 
     try:
-        from scanner.vnstock_sources import ensure_sources
-        ensure_sources()
-        from vnstock import Reference
+        from scanner.vnstock_sources import fetch_exchange_symbols
         import pandas as pd
-        result = Reference().equity.list(exchange=exchange)  # HOSE / HNX / UPCOM
+        result = fetch_exchange_symbols(exchange)  # HOSE / HNX / UPCOM
 
         # Xử lý cả Series lẫn DataFrame
         if isinstance(result, pd.Series):
@@ -128,11 +126,9 @@ def _fetch_industry_map(tickers: list[str]) -> dict[str, str]:
     Returns {ticker: industry_name}.
     """
     try:
-        from scanner.vnstock_sources import ensure_sources
-        ensure_sources()
-        from vnstock import Reference
+        from scanner.vnstock_sources import fetch_industry_sectors
         import pandas as pd
-        df = Reference().industry.sectors()
+        df = fetch_industry_sectors()
         if df is None or df.empty:
             raise ValueError("empty response")
 

@@ -22,16 +22,13 @@ def fetch_company_overviews(tickers: list[str]) -> dict[str, dict]:
     if not tickers:
         return {}
     try:
-        # vnstock thế hệ 6: room ngoại từ Market.equity.foreign_room (foreign_room_total = tổng room,
-        # foreign_room = room còn lại), số CP niêm yết từ Reference.equity.list (listed_shares).
-        from scanner.vnstock_sources import ensure_sources
-        ensure_sources()
-        from vnstock import Market, Reference
-        df = Market().equity.foreign_room(list(tickers))
+        # Room ngoại qua lớp điều phối: foreign_room_total = tổng room, foreign_room = room còn lại,
+        # listed_shares = số CP niêm yết (nguồn chọn bằng DATA_PROVIDER trong scanner/config.py).
+        from scanner.vnstock_sources import fetch_foreign_room
+        df = fetch_foreign_room(list(tickers))
         if df is None or df.empty:
             return {}
-        listing = Reference().equity.list()
-        listed_map = dict(zip(listing["symbol"].astype(str).str.upper(), listing["listed_shares"]))
+        listed_map = dict(zip(df["symbol"].astype(str).str.upper(), df["listed_shares"]))
 
         import pandas as pd
 

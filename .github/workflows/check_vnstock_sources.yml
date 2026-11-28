@@ -15,7 +15,8 @@ jobs:
       - name: Check source hosts
         run: |
           printf "%-24s %-6s %-10s %-10s %s\n" HOST HTTP CONNECT TOTAL NOTE
-          for host in openapi.dnse.com.vn open-api.fhsc.com.vn api.ssi.com.vn openapi.tcbs.com.vn; do
+          for host in trading.vietcap.com.vn iq.vietcap.com.vn kbbuddywts.kbsec.com.vn \
+                      openapi.dnse.com.vn open-api.fhsc.com.vn api.ssi.com.vn openapi.tcbs.com.vn; do
             ip=$(getent hosts "$host" | awk '{print $1}' | head -1)
             out=$(curl -sS -o /dev/null --max-time 15 \
                   -w "%{http_code} %{time_connect}s %{time_total}s" "https://$host/" 2>&1) || true

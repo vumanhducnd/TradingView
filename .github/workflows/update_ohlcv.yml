@@ -32,6 +32,7 @@ jobs:
         env:
           DATABASE_URL:    ${{ secrets.DATABASE_URL }}
           VNSTOCK_API_KEY: ${{ secrets.VNSTOCK_API_KEY }}
+          DATA_PROVIDER:            ${{ vars.DATA_PROVIDER }}
           VNSTOCK_SOURCE:  ${{ vars.VNSTOCK_SOURCE }}
           VNSTOCK_SOURCE_OHLCV: ${{ vars.VNSTOCK_SOURCE_OHLCV }}
           VNSTOCK_SOURCE_QUOTE: ${{ vars.VNSTOCK_SOURCE_QUOTE }}

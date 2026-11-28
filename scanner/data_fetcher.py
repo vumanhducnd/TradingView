@@ -105,18 +105,11 @@ def fetch_all_tickers(
 
 def _fetch_from_api() -> list[str]:
     """Try to get VN100 component list from vnstock new API."""
-    # vnstock thế hệ 6 — nguồn khai báo tập trung trong scanner/config.py (route reference.*)
-    try:
-        from scanner.vnstock_sources import ensure_sources
-        ensure_sources()
-        from vnstock import Reference
-    except Exception as e:
-        logger.debug(f"vnstock init failed: {e}")
-        return []
-
+    # Nguồn chọn tập trung trong scanner/config.py (DATA_PROVIDER), qua scanner/vnstock_sources.py
     # Method A: thành phần rổ VN100
     try:
-        df = Reference().index("VN100").members()
+        from scanner.vnstock_sources import fetch_index_members
+        df = fetch_index_members("VN100")
         if df is not None and not df.empty:
             col = _find_ticker_col(df)
             tickers = df[col].str.upper().tolist()

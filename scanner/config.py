@@ -50,7 +50,13 @@ FETCH_DELAY = 3.5    # giây chờ giữa mỗi request (guest: 20/phút → c�
 # vnstock API key (tài khoản Vnstock). vnstock thế hệ 6 tự đọc biến môi trường này.
 VNSTOCK_API_KEY = os.getenv("VNSTOCK_API_KEY", "")
 
-# ─── vnstock thế hệ 6: NGUỒN DỮ LIỆU — khai báo tập trung DUY NHẤT tại đây ───
+# ─── NHÀ CUNG CẤP DỮ LIỆU — chọn tại đây (lớp điều phối: scanner/vnstock_sources.py) ───
+# "legacy"  : gọi thẳng API nội bộ VCI/KBS như vnstock 4.x (scanner/legacy_sources.py) — không cần
+#             khoá, nhưng KHÔNG phải API chính thức: có thể bị đổi/chặn bất cứ lúc nào.
+# "vnstock" : vnstock thế hệ 6 với nguồn chính thức khai báo bên dưới (VNSTOCK_SOURCE*).
+DATA_PROVIDER = (os.getenv("DATA_PROVIDER") or "legacy").strip().lower()  # biến rỗng → "legacy"
+
+# ─── vnstock thế hệ 6 (khi DATA_PROVIDER="vnstock"): NGUỒN DỮ LIỆU — khai báo tập trung tại đây ───
 # Tên nguồn = tài khoản Open API của bạn ở nguồn đó (khoá cất bằng `vnstock keys set <nguồn>`
 # hoặc biến môi trường <NGUỒN>_API_KEY trên server). Đặt qua biến môi trường / GitHub Variables.
 # VNSTOCK_SOURCE là nguồn mặc định cho mọi route; các route dưới đây để trống thì dùng nguồn mặc định.
