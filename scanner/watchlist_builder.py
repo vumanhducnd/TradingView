@@ -115,7 +115,8 @@ def _fetch_exchange_tickers_with_info(exchange: str) -> list[str]:
             logger.debug(f"  {exchange}: {len(tickers)} raw → {len(valid)} valid")
             return valid
     except Exception as e:
-        logger.debug(f"{exchange} equity.list failed: {e}")
+        code = getattr(e, "code", "")
+        logger.warning(f"{exchange} equity.list failed: {type(e).__name__} {code} — {e}")
 
     return []
 
