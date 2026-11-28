@@ -1,0 +1,29 @@
+name: Check vnstock source connectivity
+
+# Chạy tay: kiểm tra runner GitHub có kết nối được tới máy chủ Open API của từng nguồn không.
+# Không dùng khoá nào — chỉ đo DNS, kết nối TCP/TLS và mã HTTP.
+# Kết quả: mã HTTP bất kỳ (kể cả 401/403/404) = kết nối được; 000 / timeout = bị chặn hoặc không tới được.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check source hosts
+        run: |
+          printf "%-24s %-6s %-10s %-10s %s\n" HOST HTTP CONNECT TOTAL NOTE
+          for host in openapi.dnse.com.vn open-api.fhsc.com.vn api.ssi.com.vn openapi.tcbs.com.vn; do
+            ip=$(getent hosts "$host" | awk '{print $1}' | head -1)
+            out=$(curl -sS -o /dev/null --max-time 15 \
+                  -w "%{http_code} %{time_connect}s %{time_total}s" "https://$host/" 2>&1) || true
+            code=$(echo "$out" | tail -1 | awk '{print $1}')
+            note="ip=${ip:-DNS_FAIL}"
+            case "$code" in
+              000|"") note="$note  KHONG KET NOI DUOC ($(echo "$out" | head -1 | cut -c1-80))" ;;
+              *)      note="$note  ket noi duoc" ;;
+            esac
+            printf "%-24s %s  %s\n" "$host" "$out" "$note"
+          done
