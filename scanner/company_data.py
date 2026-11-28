@@ -16,26 +16,35 @@ _MARKET_FALLBACK = {
 
 def fetch_company_overviews(tickers: list[str]) -> dict[str, dict]:
     """
-    Bulk fetch foreign ownership via Trading.price_board() — 1 API call cho tất cả tickers.
+    Bulk fetch foreign ownership via vnstock Market.equity.foreign_room() + Reference.equity.list().
     Tính: foreign_pct, foreign_max_pct từ current_room / total_room / listed_share.
     """
     if not tickers:
         return {}
     try:
-        from vnstock.api.trading import Trading
-        t = Trading(symbol=tickers[0], source="VCI")
-        df = t.price_board(symbols_list=tickers)
+        # vnstock thế hệ 6: room ngoại từ Market.equity.foreign_room (foreign_room_total = tổng room,
+        # foreign_room = room còn lại), số CP niêm yết từ Reference.equity.list (listed_shares).
+        from scanner.vnstock_sources import ensure_sources
+        ensure_sources()
+        from vnstock import Market, Reference
+        df = Market().equity.foreign_room(list(tickers))
         if df is None or df.empty:
             return {}
+        listing = Reference().equity.list()
+        listed_map = dict(zip(listing["symbol"].astype(str).str.upper(), listing["listed_shares"]))
 
-        df.columns = ["_".join(c).strip("_") for c in df.columns]
+        import pandas as pd
+
+        def _num(x) -> float:
+            # thế hệ 6 dùng kiểu nullable (Int64) — ô trống là pd.NA
+            return 0.0 if x is None or pd.isna(x) else float(x)
 
         results: dict[str, dict] = {}
         for _, row in df.iterrows():
-            sym          = str(row.get("listing_symbol", "")).upper()
-            listed       = float(row.get("listing_listed_share") or 0)
-            total_room   = float(row.get("match_total_room")     or 0)
-            current_room = float(row.get("match_current_room")   or 0)
+            sym          = str(row.get("symbol", "")).upper()
+            listed       = _num(listed_map.get(sym))
+            total_room   = _num(row.get("foreign_room_total"))
+            current_room = _num(row.get("foreign_room"))
             if not sym or listed <= 0:
                 continue
             used_foreign    = max(total_room - current_room, 0)

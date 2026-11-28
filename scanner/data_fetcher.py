@@ -8,13 +8,9 @@ from scanner.utils import logger
 
 
 def _set_api_key() -> None:
-    """Set vnstock API key if provided in .env."""
-    if VNSTOCK_API_KEY:
-        try:
-            import vnstock
-            vnstock.api_key = VNSTOCK_API_KEY
-        except Exception:
-            pass
+    """vnstock thế hệ 6 tự đọc VNSTOCK_API_KEY từ môi trường; ở đây chỉ áp dụng nguồn dữ liệu."""
+    from scanner.vnstock_sources import ensure_sources
+    ensure_sources()
 
 
 def get_vn100_tickers() -> list[str]:
@@ -62,29 +58,18 @@ def refresh_watchlist() -> list[str]:
 
 
 def fetch_ohlcv(ticker: str, days: int = LOOKBACK_DAYS) -> pd.DataFrame | None:
-    """Fetch OHLCV data for one ticker via vnstock.api (new API)."""
+    """Fetch OHLCV data for one ticker via vnstock thế hệ 6 (Market.equity.ohlcv)."""
     end = date.today().strftime("%Y-%m-%d")
     start = (date.today() - timedelta(days=days)).strftime("%Y-%m-%d")
 
-    # New API (vnstock >= 0.3.x after 31/08/2025 deprecation)
+    # vnstock thế hệ 6 — nguồn khai báo tập trung trong scanner/config.py
     try:
-        from vnstock.api.quote import Quote
-        q = Quote(symbol=ticker, source="VCI")
-        df = q.history(start=start, end=end, interval="1D")
+        from scanner.vnstock_sources import fetch_daily_ohlcv
+        df = fetch_daily_ohlcv(ticker, start, end)
         if df is not None and not df.empty:
             return _normalize_columns(df)
     except Exception as e:
-        logger.debug(f"{ticker}: VCI source failed — {e}")
-
-    # Fallback: TCBS source
-    try:
-        from vnstock.api.quote import Quote
-        q = Quote(symbol=ticker, source="TCBS")
-        df = q.history(start=start, end=end, interval="1D")
-        if df is not None and not df.empty:
-            return _normalize_columns(df)
-    except Exception as e:
-        logger.debug(f"{ticker}: TCBS source failed — {e}")
+        logger.debug(f"{ticker}: ohlcv failed — {e}")
 
     return None
 
@@ -120,48 +105,29 @@ def fetch_all_tickers(
 
 def _fetch_from_api() -> list[str]:
     """Try to get VN100 component list from vnstock new API."""
-    # Method A: VCI source — symbols by group VN100
+    # vnstock thế hệ 6 — nguồn khai báo tập trung trong scanner/config.py (route reference.*)
     try:
-        from vnstock.api.listing import Listing
-        listing = Listing(source="VCI")
-        df = listing.symbols_by_group("VN100")
+        from scanner.vnstock_sources import ensure_sources
+        ensure_sources()
+        from vnstock import Reference
+    except Exception as e:
+        logger.debug(f"vnstock init failed: {e}")
+        return []
+
+    # Method A: thành phần rổ VN100
+    try:
+        df = Reference().index("VN100").members()
         if df is not None and not df.empty:
             col = _find_ticker_col(df)
             tickers = df[col].str.upper().tolist()
             if len(tickers) >= 50:
-                logger.info(f"VN100 from VCI: {len(tickers)} tickers")
+                logger.info(f"VN100 members: {len(tickers)} tickers")
                 return tickers
     except Exception as e:
-        logger.debug(f"VCI VN100 group failed: {e}")
+        logger.debug(f"VN100 members failed: {e}")
 
-    # Method B: VCI source — all HOSE symbols, take top 100
-    try:
-        from vnstock.api.listing import Listing
-        listing = Listing(source="VCI")
-        df = listing.symbols_by_exchange(exchange="HOSE")
-        if df is not None and not df.empty:
-            col = _find_ticker_col(df)
-            tickers = df[col].str.upper().tolist()[:100]
-            if len(tickers) >= 50:
-                logger.info(f"HOSE top-100 from VCI: {len(tickers)} tickers")
-                return tickers
-    except Exception as e:
-        logger.debug(f"VCI HOSE listing failed: {e}")
-
-    # Method C: TCBS source fallback
-    try:
-        from vnstock.api.listing import Listing
-        listing = Listing(source="TCBS")
-        df = listing.symbols_by_exchange(exchange="HOSE")
-        if df is not None and not df.empty:
-            col = _find_ticker_col(df)
-            tickers = df[col].str.upper().tolist()[:100]
-            if len(tickers) >= 50:
-                logger.info(f"HOSE top-100 from TCBS: {len(tickers)} tickers")
-                return tickers
-    except Exception as e:
-        logger.debug(f"TCBS HOSE listing failed: {e}")
-
+    # Đã bỏ fallback "100 mã HOSE đầu tiên theo thứ tự danh mục" (khi chuyển vnstock thế hệ 6):
+    # đó không phải rổ VN100 và ghi đè vn100_rank trong DB. Trả [] để dùng watchlist.csv / DB.
     return []
 
 
@@ -221,6 +187,10 @@ def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
 
     if "date" in df.columns:
         df["date"] = pd.to_datetime(df["date"])
+        # vnstock thế hệ 6 trả thời gian có múi giờ (nến ngày lúc 07:00+07); DB dùng ngày VN
+        # không múi giờ, 00:00 như bản cũ
+        if df["date"].dt.tz is not None:
+            df["date"] = df["date"].dt.tz_convert("Asia/Ho_Chi_Minh").dt.tz_localize(None).dt.normalize()
         df = df.set_index("date").sort_index()
     elif not isinstance(df.index, pd.DatetimeIndex):
         df.index = pd.to_datetime(df.index)

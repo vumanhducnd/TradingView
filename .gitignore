@@ -36,3 +36,6 @@ data/backtest/*.csv
 
 # Test files tạm
 test_one.py
+
+# vnstock gen6 migration work folder (chua du lieu, khong commit)
+vnstock-migration/

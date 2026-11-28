@@ -293,9 +293,8 @@ def _fetch_market_context() -> str:
     """Lấy dữ liệu thị trường thực từ internet: VNINDEX, VN30, tin tức."""
     lines = []
     try:
-        from vnstock import Trading
-        t = Trading(source="VCI")
-        df = t.price_board(symbols_list=["VNINDEX", "VN30", "HNX"])
+        from scanner.vnstock_sources import fetch_index_board
+        df = fetch_index_board(["VNINDEX", "VN30", "HNX"])
         if df is not None and not df.empty:
             if isinstance(df.columns, __import__("pandas").MultiIndex):
                 df.columns = [f"{a}.{b}".lower() for a, b in df.columns]
@@ -307,8 +306,8 @@ def _fetch_market_context() -> str:
                 ticker_col = df.columns[0]
             for _, row in df.iterrows():
                 sym = str(row.get(ticker_col, "")).strip()
-                close = row.get("match.match_price") or row.get("match.close_price", 0)
-                chg = row.get("match.price_change_ratio", 0)
+                close = row.get("close_price", 0)       # vnstock thế hệ 6 (trước: match.match_price)
+                chg = row.get("percent_change", 0)      # trước: match.price_change_ratio
                 if sym and close:
                     lines.append(f"{sym}: {float(close):,.0f} ({float(chg or 0):+.2f}%)")
     except Exception as e:

@@ -111,40 +111,23 @@ def init_watchlist_from_api() -> list[str]:
 
 def _fetch_with_retry(ticker: str, start: date, end: date, retry: int = 0):
     """Fetch OHLCV với retry khi bị rate limit."""
+    from scanner.vnstock_sources import fetch_daily_ohlcv, is_rate_limit
     try:
-        from vnstock.api.quote import Quote
-        q = Quote(symbol=ticker, source="VCI")
-        df = q.history(
-            start=start.strftime("%Y-%m-%d"),
-            end=end.strftime("%Y-%m-%d"),
-            interval="1D",
+        df = fetch_daily_ohlcv(
+            ticker,
+            start.strftime("%Y-%m-%d"),
+            end.strftime("%Y-%m-%d"),
         )
         if df is not None and not df.empty:
             from scanner.data_fetcher import _normalize_columns
             return _normalize_columns(df)
         return None
     except Exception as e:
-        err = str(e).lower()
-        if "rate limit" in err or "429" in err or "too many" in err:
+        if is_rate_limit(e):
             if retry < _MAX_RETRY:
                 logger.warning(f"  Rate limit — chờ {_RATE_LIMIT_WAIT}s rồi thử lại...")
                 time.sleep(_RATE_LIMIT_WAIT)
                 return _fetch_with_retry(ticker, start, end, retry + 1)
-        elif "empty" in err or "column 1" in err:
-            # Thử TCBS source
-            try:
-                from vnstock.api.quote import Quote
-                q = Quote(symbol=ticker, source="TCBS")
-                df = q.history(
-                    start=start.strftime("%Y-%m-%d"),
-                    end=end.strftime("%Y-%m-%d"),
-                    interval="1D",
-                )
-                if df is not None and not df.empty:
-                    from scanner.data_fetcher import _normalize_columns
-                    return _normalize_columns(df)
-            except Exception:
-                pass
         logger.debug(f"  Lỗi: {e}")
         return None
 

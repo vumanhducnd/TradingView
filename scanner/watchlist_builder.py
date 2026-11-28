@@ -95,10 +95,11 @@ def _fetch_exchange_tickers_with_info(exchange: str) -> list[str]:
     stock_pattern = re.compile(r'^[A-Z]{2,4}$')
 
     try:
-        from vnstock.api.listing import Listing
+        from scanner.vnstock_sources import ensure_sources
+        ensure_sources()
+        from vnstock import Reference
         import pandas as pd
-        listing = Listing(source="KBS")
-        result = listing.symbols_by_group(exchange)  # HOSE / HNX / UPCOM
+        result = Reference().equity.list(exchange=exchange)  # HOSE / HNX / UPCOM
 
         # Xử lý cả Series lẫn DataFrame
         if isinstance(result, pd.Series):
@@ -111,10 +112,10 @@ def _fetch_exchange_tickers_with_info(exchange: str) -> list[str]:
 
         valid = [t for t in tickers if stock_pattern.match(t)]
         if valid:
-            logger.debug(f"  {exchange} KBS: {len(tickers)} raw → {len(valid)} valid")
+            logger.debug(f"  {exchange}: {len(tickers)} raw → {len(valid)} valid")
             return valid
     except Exception as e:
-        logger.debug(f"{exchange} KBS symbols_by_group failed: {e}")
+        logger.debug(f"{exchange} equity.list failed: {e}")
 
     return []
 
@@ -126,10 +127,11 @@ def _fetch_industry_map(tickers: list[str]) -> dict[str, str]:
     Returns {ticker: industry_name}.
     """
     try:
-        from vnstock.api.listing import Listing
+        from scanner.vnstock_sources import ensure_sources
+        ensure_sources()
+        from vnstock import Reference
         import pandas as pd
-        listing = Listing(source="KBS")
-        df = listing.symbols_by_industries()
+        df = Reference().industry.sectors()
         if df is None or df.empty:
             raise ValueError("empty response")
 
@@ -145,7 +147,10 @@ def _fetch_industry_map(tickers: list[str]) -> dict[str, str]:
 
         df[col_ticker] = df[col_ticker].str.upper().str.strip()
         result = dict(zip(df[col_ticker], df[col_industry].str.strip()))
-        result = {t: v for t, v in result.items() if t in set(tickers) and v}
+        # thế hệ 6 dùng kiểu string nullable — ô trống là pd.NA, bỏ qua
+        wanted = set(tickers)
+        result = {t: v for t, v in result.items()
+                  if isinstance(t, str) and isinstance(v, str) and v and t in wanted}
         return result
     except Exception as e:
         logger.warning(f"_fetch_industry_map failed: {e} — industry sẽ không được cập nhật")

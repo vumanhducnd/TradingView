@@ -337,32 +337,17 @@ def run_scan_only() -> None:
 def _fetch_latest(ticker: str, start: date, end: date):
     """Fetch OHLCV từ vnstock API (chỉ vài bar gần nhất)."""
     try:
-        from vnstock.api.quote import Quote
-        q = Quote(symbol=ticker, source="VCI")
-        df = q.history(
-            start=start.strftime("%Y-%m-%d"),
-            end=end.strftime("%Y-%m-%d"),
-            interval="1D",
+        from scanner.vnstock_sources import fetch_daily_ohlcv
+        df = fetch_daily_ohlcv(
+            ticker,
+            start.strftime("%Y-%m-%d"),
+            end.strftime("%Y-%m-%d"),
         )
         if df is not None and not df.empty:
             from scanner.data_fetcher import _normalize_columns
             return _normalize_columns(df)
     except Exception as e:
-        logger.debug(f"{ticker} VCI: {e}")
-        # Fallback TCBS
-        try:
-            from vnstock.api.quote import Quote
-            q = Quote(symbol=ticker, source="TCBS")
-            df = q.history(
-                start=start.strftime("%Y-%m-%d"),
-                end=end.strftime("%Y-%m-%d"),
-                interval="1D",
-            )
-            if df is not None and not df.empty:
-                from scanner.data_fetcher import _normalize_columns
-                return _normalize_columns(df)
-        except Exception as e2:
-            logger.debug(f"{ticker} TCBS: {e2}")
+        logger.debug(f"{ticker} ohlcv: {e}")
     return None
 
 

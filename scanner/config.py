@@ -47,8 +47,22 @@ LOOKBACK_DAYS = 400
 MAX_WORKERS = 1      # 1 worker để tránh rate limit (tăng lên 3 nếu có API key)
 FETCH_DELAY = 3.5    # giây chờ giữa mỗi request (guest: 20/phút → cần >3s, community: 60/phút → 1s)
 
-# vnstock API key (đăng ký miễn phí tại vnstocks.com/login → 60 req/phút)
+# vnstock API key (tài khoản Vnstock). vnstock thế hệ 6 tự đọc biến môi trường này.
 VNSTOCK_API_KEY = os.getenv("VNSTOCK_API_KEY", "")
+
+# ─── vnstock thế hệ 6: NGUỒN DỮ LIỆU — khai báo tập trung DUY NHẤT tại đây ───
+# Tên nguồn = tài khoản Open API của bạn ở nguồn đó (khoá cất bằng `vnstock keys set <nguồn>`
+# hoặc biến môi trường <NGUỒN>_API_KEY trên server). Đặt qua biến môi trường / GitHub Variables.
+# VNSTOCK_SOURCE là nguồn mặc định cho mọi route; các route dưới đây để trống thì dùng nguồn mặc định.
+# Nguồn đọc được từng route: `vnstock.sources.readers("<route>")`.
+VNSTOCK_SOURCE = os.getenv("VNSTOCK_SOURCE", "")
+VNSTOCK_SOURCE_ROUTES = {
+    "market.equity.ohlcv":        os.getenv("VNSTOCK_SOURCE_OHLCV", ""),         # nến ngày
+    "market.equity.quote":        os.getenv("VNSTOCK_SOURCE_QUOTE", ""),         # bảng giá cổ phiếu
+    "market.index.quote":         os.getenv("VNSTOCK_SOURCE_INDEX", ""),         # chỉ số trong phiên
+    "market.equity.foreign_room": os.getenv("VNSTOCK_SOURCE_FOREIGN_ROOM", ""),  # room ngoại
+    "reference.*":                os.getenv("VNSTOCK_SOURCE_REFERENCE", ""),     # danh mục, rổ, ngành
+}
 
 # Google Gemini API key (miễn phí tại aistudio.google.com → 1500 req/ngày)
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")

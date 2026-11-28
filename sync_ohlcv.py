@@ -41,10 +41,8 @@ def sync_via_price_board(tickers: list[str], today: date) -> set[str]:
     t0 = time.time()
 
     try:
-        from scanner.data_fetcher import _set_api_key
-        _set_api_key()
-        from vnstock import Trading
-        df = Trading(source="VCI").price_board(symbols_list=tickers)
+        from scanner.vnstock_sources import fetch_quote_board
+        df = fetch_quote_board(tickers)
     except Exception as e:
         logger.warning(f"  price_board that bai: {e}")
         return set()
@@ -62,13 +60,15 @@ def sync_via_price_board(tickers: list[str], today: date) -> set[str]:
     else:
         df.columns = [str(c).lower().strip() for c in df.columns]
 
+    # Cột bảng giá vnstock thế hệ 6 (profile v5): symbol, open_price, high_price, low_price,
+    # close_price, total_volume (trước đây: listing.symbol, match.* dạng MultiIndex)
     df = df.rename(columns={
-        "listing.symbol":           "ticker",
-        "match.open_price":         "open",
-        "match.highest":            "high",
-        "match.lowest":             "low",
-        "match.match_price":        "close",
-        "match.accumulated_volume": "volume",
+        "symbol":                   "ticker",
+        "open_price":               "open",
+        "high_price":               "high",
+        "low_price":                "low",
+        "close_price":              "close",
+        "total_volume":             "volume",
     })
 
     required = {"ticker", "open", "high", "low", "close", "volume"}
@@ -126,24 +126,22 @@ def sync_via_price_board(tickers: list[str], today: date) -> set[str]:
 def fetch_history(ticker: str, start: date, end: date, retry: int = 0):
     """Fetch lịch sử OHLCV từng ticker (dùng cho backfill hoặc miss từ bước 1)."""
     try:
-        from vnstock.api.quote import Quote
+        from scanner.vnstock_sources import fetch_daily_ohlcv, is_rate_limit
         from scanner.data_fetcher import _normalize_columns
-        for source in ("VCI", "TCBS"):
-            try:
-                df = Quote(symbol=ticker, source=source).history(
-                    start=start.strftime("%Y-%m-%d"),
-                    end=end.strftime("%Y-%m-%d"),
-                    interval="1D",
-                )
-                if df is not None and not df.empty:
-                    return _normalize_columns(df)
-            except Exception as e:
-                if any(k in str(e).lower() for k in ("rate limit", "429", "too many")):
-                    if retry < 2:
-                        logger.warning(f"{ticker}: rate limit, cho {RATE_LIMIT_WAIT}s...")
-                        time.sleep(RATE_LIMIT_WAIT)
-                        return fetch_history(ticker, start, end, retry + 1)
-                continue
+        try:
+            df = fetch_daily_ohlcv(
+                ticker,
+                start.strftime("%Y-%m-%d"),
+                end.strftime("%Y-%m-%d"),
+            )
+            if df is not None and not df.empty:
+                return _normalize_columns(df)
+        except Exception as e:
+            if is_rate_limit(e):
+                if retry < 2:
+                    logger.warning(f"{ticker}: rate limit, cho {RATE_LIMIT_WAIT}s...")
+                    time.sleep(RATE_LIMIT_WAIT)
+                    return fetch_history(ticker, start, end, retry + 1)
     except Exception:
         pass
     return None

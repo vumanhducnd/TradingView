@@ -380,9 +380,8 @@ def _fetch_via_price_board(tickers: list[str]) -> dict[str, dict]:
     price_board trả về MultiIndex columns — flatten rồi map về chuẩn.
     """
     try:
-        from vnstock import Trading
-        t = Trading(source="VCI")
-        df = t.price_board(symbols_list=tickers)
+        from scanner.vnstock_sources import fetch_quote_board
+        df = fetch_quote_board(tickers)
         if df is None or df.empty:
             return {}
 
@@ -395,14 +394,14 @@ def _fetch_via_price_board(tickers: list[str]) -> dict[str, dict]:
         else:
             df.columns = [str(c).lower().strip() for c in df.columns]
 
-        # Map tên cột price_board → chuẩn OHLCV
+        # Map tên cột bảng giá → chuẩn OHLCV (vnstock thế hệ 6, profile v5: cột phẳng)
         FIELD_MAP = {
-            "ticker": ["listing.symbol"],
-            "open":   ["match.open_price"],
-            "high":   ["match.highest"],
-            "low":    ["match.lowest"],
-            "close":  ["match.match_price"],
-            "volume": ["match.accumulated_volume"],
+            "ticker": ["symbol"],
+            "open":   ["open_price"],
+            "high":   ["high_price"],
+            "low":    ["low_price"],
+            "close":  ["close_price"],
+            "volume": ["total_volume"],
         }
         col_map: dict[str, str] = {}
         for target, candidates in FIELD_MAP.items():
@@ -450,33 +449,25 @@ def _fetch_via_price_board(tickers: list[str]) -> dict[str, dict]:
 
 
 def _fetch_via_history(tickers: list[str]) -> dict[str, dict]:
-    """Fallback: per-ticker Quote.history() với delay 1s/req."""
+    """Fallback: nến ngày từng mã (vnstock thế hệ 6) với delay 1s/req."""
     today = date.today().strftime("%Y-%m-%d")
     result: dict[str, dict] = {}
+    from scanner.vnstock_sources import fetch_daily_ohlcv
     for ticker in tickers:
         try:
-            from vnstock.api.quote import Quote
-            for source in ["VCI", "TCBS"]:
-                try:
-                    df = Quote(symbol=ticker, source=source).history(
-                        start=today, end=today, interval="1D"
-                    )
-                    if df is None or df.empty:
-                        continue
-                    df.columns = [c.lower() for c in df.columns]
-                    row = df.iloc[-1]
-                    close = float(row.get("close", row.get("c", 0)))
-                    if close > 0:
-                        result[ticker] = {
-                            "open":   _snap_to_tick(float(row.get("open",   close))),
-                            "high":   _snap_to_tick(float(row.get("high",   close))),
-                            "low":    _snap_to_tick(float(row.get("low",    close))),
-                            "close":  _snap_to_tick(close),
-                            "volume": float(row.get("volume", 0)),
-                        }
-                        break
-                except Exception:
-                    continue
+            df = fetch_daily_ohlcv(ticker, today, today)
+            if df is not None and not df.empty:
+                df.columns = [c.lower() for c in df.columns]
+                row = df.iloc[-1]
+                close = float(row.get("close", row.get("c", 0)))
+                if close > 0:
+                    result[ticker] = {
+                        "open":   _snap_to_tick(float(row.get("open",   close))),
+                        "high":   _snap_to_tick(float(row.get("high",   close))),
+                        "low":    _snap_to_tick(float(row.get("low",    close))),
+                        "close":  _snap_to_tick(close),
+                        "volume": float(row.get("volume", 0)),
+                    }
         except Exception:
             pass
         time.sleep(FETCH_DELAY_LIVE)
