@@ -52,12 +52,14 @@ def ensure_sources() -> None:
 
 
 def fetch_daily_ohlcv(ticker: str, start: str, end: str) -> pd.DataFrame:
-    """Nến ngày một mã: time, open, high, low, close (nghìn đồng), volume."""
+    """Nến ngày một mã: time, open, high, low, close (cổ phiếu: nghìn đồng; chỉ số: điểm), volume."""
+    from scanner import legacy_sources
     if _legacy():
-        from scanner import legacy_sources
         return legacy_sources.fetch_daily_ohlcv(ticker, start, end)
     ensure_sources()
     from vnstock import Market
+    if legacy_sources.is_index(ticker):
+        return Market().index(ticker.upper()).ohlcv(start=start, end=end, interval="1D")
     return Market().equity(ticker).ohlcv(start=start, end=end, interval="1D")
 
 

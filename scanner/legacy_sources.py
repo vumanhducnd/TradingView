@@ -81,11 +81,19 @@ def _gap_chart(symbol: str, start: str, end: str) -> pd.DataFrame:
     return df[(day >= pd.Timestamp(start)) & (day <= pd.Timestamp(end))].reset_index(drop=True)
 
 
+def is_index(symbol: str) -> bool:
+    return symbol.upper() in VCI_INDEX
+
+
 def fetch_daily_ohlcv(ticker: str, start: str, end: str) -> pd.DataFrame:
-    """Nến ngày cổ phiếu — giá nghìn đồng, làm tròn 2 chữ số (như vnstock 4.x VCI)."""
-    df = _gap_chart(ticker.upper(), start, end)
+    """Nến ngày — cổ phiếu: giá nghìn đồng; chỉ số: giữ nguyên điểm (như vnstock 4.x VCI).
+    Làm tròn 2 chữ số."""
+    sym = ticker.upper()
+    index = is_index(sym)
+    df = _gap_chart(VCI_INDEX[sym] if index else sym, start, end)
     if not df.empty:
-        df[["open", "high", "low", "close"]] = (df[["open", "high", "low", "close"]] / 1000).round(2)
+        cols = ["open", "high", "low", "close"]
+        df[cols] = (df[cols] if index else df[cols] / 1000).round(2)
     return df
 
 
